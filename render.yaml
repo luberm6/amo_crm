@@ -55,7 +55,7 @@ services:
       - key: GEMINI_MODEL_ID
         value: gemini-2.0-flash-live-001
       - key: GEMINI_API_VERSION
-        value: v1beta
+        value: v1alpha
       - key: GEMINI_SETUP_TIMEOUT
         value: "15.0"
       - key: DIRECT_VOICE_STRATEGY
