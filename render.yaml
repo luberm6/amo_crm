@@ -82,19 +82,6 @@ services:
       - key: ENFORCE_QUIET_HOURS
         value: "true"
 
-  - type: static
-    name: amo-crm-admin
-    rootDir: admin-panel
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
-    envVars:
-      - key: VITE_API_BASE_URL
-        sync: false
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-
   - type: redis
     name: amo-crm-cache
     plan: starter
