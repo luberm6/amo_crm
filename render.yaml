@@ -53,7 +53,7 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL_ID
-        value: gemini-2.0-flash-exp
+        value: gemini-3.1-flash-live-preview
       - key: GEMINI_API_VERSION
         value: v1beta
       - key: GEMINI_SETUP_TIMEOUT
