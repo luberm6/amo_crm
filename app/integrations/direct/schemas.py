@@ -73,8 +73,8 @@ class GeminiSetupPayload:
     def to_dict(self) -> dict:
         return {
             "model": self.model,
-            "generation_config": self.generation_config.to_dict(),
-            "system_instruction": {
+            "generationConfig": self.generation_config.to_dict(),
+            "systemInstruction": {
                 "parts": self.system_instruction.parts,
             },
             "tools": self.tools,
