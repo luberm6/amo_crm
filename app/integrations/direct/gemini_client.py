@@ -97,17 +97,21 @@ class GeminiLiveClient:
             ping_interval=20,
             ping_timeout=10,
         )
-        await self._send_setup(system_prompt)
-        # Ждём setupComplete (Gemini отвечает быстро — обычно <1 сек)
-        await asyncio.wait_for(
-            self._setup_done.wait(),
-            timeout=settings.gemini_setup_timeout,
-        )
-        # Запускаем recv loop как background task
+        # Запускаем recv loop ДО отправки setup — иначе setupComplete некому читать
         self._recv_task = asyncio.create_task(
             self._recv_loop(),
             name=f"gemini_recv_{id(self)}",
         )
+        await self._send_setup(system_prompt)
+        # Ждём setupComplete (Gemini отвечает быстро — обычно <1 сек)
+        try:
+            await asyncio.wait_for(
+                self._setup_done.wait(),
+                timeout=settings.gemini_setup_timeout,
+            )
+        except asyncio.TimeoutError:
+            self._recv_task.cancel()
+            raise
         log.info("gemini_client.connected", model=settings.gemini_model_id)
 
     async def inject_instruction(self, instruction: str) -> None:
