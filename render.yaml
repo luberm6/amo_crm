@@ -39,7 +39,7 @@ services:
       - key: BACKEND_URL
         sync: false
       - key: ADMIN_CORS_ORIGINS
-        sync: false
+        value: "*"
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD

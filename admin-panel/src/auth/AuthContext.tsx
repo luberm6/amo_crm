@@ -56,6 +56,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    // User already set (e.g. just logged in) — no need to call /me again
+    if (user) {
+      setLoading(false)
+      return
+    }
+
     let mounted = true
     setLoading(true)
     hydrateUser(token)
@@ -73,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false
     }
-  }, [hydrateUser, logout, token])
+  }, [hydrateUser, logout, token, user])
 
   const login = useCallback(async (email: string, password: string) => {
     const response = await apiFetch<LoginResponse>('/v1/admin/auth/login', {

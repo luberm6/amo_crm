@@ -184,10 +184,12 @@ def create_app() -> FastAPI:
         )
     elif settings.admin_cors_origins_list:
         from fastapi.middleware.cors import CORSMiddleware
+        origins = settings.admin_cors_origins_list
+        is_wildcard = origins == ["*"]
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=settings.admin_cors_origins_list,
-            allow_credentials=True,
+            allow_origins=origins,
+            allow_credentials=not is_wildcard,
             allow_methods=["*"],
             allow_headers=["*"],
         )
