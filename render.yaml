@@ -82,7 +82,7 @@ services:
       - key: ENFORCE_QUIET_HOURS
         value: "true"
 
-  - type: static_site
+  - type: static
     name: amo-crm-admin
     rootDir: admin-panel
     buildCommand: npm install && npm run build
