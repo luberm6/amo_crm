@@ -195,8 +195,16 @@ class GeminiLiveClient:
                 tools=[],
             )
         )
-        await self._ws.send(json.dumps(msg.to_dict()))
-        log.debug(
+        payload = msg.to_dict()
+        log.info(
+            "gemini_client.setup_sending",
+            model=f"models/{settings.gemini_model_id}",
+            audio_modality=self._audio_modality,
+            payload_keys=list(payload.get("setup", {}).keys()),
+            generation_config=payload.get("setup", {}).get("generationConfig"),
+        )
+        await self._ws.send(json.dumps(payload))
+        log.info(
             "gemini_client.setup_sent",
             model=f"models/{settings.gemini_model_id}",
             audio_modality=self._audio_modality,
@@ -211,6 +219,10 @@ class GeminiLiveClient:
         try:
             assert self._ws is not None
             async for raw_message in self._ws:
+                log.info(
+                    "gemini_client.raw_message",
+                    preview=str(raw_message)[:500],
+                )
                 try:
                     await self._dispatch(json.loads(raw_message))
                 except Exception as exc:
