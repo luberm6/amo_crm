@@ -16,7 +16,6 @@ services:
   - type: web
     name: amo-crm-api
     runtime: python
-    plan: basic
     buildCommand: pip install -e .
     preDeployCommand: alembic upgrade head
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
@@ -84,11 +83,9 @@ services:
 
   - type: redis
     name: amo-crm-cache
-    plan: basic
     ipAllowList: []
 
 databases:
   - name: amo-crm-db
-    plan: basic
     databaseName: amo_crm
     user: amo_user
