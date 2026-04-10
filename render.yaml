@@ -1,0 +1,107 @@
+##
+# Render.com deployment manifest
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Services:
+#   api     — FastAPI backend (web service)
+#   bot     — Telegram bot (background worker)
+#   worker  — Celery task worker (background worker)
+#
+# Infrastructure:
+#   db      — PostgreSQL 16
+#   cache   — Redis 7
+##
+
+services:
+  - type: web
+    name: amo-crm-api
+    runtime: python
+    plan: starter
+    buildCommand: pip install -e .
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_FORMAT
+        value: json
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DATABASE_URL
+        fromDatabase:
+          name: amo-crm-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: amo-crm-cache
+          property: connectionString
+      - key: BACKEND_URL
+        sync: false
+      - key: ADMIN_CORS_ORIGINS
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_AUTH_SECRET
+        sync: false
+      - key: PROVIDER_SETTINGS_SECRET
+        sync: false
+      - key: API_KEY
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL_ID
+        value: gemini-2.0-flash-live-001
+      - key: GEMINI_API_VERSION
+        value: v1beta
+      - key: DIRECT_VOICE_STRATEGY
+        value: tts_primary
+      - key: DIRECT_VOICE_ALLOW_TTS_FALLBACK
+        value: "true"
+      - key: GEMINI_AUDIO_INPUT_ENABLED
+        value: "true"
+      - key: GEMINI_AUDIO_OUTPUT_ENABLED
+        value: "false"
+      - key: DIRECT_INITIAL_GREETING_ENABLED
+        value: "true"
+      - key: DIRECT_MODEL_RESPONSE_TIMEOUT_SECONDS
+        value: "8.0"
+      - key: ELEVENLABS_ENABLED
+        value: "true"
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
+      - key: TELEPHONY_PROVIDER
+        value: stub
+      - key: MEDIA_GATEWAY_ENABLED
+        value: "false"
+      - key: ENFORCE_QUIET_HOURS
+        value: "true"
+
+  - type: static_site
+    name: amo-crm-admin
+    rootDir: admin-panel
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  - type: redis
+    name: amo-crm-cache
+    plan: starter
+    ipAllowList: []
+
+databases:
+  - name: amo-crm-db
+    plan: starter
+    databaseName: amo_crm
+    user: amo_user

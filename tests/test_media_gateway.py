@@ -1,0 +1,400 @@
+from __future__ import annotations
+
+import asyncio
+import socket
+from unittest.mock import AsyncMock
+
+import pytest
+
+from app.core.config import settings
+from app.integrations.media_gateway.base import MediaEventType, MediaGatewayNotReadyError
+from app.integrations.media_gateway.freeswitch import (
+    FreeSwitchGatewayConfig,
+    FreeSwitchMediaGateway,
+    _build_rtp_packet,
+    _encode_outbound_audio,
+    _extract_rtp_payload,
+    _decode_inbound_audio,
+)
+from app.integrations.telephony.base import TelephonyChannel, TelephonyLegState
+from app.integrations.telephony.freeswitch_bridge import FreeSwitchAudioBridge
+from app.integrations.telephony.mango import MangoTelephonyAdapter
+
+
+@pytest.mark.anyio
+async def test_freeswitch_media_gateway_mock_contract_roundtrip():
+    gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="mock"))
+    handle = await gw.attach_session(call_id="call-1", provider_leg_id="leg-1")
+
+    await gw.inject_inbound_audio(handle.session_id, b"\x01" * 640)
+    await gw.send_barge_in(handle.session_id)
+    await gw.send_audio(handle.session_id, b"\x02" * 320)
+    await gw.propagate_hangup(handle.session_id, reason="caller_hangup")
+
+    events = []
+    async for evt in gw.events(handle.session_id):
+        events.append(evt.type)
+
+    assert events == [MediaEventType.AUDIO_IN, MediaEventType.BARGE_IN, MediaEventType.HANGUP]
+    assert gw.get_audio_out_bytes(handle.session_id) == 320
+
+
+@pytest.mark.anyio
+async def test_freeswitch_media_gateway_scaffold_explicit_not_ready():
+    gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="scaffold"))
+    with pytest.raises(MediaGatewayNotReadyError):
+        await gw.attach_session(call_id="call-2", provider_leg_id="leg-2")
+
+
+@pytest.mark.anyio
+async def test_freeswitch_audio_bridge_consumes_events_and_stops_on_hangup():
+    gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="mock"))
+    bridge = FreeSwitchAudioBridge(gateway=gw)
+    channel = TelephonyChannel(
+        channel_id="c-1",
+        phone="+79990001122",
+        provider_leg_id="leg-100",
+        state=TelephonyLegState.INITIATING,
+    )
+    await bridge.open(channel)
+    assert bridge.is_open is True
+
+    session_id = bridge._session_id  # test introspection
+    assert session_id is not None
+    await gw.inject_inbound_audio(session_id, b"\x03" * 640)
+    await gw.send_barge_in(session_id)
+    await gw.propagate_hangup(session_id, reason="hangup_test")
+
+    chunks = []
+    async for pcm in bridge.audio_in():
+        chunks.append(pcm)
+
+    assert len(chunks) == 1
+    assert chunks[0] == b"\x03" * 640
+    assert bridge.barge_in_triggered is True
+    assert bridge.hangup_reason == "hangup_test"
+
+
+@pytest.mark.anyio
+async def test_mango_attach_audio_bridge_uses_media_gateway_mock_mode():
+    from app.integrations.media_gateway import factory as mg_factory
+
+    old_enabled = settings.media_gateway_enabled
+    old_mode = settings.media_gateway_mode
+    old_provider = settings.media_gateway_provider
+    prev_gateway = mg_factory._gateway
+    try:
+        settings.media_gateway_enabled = True
+        settings.media_gateway_mode = "mock"
+        settings.media_gateway_provider = "freeswitch"
+        mg_factory._gateway = None
+
+        adapter = MangoTelephonyAdapter()
+        channel = TelephonyChannel(
+            channel_id="c-2",
+            phone="+79990001123",
+            provider_leg_id="leg-101",
+            state=TelephonyLegState.INITIATING,
+        )
+        bridge = await adapter.attach_audio_bridge(channel)
+        assert bridge.is_open is True
+        await adapter.detach_audio_bridge(bridge)
+    finally:
+        settings.media_gateway_enabled = old_enabled
+        settings.media_gateway_mode = old_mode
+        settings.media_gateway_provider = old_provider
+        mg_factory._gateway = prev_gateway
+
+
+@pytest.mark.anyio
+async def test_rtp_helpers_build_and_extract_payload():
+    pcm = b"\x55" * 640
+    packet = _build_rtp_packet(
+        pcm=pcm,
+        payload_type=96,
+        seq=1,
+        ts=160,
+        ssrc=1234,
+    )
+    out = _extract_rtp_payload(packet)
+    assert out == pcm
+
+
+@pytest.mark.anyio
+async def test_freeswitch_gateway_esl_rtp_ingest_inject_with_stubbed_esl():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            rtp_ip="127.0.0.1",
+            rtp_port_start=25000,
+            rtp_port_end=25100,
+        )
+    )
+    gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_attach_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_hangup_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    handle = await gw.attach_session(call_id="call-rtp", provider_leg_id="leg-rtp")
+    sid = handle.session_id
+    runtime = gw._rtp[sid]
+
+    snd = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        snd.sendto(
+            _build_rtp_packet(
+                pcm=b"\x10" * 640,
+                payload_type=96,
+                seq=10,
+                ts=160,
+                ssrc=999,
+            ),
+            (runtime.local_ip, runtime.local_port),
+        )
+    finally:
+        snd.close()
+
+    events_iter = gw.events(sid)
+    evt = await asyncio.wait_for(events_iter.__anext__(), timeout=1.0)
+    assert evt.type == MediaEventType.AUDIO_IN
+    assert evt.pcm == b"\x10" * 640
+
+    await gw.send_audio(sid, b"\x20" * 640)
+    assert gw.get_audio_out_bytes(sid) == 640
+
+    await gw.detach_session(sid)
+
+
+@pytest.mark.anyio
+async def test_freeswitch_gateway_buffers_outbound_audio_until_first_inbound_rtp():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            rtp_ip="127.0.0.1",
+            rtp_port_start=25110,
+            rtp_port_end=25210,
+        )
+    )
+    gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_attach_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_hangup_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    handle = await gw.attach_session(call_id="call-rtp-buffer", provider_leg_id="leg-rtp-buffer")
+    sid = handle.session_id
+    runtime = gw._rtp[sid]
+
+    await gw.send_audio(sid, b"\x21" * 640)
+    assert runtime.pending_outbound == [b"\x21" * 640]
+
+    peer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    peer.bind(("127.0.0.1", 0))
+    peer.settimeout(1.0)
+    try:
+        peer.sendto(
+            _build_rtp_packet(
+                pcm=b"\x10" * 640,
+                payload_type=96,
+                seq=10,
+                ts=160,
+                ssrc=999,
+            ),
+            (runtime.local_ip, runtime.local_port),
+        )
+        packet, _ = await asyncio.wait_for(
+            asyncio.to_thread(peer.recvfrom, 2048),
+            timeout=1.0,
+        )
+    finally:
+        peer.close()
+
+    assert _extract_rtp_payload(packet) == b"\x21" * 640
+    assert runtime.pending_outbound == []
+    await gw.detach_session(sid)
+
+
+@pytest.mark.anyio
+async def test_freeswitch_gateway_primes_remote_endpoint_from_esl_event_and_flushes_audio():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            rtp_ip="127.0.0.1",
+            rtp_port_start=25220,
+            rtp_port_end=25320,
+        )
+    )
+    gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_attach_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_hangup_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    handle = await gw.attach_session(call_id="call-rtp-prime", provider_leg_id="leg-rtp-prime")
+    sid = handle.session_id
+    runtime = gw._rtp[sid]
+
+    peer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    peer.bind(("127.0.0.1", 0))
+    peer.settimeout(1.0)
+    host, port = peer.getsockname()
+    try:
+        await gw.send_audio(sid, b"\x22" * 640)
+        await gw._process_plain_event(
+            {
+                "Event-Name": "CHANNEL_ANSWER",
+                "Unique-ID": "leg-rtp-prime",
+                "variable_remote_media_ip": host,
+                "variable_remote_media_port": str(port),
+            }
+        )
+        packet, _ = peer.recvfrom(2048)
+    finally:
+        peer.close()
+
+    assert _extract_rtp_payload(packet) == b"\x22" * 640
+    assert runtime.remote_addr == (host, port)
+    assert runtime.pending_outbound == []
+    await gw.detach_session(sid)
+
+
+@pytest.mark.anyio
+async def test_freeswitch_gateway_event_normalization_updates_lifecycle_and_correlation():
+    gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="mock"))
+    handle = await gw.attach_session(call_id="call-corr", provider_leg_id="leg-corr")
+    sid = handle.session_id
+
+    await gw._process_plain_event({"Event-Name": "CHANNEL_CREATE", "Unique-ID": "leg-corr"})
+    await gw._process_plain_event({"Event-Name": "CHANNEL_ANSWER", "Unique-ID": "leg-corr"})
+    await gw._process_plain_event({"Event-Name": "PLAYBACK_START", "Unique-ID": "leg-corr"})
+    await gw._process_plain_event({"Event-Name": "PLAYBACK_STOP", "Unique-ID": "leg-corr"})
+    await gw._process_plain_event({"Event-Name": "CHANNEL_BRIDGE", "Unique-ID": "leg-corr"})
+
+    corr = gw.get_session_correlation(sid)
+    assert corr is not None
+    assert corr["call_id"] == "call-corr"
+    assert corr["mango_leg_id"] == "leg-corr"
+    assert corr["freeswitch_uuid"] == "leg-corr"
+
+    state = gw.get_session_lifecycle(sid)
+    assert state is not None
+    assert state["created"] is True
+    assert state["answered"] is True
+    assert state["bridged"] is True
+    assert state["playback_active"] is False
+    corr_store_snap = await gw._corr.get("leg-corr")  # type: ignore[attr-defined]
+    assert corr_store_snap is not None
+    assert corr_store_snap.effective_state == TelephonyLegState.BRIDGED
+
+
+@pytest.mark.anyio
+async def test_freeswitch_gateway_hangup_event_propagates_to_media_stream():
+    gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="mock"))
+    handle = await gw.attach_session(call_id="call-hang", provider_leg_id="leg-hang")
+    sid = handle.session_id
+
+    await gw._process_plain_event(
+        {
+            "Event-Name": "CHANNEL_HANGUP_COMPLETE",
+            "Unique-ID": "leg-hang",
+            "Hangup-Cause": "NORMAL_CLEARING",
+        }
+    )
+
+    events_iter = gw.events(sid)
+    evt = await asyncio.wait_for(events_iter.__anext__(), timeout=1.0)
+    assert evt.type == MediaEventType.HANGUP
+    assert evt.reason == "NORMAL_CLEARING"
+
+
+@pytest.mark.anyio
+async def test_freeswitch_gateway_esl_connect_retries_then_succeeds():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            esl_reconnect_enabled=True,
+            esl_reconnect_initial_delay_seconds=0.001,
+            esl_reconnect_max_delay_seconds=0.002,
+            esl_reconnect_max_attempts=3,
+        )
+    )
+
+    class _FakeEsl:
+        def __init__(self, ok: bool):
+            self._ok = ok
+            self.connected = False
+
+        async def connect(self):
+            if not self._ok:
+                raise RuntimeError("connect failed")
+            self.connected = True
+
+        async def subscribe_events(self, events: str):
+            return None
+
+        async def read_frame(self):
+            await asyncio.sleep(3600)
+
+        async def close(self):
+            self.connected = False
+
+    clients = [_FakeEsl(False), _FakeEsl(True)]
+    gw._build_esl_client = lambda: clients.pop(0)  # type: ignore[method-assign]
+    await gw._ensure_esl_connected()
+    assert gw._esl is not None
+
+
+def test_freeswitch_pcmu_codec_roundtrip_has_signal():
+    pcm = (b"\x00\x00" + b"\xff\x7f" + b"\x01\x80") * 40
+    ulaw = _encode_outbound_audio(pcm, "pcmu")
+    restored = _decode_inbound_audio(ulaw, inbound_codec="pcmu", payload_type=0)
+    assert len(restored) == len(pcm)
+    assert any(b != 0 for b in restored)
+
+
+@pytest.mark.anyio
+async def test_freeswitch_gateway_stats_and_timeout_hangup():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            rtp_ip="127.0.0.1",
+            rtp_port_start=25200,
+            rtp_port_end=25300,
+            rtp_inbound_timeout_seconds=1,
+        )
+    )
+    gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_attach_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_hangup_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    handle = await gw.attach_session(call_id="call-stats", provider_leg_id="leg-stats")
+    sid = handle.session_id
+    runtime = gw._rtp[sid]
+
+    snd = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        snd.sendto(
+            _build_rtp_packet(
+                pcm=b"\x10" * 320,
+                payload_type=96,
+                seq=1,
+                ts=80,
+                ssrc=111,
+            ),
+            (runtime.local_ip, runtime.local_port),
+        )
+    finally:
+        snd.close()
+
+    await asyncio.sleep(0.1)
+    stats = gw.get_media_stats(sid)
+    assert stats is not None
+    assert stats["frames_in"] >= 1
+    assert stats["bytes_in"] >= 320
+
+    # Wait for watchdog timeout to emit hangup event.
+    events_iter = gw.events(sid)
+    got_hangup = False
+    for _ in range(3):
+        evt = await asyncio.wait_for(events_iter.__anext__(), timeout=2.0)
+        if evt.type == MediaEventType.HANGUP and evt.reason == "rtp_timeout":
+            got_hangup = True
+            break
+    assert got_hangup is True
+
+    await gw.detach_session(sid)
