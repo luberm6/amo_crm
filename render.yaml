@@ -56,6 +56,8 @@ services:
         value: gemini-2.0-flash-live-001
       - key: GEMINI_API_VERSION
         value: v1beta
+      - key: GEMINI_SETUP_TIMEOUT
+        value: "15.0"
       - key: DIRECT_VOICE_STRATEGY
         value: gemini_primary
       - key: DIRECT_VOICE_ALLOW_TTS_FALLBACK

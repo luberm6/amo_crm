@@ -236,6 +236,20 @@ class GeminiLiveClient:
             log.debug("gemini_client.setup_complete")
             return
 
+        if "error" in msg:
+            err = msg["error"]
+            log.error(
+                "gemini_client.api_error",
+                code=err.get("code"),
+                status=err.get("status"),
+                message=err.get("message"),
+            )
+            # Помечаем setup как завершённый с ошибкой — чтобы не ждать таймаута
+            self._setup_done.set()
+            raise RuntimeError(
+                f"Gemini API error {err.get('code')}: {err.get('message')}"
+            )
+
         if "serverContent" in msg:
             sc = GeminiServerContent.from_dict(msg["serverContent"])
             if sc.interrupted:
