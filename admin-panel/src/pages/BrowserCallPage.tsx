@@ -736,9 +736,8 @@ export default function BrowserCallPage() {
         setLocalAudioDebug((previous) => ({
           ...previous,
           playbackEndedCount: previous.playbackEndedCount + 1,
-          playbackDiagnostic: previous.inboundAudioChunkCount > 0 && previous.playbackStarts > 0 && !previous.lastPlaybackError
-            ? 'PLAYBACK_FAILURE_LIKELY'
-            : previous.playbackDiagnostic,
+          // Playback ended normally — clear any stale diagnostic
+          playbackDiagnostic: previous.lastPlaybackError ? previous.playbackDiagnostic : null,
         }))
         logBrowserEvent('playback_ended', {
           source,
@@ -748,7 +747,8 @@ export default function BrowserCallPage() {
       updateLocalAudioDebug({
         lastPlaybackError: null,
         audioContextState: runtime.context.state,
-        playbackDiagnostic: localAudioDebugRef.current.inboundAudioChunkCount > 0 ? 'PLAYBACK_FAILURE_LIKELY' : null,
+        // Only flag as likely failure if audio is playing but silent (RMS too low)
+        playbackDiagnostic: audioTooQuiet ? 'PLAYBACK_FAILURE_LIKELY' : null,
       })
       setAiState('speaking')
       logBrowserEvent('playback_started', {
@@ -897,7 +897,7 @@ export default function BrowserCallPage() {
               setLocalAudioDebug((previous) => ({
                 ...previous,
                 playbackEndedCount: previous.playbackEndedCount + 1,
-                playbackDiagnostic: 'PLAYBACK_FAILURE_LIKELY',
+                playbackDiagnostic: audioTooQuiet ? 'PLAYBACK_FAILURE_LIKELY' : null,
               }))
               logBrowserEvent('playback_ended', { source: 'hardcoded_local' })
               void context.close()
@@ -906,7 +906,7 @@ export default function BrowserCallPage() {
             setLocalAudioDebug((previous) => ({
               ...previous,
               playbackStarts: previous.playbackStarts + 1,
-              playbackDiagnostic: 'PLAYBACK_FAILURE_LIKELY',
+              playbackDiagnostic: audioTooQuiet ? 'PLAYBACK_FAILURE_LIKELY' : null,
               lastPlaybackError: null,
             }))
             logBrowserEvent('playback_started', {
