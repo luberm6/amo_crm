@@ -34,7 +34,9 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+import zoneinfo
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import TYPE_CHECKING, Callable, List, Optional
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -71,6 +73,26 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 _AUDIO_CHUNK_BYTES = 640
+
+_DAY_NAMES_RU = {
+    0: "понедельник", 1: "вторник", 2: "среда",
+    3: "четверг", 4: "пятница", 5: "суббота", 6: "воскресенье",
+}
+
+
+def _datetime_context_line() -> str:
+    """Return a Russian datetime string for injecting into the system prompt."""
+    tz = zoneinfo.ZoneInfo(settings.calling_timezone)
+    now = datetime.now(tz)
+    weekday = _DAY_NAMES_RU[now.weekday()]
+    offset = now.strftime("%z")           # "+0300"
+    offset_fmt = f"UTC{offset[:3]}:{offset[3:]}"   # "UTC+03:00"
+    return (
+        f"Текущая дата и время: {weekday}, {now.strftime('%d.%m.%Y %H:%M')} "
+        f"({settings.calling_timezone}, {offset_fmt})."
+    )
+
+
 _AUDIO_IN_QUEUE_MAX = 200
 _AUDIO_OUT_QUEUE_MAX = 200
 
@@ -225,7 +247,7 @@ class DirectSessionManager:
             )
 
         session_id = f"{call_id}-direct"
-        effective_prompt = system_prompt or settings.gemini_system_prompt
+        effective_prompt = (system_prompt or settings.gemini_system_prompt) + "\n\n" + _datetime_context_line()
         strategy_override = voice_strategy_name or None
         voice_definition = ensure_voice_strategy_valid(strategy_override=strategy_override)
         if voice_definition.primary_path == "disabled":
