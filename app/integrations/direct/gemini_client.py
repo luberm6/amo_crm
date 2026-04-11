@@ -118,15 +118,19 @@ class GeminiLiveClient:
         """
         Инжектировать steering instruction в живую сессию.
 
-        Instruction оформляется как user turn — Gemini воспринимает это
-        как новое сообщение от пользователя и реагирует немедленно.
-        Не уничтожает контекст — Gemini видит полную историю разговора.
+        В audio-only режиме (audio_modality=True) используем realtimeInput.text —
+        clientContent с текстом отклоняется audio-to-audio моделями (код 1007).
+        В text-режиме используем clientContent как раньше.
         """
         if not self._ws or self._closed:
             log.warning("gemini_client.inject_instruction.no_ws")
             return
-        msg = GeminiClientContent.from_text(instruction, role="user")
-        await self._ws.send(json.dumps(msg.to_dict()))
+        if self._audio_modality:
+            # Audio-to-audio model: use realtimeInput.text
+            payload = {"realtimeInput": {"text": instruction}}
+        else:
+            payload = GeminiClientContent.from_text(instruction, role="user").to_dict()
+        await self._ws.send(json.dumps(payload))
         log.info(
             "gemini_client.instruction_injected",
             preview=instruction[:80],
