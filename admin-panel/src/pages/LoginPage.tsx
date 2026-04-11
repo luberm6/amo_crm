@@ -31,7 +31,7 @@ export default function LoginPage() {
       if (err instanceof ApiError) {
         setError(err.message)
       } else {
-        setError('Login failed.')
+        setError('Ошибка входа.')
       }
     } finally {
       setSubmitting(false)
@@ -42,7 +42,7 @@ export default function LoginPage() {
     <div className="login-shell">
       <section className="login-card">
         <div>
-          <p className="eyebrow">Admin Auth</p>
+          <p className="eyebrow">Вход в систему</p>
           <h1>AMO CRM Voice Admin</h1>
           <p className="login-copy">Вход для внутренней панели. Используется минимальный backend admin auth без отдельной user-management системы.</p>
         </div>
@@ -52,12 +52,12 @@ export default function LoginPage() {
             <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="admin@example.com" required />
           </label>
           <label>
-            Password
+            Пароль
             <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="••••••••" required />
           </label>
           {error ? <div className="error-banner">{error}</div> : null}
           <button type="submit" className="primary-button" disabled={submitting}>
-            {submitting ? 'Входим…' : 'Login'}
+            {submitting ? 'Входим…' : 'Войти'}
           </button>
         </form>
       </section>

@@ -129,7 +129,7 @@ function buildInitialForm(setting: ProviderSetting): ProviderFormState {
 
 function formatTimestamp(value?: string | null) {
   if (!value) {
-    return 'Not validated yet'
+    return 'Ещё не проверялось'
   }
   return new Date(value).toLocaleString()
 }
@@ -169,7 +169,7 @@ export default function ProvidersPage() {
       setSettingsByProvider(nextSettings)
       setFormsByProvider(nextForms)
     } catch (err) {
-      setPageError(err instanceof ApiError ? err.message : 'Failed to load provider settings.')
+      setPageError(err instanceof ApiError ? err.message : 'Не удалось загрузить настройки провайдеров.')
     } finally {
       setLoading(false)
     }
@@ -268,12 +268,12 @@ export default function ProvidersPage() {
       }))
       setProviderMessages((current) => ({
         ...current,
-        [provider]: 'Settings saved. Stored secrets remain masked and are not shown back in raw form.',
+        [provider]: 'Настройки сохранены. Секреты остаются замаскированными и не отображаются в открытом виде.',
       }))
     } catch (err) {
       setProviderErrors((current) => ({
         ...current,
-        [provider]: err instanceof ApiError ? err.message : 'Failed to save provider settings.',
+        [provider]: err instanceof ApiError ? err.message : 'Не удалось сохранить настройки провайдера.',
       }))
     } finally {
       setSavingProvider(null)
@@ -296,12 +296,12 @@ export default function ProvidersPage() {
       await loadProviders()
       setProviderMessages((current) => ({
         ...current,
-        [provider]: `${validation.message}${validation.remote_checked ? '' : ' Remote connection was intentionally not touched.'}`,
+        [provider]: `${validation.message}${validation.remote_checked ? '' : ' Удалённое подключение намеренно не проверялось.'}`,
       }))
     } catch (err) {
       setProviderErrors((current) => ({
         ...current,
-        [provider]: err instanceof ApiError ? err.message : 'Failed to validate provider settings.',
+        [provider]: err instanceof ApiError ? err.message : 'Не удалось проверить настройки провайдера.',
       }))
       await loadProviders()
     } finally {
@@ -313,22 +313,22 @@ export default function ProvidersPage() {
     <section className="stack-page providers-page">
       <article className="hero-card split-card providers-hero">
         <div>
-          <p className="eyebrow">Providers Settings</p>
-          <h3>Provider credentials and status</h3>
+          <p className="eyebrow">Настройки провайдеров</p>
+          <h3>Учётные данные и статус провайдеров</h3>
           <p>
             Это безопасный settings layer. Сохранение credentials не включает боевой маршрут автоматически и не
             переводит shared Mango account на AI routing.
           </p>
         </div>
         <div className="status-strip">
-          <span className="status-pill">Settings only</span>
-          <span className="status-pill">No auto-routing</span>
-          <span className="status-pill">Secrets masked</span>
+          <span className="status-pill">Только настройки</span>
+          <span className="status-pill">Без авторутинга</span>
+          <span className="status-pill">Секреты скрыты</span>
         </div>
       </article>
 
       {pageError ? <div className="error-banner">{pageError}</div> : null}
-      {loading ? <div className="route-state">Loading provider settings…</div> : null}
+      {loading ? <div className="route-state">Загрузка настроек провайдеров…</div> : null}
 
       {!loading && providerCards.map(({ definition, setting }) => {
         if (!setting) {
@@ -356,7 +356,7 @@ export default function ProvidersPage() {
             <div className="provider-note">{setting.safe_mode_note}</div>
             {setting.last_validation_message ? (
               <div className="provider-validation-copy">
-                <strong>Last validation:</strong> {setting.last_validation_message}
+                <strong>Последняя проверка:</strong> {setting.last_validation_message}
                 <div className="table-secondary">{formatTimestamp(setting.last_validated_at)}</div>
               </div>
             ) : null}
@@ -371,7 +371,7 @@ export default function ProvidersPage() {
                     checked={form.is_enabled}
                     onChange={(event) => updateEnabled(definition.provider, event.target.checked)}
                   />
-                  <span>Mark settings active for future use</span>
+                  <span>Отметить настройки как активные для дальнейшего использования</span>
                 </label>
               </section>
 
@@ -415,10 +415,10 @@ export default function ProvidersPage() {
                         autoComplete="new-password"
                         value={form.secrets[field.key] || ''}
                         onChange={(event) => updateSecret(definition.provider, field.key, event.target.value)}
-                        placeholder={secretState?.is_set ? 'Leave blank to keep stored secret' : 'Enter secret'}
+                        placeholder={secretState?.is_set ? 'Оставьте пустым, чтобы сохранить текущий секрет' : 'Введите секрет'}
                       />
                       <small className="table-secondary">
-                        {secretState?.is_set ? `Stored: ${secretState.masked_value}` : 'Not stored'}
+                        {secretState?.is_set ? `Сохранён: ${secretState.masked_value}` : 'Не сохранён'}
                       </small>
                     </label>
                   )
@@ -427,7 +427,7 @@ export default function ProvidersPage() {
 
               <div className="button-row">
                 <button type="submit" className="primary-button" disabled={savingProvider === definition.provider}>
-                  {savingProvider === definition.provider ? 'Saving…' : 'Save settings'}
+                  {savingProvider === definition.provider ? 'Сохранение…' : 'Сохранить настройки'}
                 </button>
                 <button
                   type="button"
@@ -435,7 +435,7 @@ export default function ProvidersPage() {
                   onClick={() => void handleValidate(definition.provider)}
                   disabled={validatingProvider === definition.provider}
                 >
-                  {validatingProvider === definition.provider ? 'Validating…' : 'Check connection'}
+                  {validatingProvider === definition.provider ? 'Проверка…' : 'Проверить подключение'}
                 </button>
               </div>
             </form>

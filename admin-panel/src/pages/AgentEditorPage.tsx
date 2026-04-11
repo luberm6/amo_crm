@@ -152,7 +152,7 @@ export default function AgentEditorPage() {
       })
       .catch((err) => {
         if (mounted) {
-          setError(err instanceof ApiError ? err.message : 'Failed to load agent profile.')
+          setError(err instanceof ApiError ? err.message : 'Не удалось загрузить профиль агента.')
         }
       })
       .finally(() => {
@@ -180,7 +180,7 @@ export default function AgentEditorPage() {
       setKnowledgeDocuments(documentsResponse.items)
       setBindings(bindingsResponse.items)
     } catch (err) {
-      setKnowledgeError(err instanceof ApiError ? err.message : 'Failed to load knowledge bindings.')
+      setKnowledgeError(err instanceof ApiError ? err.message : 'Не удалось загрузить привязки знаний.')
     } finally {
       setKnowledgeLoading(false)
     }
@@ -237,7 +237,7 @@ export default function AgentEditorPage() {
       parsedConfig = JSON.parse(form.configText || '{}') as Record<string, unknown>
     } catch {
       setSaving(false)
-      setError('Config must be valid JSON.')
+      setError('Конфигурация должна быть валидным JSON.')
       return
     }
 
@@ -272,7 +272,7 @@ export default function AgentEditorPage() {
       }
       await loadKnowledgeState()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to save agent profile.')
+      setError(err instanceof ApiError ? err.message : 'Не удалось сохранить профиль агента.')
     } finally {
       setSaving(false)
     }
@@ -300,7 +300,7 @@ export default function AgentEditorPage() {
       }
       await loadKnowledgeState()
     } catch (err) {
-      setKnowledgeError(err instanceof ApiError ? err.message : 'Failed to update knowledge binding.')
+      setKnowledgeError(err instanceof ApiError ? err.message : 'Не удалось обновить привязку знаний.')
     } finally {
       setBindingBusyDocumentId(null)
     }
@@ -314,8 +314,8 @@ export default function AgentEditorPage() {
     <section className="stack-page">
       <article className="hero-card split-card">
         <div>
-          <p className="eyebrow">Agent Editor</p>
-          <h3>{isCreateMode ? 'Create agent profile' : form.name || 'Edit agent profile'}</h3>
+          <p className="eyebrow">Редактор агента</p>
+          <h3>{isCreateMode ? 'Создать агента' : form.name || 'Редактировать агента'}</h3>
           <p>
             UI редактирует только данные профиля. Backend централизованно собирает runtime prompt preview, а KB
             привязки живут отдельно и будут подключаться к runtime controlled context assembly.
@@ -323,7 +323,7 @@ export default function AgentEditorPage() {
         </div>
         <div className="button-row">
           <Link to="/agents" className="ghost-link-button">
-            Back to list
+            Назад к списку
           </Link>
         </div>
       </article>
@@ -339,12 +339,12 @@ export default function AgentEditorPage() {
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Identity</p>
-                  <h4>Base profile</h4>
+                  <p className="eyebrow">Идентификация</p>
+                  <h4>Основной профиль</h4>
                 </div>
               </div>
               <label>
-                Name
+                Название
                 <input value={form.name} onChange={(event) => updateField('name', event.target.value)} required />
               </label>
               <label className="toggle-row boxed-toggle">
@@ -353,7 +353,7 @@ export default function AgentEditorPage() {
                   checked={form.is_active}
                   onChange={(event) => updateField('is_active', event.target.checked)}
                 />
-                <span>Agent is active</span>
+                <span>Агент активен</span>
               </label>
 
               <div className="voice-strategy-block">
@@ -407,12 +407,12 @@ export default function AgentEditorPage() {
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Conversation</p>
-                  <h4>Core prompt and greeting</h4>
+                  <p className="eyebrow">Диалог</p>
+                  <h4>Основной промпт и приветствие</h4>
                 </div>
               </div>
               <label>
-                System prompt
+                Системный промпт
                 <textarea
                   value={form.system_prompt}
                   onChange={(event) => updateField('system_prompt', event.target.value)}
@@ -421,7 +421,7 @@ export default function AgentEditorPage() {
                 />
               </label>
               <label>
-                Greeting text
+                Приветствие
                 <textarea
                   value={form.greeting_text}
                   onChange={(event) => updateField('greeting_text', event.target.value)}
@@ -429,7 +429,7 @@ export default function AgentEditorPage() {
                 />
               </label>
               <label>
-                Tone rules
+                Правила тона
                 <textarea
                   value={form.tone_rules}
                   onChange={(event) => updateField('tone_rules', event.target.value)}
@@ -441,12 +441,12 @@ export default function AgentEditorPage() {
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Business logic</p>
-                  <h4>Goals and constraints</h4>
+                  <p className="eyebrow">Бизнес-логика</p>
+                  <h4>Цели и ограничения</h4>
                 </div>
               </div>
               <label>
-                Business rules
+                Бизнес-правила
                 <textarea
                   value={form.business_rules}
                   onChange={(event) => updateField('business_rules', event.target.value)}
@@ -454,7 +454,7 @@ export default function AgentEditorPage() {
                 />
               </label>
               <label>
-                Sales objectives
+                Цели продаж
                 <textarea
                   value={form.sales_objectives}
                   onChange={(event) => updateField('sales_objectives', event.target.value)}
@@ -462,7 +462,7 @@ export default function AgentEditorPage() {
                 />
               </label>
               <label>
-                Transfer rules
+                Правила передачи
                 <textarea
                   value={form.transfer_rules}
                   onChange={(event) => updateField('transfer_rules', event.target.value)}
@@ -470,7 +470,7 @@ export default function AgentEditorPage() {
                 />
               </label>
               <label>
-                Prohibited promises
+                Запрещённые обещания
                 <textarea
                   value={form.prohibited_promises}
                   onChange={(event) => updateField('prohibited_promises', event.target.value)}
@@ -482,12 +482,12 @@ export default function AgentEditorPage() {
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Config</p>
-                  <h4>Metadata / runtime config</h4>
+                  <p className="eyebrow">Конфигурация</p>
+                  <h4>Метаданные / конфигурация runtime</h4>
                 </div>
               </div>
               <label>
-                Config JSON
+                Конфигурация JSON
                 <textarea
                   value={form.configText}
                   onChange={(event) => updateField('configText', event.target.value)}
@@ -497,7 +497,7 @@ export default function AgentEditorPage() {
               </label>
               <div className="button-row">
                 <button type="submit" className="primary-button" disabled={saving}>
-                  {saving ? 'Saving…' : 'Save agent'}
+                  {saving ? 'Сохранение…' : 'Сохранить агента'}
                 </button>
               </div>
             </section>
@@ -505,8 +505,8 @@ export default function AgentEditorPage() {
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Knowledge Bindings</p>
-                  <h4>Controlled context for this agent</h4>
+                  <p className="eyebrow">Привязки знаний</p>
+                  <h4>Контролируемый контекст агента</h4>
                 </div>
               </div>
 
@@ -537,7 +537,7 @@ export default function AgentEditorPage() {
                           <div className="table-primary">{document.title}</div>
                           <div className="inline-meta">
                             <span>{document.category}</span>
-                            <span>{binding ? 'bound' : 'not bound'}</span>
+                            <span>{binding ? 'привязан' : 'не привязан'}</span>
                           </div>
                         </div>
                       </label>
@@ -552,8 +552,8 @@ export default function AgentEditorPage() {
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Preview</p>
-                  <h4>Assembled prompt</h4>
+                  <p className="eyebrow">Превью</p>
+                  <h4>Собранный промпт</h4>
                 </div>
               </div>
               <pre className="preview-block">{previewText}</pre>
@@ -562,8 +562,8 @@ export default function AgentEditorPage() {
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Knowledge Summary</p>
-                  <h4>What is attached</h4>
+                  <p className="eyebrow">Сводка знаний</p>
+                  <h4>Что подключено</h4>
                 </div>
               </div>
               {bindings.length === 0 ? (
@@ -586,29 +586,29 @@ export default function AgentEditorPage() {
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Metadata</p>
-                  <h4>Versioning</h4>
+                  <p className="eyebrow">Метаданные</p>
+                  <h4>Версионирование</h4>
                 </div>
               </div>
               <div className="debug-list compact-debug">
                 <div className="debug-row">
-                  <span>version</span>
-                  <strong>{profile ? `v${profile.version}` : 'new'}</strong>
+                  <span>версия</span>
+                  <strong>{profile ? `v${profile.version}` : 'новый'}</strong>
                 </div>
                 <div className="debug-row">
-                  <span>updated</span>
+                  <span>обновлён</span>
                   <strong>{profile ? new Date(profile.updated_at).toLocaleString() : '—'}</strong>
                 </div>
                 <div className="debug-row">
-                  <span>active</span>
-                  <strong>{form.is_active ? 'yes' : 'no'}</strong>
+                  <span>активен</span>
+                  <strong>{form.is_active ? 'да' : 'нет'}</strong>
                 </div>
                 <div className="debug-row">
-                  <span>voice strategy</span>
+                  <span>голос агента</span>
                   <strong>{form.voice_strategy}</strong>
                 </div>
                 <div className="debug-row">
-                  <span>knowledge docs</span>
+                  <span>документы знаний</span>
                   <strong>{bindings.length}</strong>
                 </div>
               </div>

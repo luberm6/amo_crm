@@ -37,7 +37,7 @@ export default function AgentsPage() {
       const response = await apiFetch<AgentListResponse>(`/v1/agents${query}`, {}, token)
       setItems(response.items)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load agents.')
+      setError(err instanceof ApiError ? err.message : 'Не удалось загрузить агентов.')
     } finally {
       setLoading(false)
     }
@@ -56,7 +56,7 @@ export default function AgentsPage() {
       await apiFetch(`/v1/agents/${agentId}`, { method: 'DELETE' }, token)
       await loadAgents()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to disable agent.')
+      setError(err instanceof ApiError ? err.message : 'Не удалось деактивировать агента.')
     }
   }
 
@@ -64,7 +64,7 @@ export default function AgentsPage() {
     <section className="stack-page">
       <article className="hero-card split-card">
         <div>
-          <p className="eyebrow">Agent Profiles</p>
+          <p className="eyebrow">Профили агентов</p>
           <h3>Управление конфигурацией общения агентов</h3>
           <p>
             Здесь живут реальные runtime-поля: system prompt, greeting, business rules, sales objectives,
@@ -78,9 +78,9 @@ export default function AgentsPage() {
               checked={showActiveOnly}
               onChange={(event) => setShowActiveOnly(event.target.checked)}
             />
-            <span>Only active</span>
+            <span>Только активные</span>
           </label>
-          <Link to="/agents/new" className="primary-link-button">Create agent</Link>
+          <Link to="/agents/new" className="primary-link-button">Создать агента</Link>
         </div>
       </article>
 
@@ -89,8 +89,8 @@ export default function AgentsPage() {
       <article className="panel-card">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">Agent list</p>
-            <h4>{loading ? 'Loading…' : `${items.length} profiles`}</h4>
+            <p className="eyebrow">Список агентов</p>
+            <h4>{loading ? 'Загрузка…' : `${items.length} профилей`}</h4>
           </div>
         </div>
 
@@ -103,11 +103,11 @@ export default function AgentsPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th>Voice strategy</th>
-                  <th>Version</th>
-                  <th>Updated</th>
+                  <th>Название</th>
+                  <th>Статус</th>
+                  <th>Голос агента</th>
+                  <th>Версия</th>
+                  <th>Обновлён</th>
                   <th />
                 </tr>
               </thead>
@@ -120,7 +120,7 @@ export default function AgentsPage() {
                     </td>
                     <td>
                       <span className={`status-pill${agent.is_active ? ' live' : ''}`}>
-                        {agent.is_active ? 'active' : 'disabled'}
+                        {agent.is_active ? 'активен' : 'отключён'}
                       </span>
                     </td>
                     <td>{agent.voice_strategy}</td>
@@ -128,14 +128,14 @@ export default function AgentsPage() {
                     <td>{new Date(agent.updated_at).toLocaleString()}</td>
                     <td>
                       <div className="button-row compact-actions">
-                        <Link to={`/agents/${agent.id}`} className="ghost-link-button">Edit</Link>
+                        <Link to={`/agents/${agent.id}`} className="ghost-link-button">Изменить</Link>
                         {agent.is_active ? (
                           <button
                             type="button"
                             className="inline-danger-button"
                             onClick={() => void handleDisable(agent.id)}
                           >
-                            Disable
+                            Деактивировать
                           </button>
                         ) : null}
                       </div>

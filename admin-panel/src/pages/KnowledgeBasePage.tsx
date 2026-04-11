@@ -64,13 +64,13 @@ type CompanyFormState = {
 }
 
 const CATEGORY_OPTIONS = [
-  { value: 'services', label: 'Services' },
-  { value: 'pricing', label: 'Pricing' },
-  { value: 'conditions', label: 'Conditions' },
+  { value: 'services', label: 'Услуги' },
+  { value: 'pricing', label: 'Цены' },
+  { value: 'conditions', label: 'Условия' },
   { value: 'faq', label: 'FAQ' },
-  { value: 'scripts', label: 'Scripts' },
-  { value: 'objections', label: 'Objections' },
-  { value: 'company_policy', label: 'Company policy' },
+  { value: 'scripts', label: 'Скрипты' },
+  { value: 'objections', label: 'Возражения' },
+  { value: 'company_policy', label: 'Политика компании' },
 ]
 
 const EMPTY_DOCUMENT_FORM: DocumentFormState = {
@@ -179,7 +179,7 @@ export default function KnowledgeBasePage() {
         setDocumentForm(EMPTY_DOCUMENT_FORM)
       }
     } catch (err) {
-      setDocumentsError(err instanceof ApiError ? err.message : 'Failed to load knowledge documents.')
+      setDocumentsError(err instanceof ApiError ? err.message : 'Не удалось загрузить документы базы знаний.')
     } finally {
       setDocumentsLoading(false)
     }
@@ -196,7 +196,7 @@ export default function KnowledgeBasePage() {
       setCompanyProfile(response)
       setCompanyForm(toCompanyFormState(response))
     } catch (err) {
-      setCompanyError(err instanceof ApiError ? err.message : 'Failed to load company profile.')
+      setCompanyError(err instanceof ApiError ? err.message : 'Не удалось загрузить профиль компании.')
     } finally {
       setCompanyLoading(false)
     }
@@ -225,7 +225,7 @@ export default function KnowledgeBasePage() {
       })
       .catch((err) => {
         if (mounted) {
-          setDocumentsError(err instanceof ApiError ? err.message : 'Failed to load document details.')
+          setDocumentsError(err instanceof ApiError ? err.message : 'Не удалось загрузить детали документа.')
         }
       })
       .finally(() => {
@@ -259,7 +259,7 @@ export default function KnowledgeBasePage() {
       metadata = JSON.parse(documentForm.metadataText || '{}') as Record<string, unknown>
     } catch {
       setDocumentSaving(false)
-      setDocumentsError('Document metadata must be valid JSON.')
+      setDocumentsError('Метаданные документа должны быть валидным JSON.')
       return
     }
 
@@ -285,7 +285,7 @@ export default function KnowledgeBasePage() {
       setDocumentForm(toDocumentFormState(response))
       await loadDocuments()
     } catch (err) {
-      setDocumentsError(err instanceof ApiError ? err.message : 'Failed to save document.')
+      setDocumentsError(err instanceof ApiError ? err.message : 'Не удалось сохранить документ.')
     } finally {
       setDocumentSaving(false)
     }
@@ -306,7 +306,7 @@ export default function KnowledgeBasePage() {
       setDocumentForm(toDocumentFormState(response))
       await loadDocuments()
     } catch (err) {
-      setDocumentsError(err instanceof ApiError ? err.message : 'Failed to disable document.')
+      setDocumentsError(err instanceof ApiError ? err.message : 'Не удалось деактивировать документ.')
     } finally {
       setDocumentSaving(false)
     }
@@ -325,7 +325,7 @@ export default function KnowledgeBasePage() {
       config = JSON.parse(companyForm.configText || '{}') as Record<string, unknown>
     } catch {
       setCompanySaving(false)
-      setCompanyError('Company config must be valid JSON.')
+      setCompanyError('Конфигурация компании должна быть валидным JSON.')
       return
     }
 
@@ -353,7 +353,7 @@ export default function KnowledgeBasePage() {
       setCompanyProfile(response)
       setCompanyForm(toCompanyFormState(response))
     } catch (err) {
-      setCompanyError(err instanceof ApiError ? err.message : 'Failed to save company profile.')
+      setCompanyError(err instanceof ApiError ? err.message : 'Не удалось сохранить профиль компании.')
     } finally {
       setCompanySaving(false)
     }
@@ -369,8 +369,8 @@ export default function KnowledgeBasePage() {
     <section className="stack-page">
       <article className="hero-card split-card">
         <div>
-          <p className="eyebrow">Knowledge Layer</p>
-          <h3>Company data and controlled knowledge documents</h3>
+          <p className="eyebrow">Слой знаний</p>
+          <h3>Данные компании и документы базы знаний</h3>
           <p>
             Здесь knowledge layer разделена на три части: company profile, knowledge documents и bindings к
             агентам. Документы управляются отдельно и потом могут перейти в более серьёзный retrieval без
@@ -379,7 +379,7 @@ export default function KnowledgeBasePage() {
         </div>
         <div className="button-row">
           <button type="button" className="primary-button" onClick={startCreateDocument}>
-            Create document
+            Создать документ
           </button>
         </div>
       </article>
@@ -392,14 +392,14 @@ export default function KnowledgeBasePage() {
           <section className="panel-card form-section">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Knowledge Documents</p>
-                <h4>{documentsLoading ? 'Loading…' : `${documents.length} documents`}</h4>
+                <p className="eyebrow">Документы базы знаний</p>
+                <h4>{documentsLoading ? 'Загрузка…' : `${documents.length} документов`}</h4>
               </div>
               <div className="button-row compact-actions">
                 <label>
-                  Category
+                  Категория
                   <select value={filterCategory} onChange={(event) => setFilterCategory(event.target.value)}>
-                    <option value="all">All categories</option>
+                    <option value="all">Все категории</option>
                     {CATEGORY_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -408,14 +408,14 @@ export default function KnowledgeBasePage() {
                   </select>
                 </label>
                 <label>
-                  Status
+                  Статус
                   <select
                     value={filterState}
                     onChange={(event) => setFilterState(event.target.value as 'all' | 'active' | 'inactive')}
                   >
-                    <option value="all">All</option>
-                    <option value="active">Only active</option>
-                    <option value="inactive">Only inactive</option>
+                    <option value="all">Все</option>
+                    <option value="active">Только активные</option>
+                    <option value="inactive">Только неактивные</option>
                   </select>
                 </label>
               </div>
@@ -432,10 +432,10 @@ export default function KnowledgeBasePage() {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Title</th>
-                      <th>Category</th>
-                      <th>Status</th>
-                      <th>Updated</th>
+                      <th>Название</th>
+                      <th>Категория</th>
+                      <th>Статус</th>
+                      <th>Обновлён</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -452,7 +452,7 @@ export default function KnowledgeBasePage() {
                         <td>{document.category}</td>
                         <td>
                           <span className={`status-pill${document.is_active ? ' live' : ''}`}>
-                            {document.is_active ? 'active' : 'disabled'}
+                            {document.is_active ? 'активен' : 'отключён'}
                           </span>
                         </td>
                         <td>{new Date(document.updated_at).toLocaleString()}</td>
@@ -467,13 +467,13 @@ export default function KnowledgeBasePage() {
           <form className="panel-card form-section" onSubmit={handleDocumentSubmit}>
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Document Editor</p>
-                <h4>{selectedDocument ? selectedDocument.title : 'Create knowledge document'}</h4>
+                <p className="eyebrow">Редактор документа</p>
+                <h4>{selectedDocument ? selectedDocument.title : 'Создать документ базы знаний'}</h4>
               </div>
               <div className="button-row compact-actions">
                 {selectedDocumentId ? (
                   <button type="button" className="ghost-button" onClick={startCreateDocument}>
-                    New
+                    Новый
                   </button>
                 ) : null}
                 {selectedDocumentId ? (
@@ -483,7 +483,7 @@ export default function KnowledgeBasePage() {
                     onClick={() => void handleDocumentDisable()}
                     disabled={documentSaving}
                   >
-                    Disable
+                    Деактивировать
                   </button>
                 ) : null}
               </div>
@@ -493,7 +493,7 @@ export default function KnowledgeBasePage() {
 
             <div className="two-column-fields">
               <label>
-                Title
+                Название
                 <input
                   value={documentForm.title}
                   onChange={(event) => updateDocumentField('title', event.target.value)}
@@ -501,7 +501,7 @@ export default function KnowledgeBasePage() {
                 />
               </label>
               <label>
-                Category
+                Категория
                 <select
                   value={documentForm.category}
                   onChange={(event) => updateDocumentField('category', event.target.value)}
@@ -521,11 +521,11 @@ export default function KnowledgeBasePage() {
                 checked={documentForm.is_active}
                 onChange={(event) => updateDocumentField('is_active', event.target.checked)}
               />
-              <span>Document is active</span>
+              <span>Документ активен</span>
             </label>
 
             <label>
-              Content
+              Содержимое
               <textarea
                 value={documentForm.content}
                 onChange={(event) => updateDocumentField('content', event.target.value)}
@@ -535,7 +535,7 @@ export default function KnowledgeBasePage() {
             </label>
 
             <label>
-              Notes
+              Примечания
               <textarea
                 value={documentForm.notes}
                 onChange={(event) => updateDocumentField('notes', event.target.value)}
@@ -544,7 +544,7 @@ export default function KnowledgeBasePage() {
             </label>
 
             <label>
-              Metadata JSON
+              Метаданные JSON
               <textarea
                 value={documentForm.metadataText}
                 onChange={(event) => updateDocumentField('metadataText', event.target.value)}
@@ -555,7 +555,7 @@ export default function KnowledgeBasePage() {
 
             <div className="button-row">
               <button type="submit" className="primary-button" disabled={documentSaving}>
-                {documentSaving ? 'Saving…' : selectedDocumentId ? 'Save document' : 'Create document'}
+                {documentSaving ? 'Сохранение…' : selectedDocumentId ? 'Сохранить документ' : 'Создать документ'}
               </button>
             </div>
           </form>
@@ -565,15 +565,15 @@ export default function KnowledgeBasePage() {
           <form className="panel-card form-section" onSubmit={handleCompanySubmit}>
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Company Profile</p>
-                <h4>{companyProfile?.name || 'Company data'}</h4>
+                <p className="eyebrow">Профиль компании</p>
+                <h4>{companyProfile?.name || 'Данные компании'}</h4>
               </div>
             </div>
 
             {companyLoading ? <div className="empty-state">Загружаем профиль компании…</div> : null}
 
             <label>
-              Company name
+              Название компании
               <input
                 value={companyForm.name}
                 onChange={(event) => updateCompanyField('name', event.target.value)}
@@ -581,14 +581,14 @@ export default function KnowledgeBasePage() {
               />
             </label>
             <label>
-              Legal name
+              Юридическое название
               <input
                 value={companyForm.legal_name}
                 onChange={(event) => updateCompanyField('legal_name', event.target.value)}
               />
             </label>
             <label>
-              Description
+              Описание
               <textarea
                 value={companyForm.description}
                 onChange={(event) => updateCompanyField('description', event.target.value)}
@@ -596,7 +596,7 @@ export default function KnowledgeBasePage() {
               />
             </label>
             <label>
-              Value proposition
+              Ценностное предложение
               <textarea
                 value={companyForm.value_proposition}
                 onChange={(event) => updateCompanyField('value_proposition', event.target.value)}
@@ -604,7 +604,7 @@ export default function KnowledgeBasePage() {
               />
             </label>
             <label>
-              Target audience
+              Целевая аудитория
               <textarea
                 value={companyForm.target_audience}
                 onChange={(event) => updateCompanyField('target_audience', event.target.value)}
@@ -612,7 +612,7 @@ export default function KnowledgeBasePage() {
               />
             </label>
             <label>
-              Contact info
+              Контактная информация
               <textarea
                 value={companyForm.contact_info}
                 onChange={(event) => updateCompanyField('contact_info', event.target.value)}
@@ -627,7 +627,7 @@ export default function KnowledgeBasePage() {
               />
             </label>
             <label>
-              Working hours
+              Часы работы
               <textarea
                 value={companyForm.working_hours}
                 onChange={(event) => updateCompanyField('working_hours', event.target.value)}
@@ -635,7 +635,7 @@ export default function KnowledgeBasePage() {
               />
             </label>
             <label>
-              Compliance notes
+              Заметки по соответствию
               <textarea
                 value={companyForm.compliance_notes}
                 onChange={(event) => updateCompanyField('compliance_notes', event.target.value)}
@@ -648,10 +648,10 @@ export default function KnowledgeBasePage() {
                 checked={companyForm.is_active}
                 onChange={(event) => updateCompanyField('is_active', event.target.checked)}
               />
-              <span>Company profile is active</span>
+              <span>Профиль компании активен</span>
             </label>
             <label>
-              Config JSON
+              Конфигурация JSON
               <textarea
                 value={companyForm.configText}
                 onChange={(event) => updateCompanyField('configText', event.target.value)}
@@ -661,7 +661,7 @@ export default function KnowledgeBasePage() {
             </label>
             <div className="button-row">
               <button type="submit" className="primary-button" disabled={companySaving}>
-                {companySaving ? 'Saving…' : 'Save company profile'}
+                {companySaving ? 'Сохранение…' : 'Сохранить профиль компании'}
               </button>
             </div>
           </form>
@@ -669,8 +669,8 @@ export default function KnowledgeBasePage() {
           <section className="panel-card form-section">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Controlled Assembly</p>
-                <h4>Runtime note</h4>
+                <p className="eyebrow">Контролируемая сборка</p>
+                <h4>Заметка о runtime</h4>
               </div>
             </div>
             <p className="sidebar-copy compact-copy">

@@ -3,12 +3,12 @@ import { useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 const titles: Record<string, string> = {
-  '/': 'Dashboard',
-  '/agents': 'Agents',
-  '/prompts': 'Prompts',
-  '/knowledge-base': 'Knowledge Base',
-  '/browser-call': 'Browser Call',
-  '/providers': 'Providers',
+  '/': 'Главная',
+  '/agents': 'Агенты',
+  '/prompts': 'Промпты',
+  '/knowledge-base': 'База знаний',
+  '/browser-call': 'Браузерный звонок',
+  '/providers': 'Провайдеры',
 }
 
 export default function TopBar() {
@@ -18,16 +18,16 @@ export default function TopBar() {
   return (
     <header className="topbar">
       <div>
-        <p className="eyebrow">Admin Panel</p>
-        <h2>{titles[location.pathname] || 'Admin'}</h2>
+        <p className="eyebrow">Панель администратора</p>
+        <h2>{titles[location.pathname] || 'Администратор'}</h2>
       </div>
       <div className="topbar-actions">
         <div className="user-badge">
           <span>{user?.email || 'admin'}</span>
-          <small>admin-only</small>
+          <small>только для администратора</small>
         </div>
         <button type="button" className="ghost-button" onClick={logout}>
-          Logout
+          Выйти
         </button>
       </div>
     </header>

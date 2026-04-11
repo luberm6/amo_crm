@@ -363,7 +363,7 @@ export default function BrowserCallPage() {
   const [testToneRunning, setTestToneRunning] = useState(false)
   const [ttsTestRunning, setTtsTestRunning] = useState(false)
   const [hardcodedPlaybackRunning, setHardcodedPlaybackRunning] = useState(false)
-  const [outputDevices, setOutputDevices] = useState<OutputDeviceOption[]>([{ deviceId: 'default', label: 'System default' }])
+  const [outputDevices, setOutputDevices] = useState<OutputDeviceOption[]>([{ deviceId: 'default', label: 'Системное устройство по умолчанию' }])
   const [selectedOutputDeviceId, setSelectedOutputDeviceId] = useState('default')
   const [lastAudioDownloadUrl, setLastAudioDownloadUrl] = useState<string | null>(null)
   const [lastAudioWavSize, setLastAudioWavSize] = useState(0)
@@ -396,7 +396,7 @@ export default function BrowserCallPage() {
   const selectedAgentName = useMemo(() => {
     const targetId = status?.agent_profile_id || session?.agent_profile_id || selectedAgentId
     if (!targetId) {
-      return 'Default settings prompt'
+      return 'Промпт по умолчанию'
     }
     const matched = agents.find((agent) => agent.id === targetId)
     return matched ? matched.name : targetId
@@ -449,11 +449,11 @@ export default function BrowserCallPage() {
 
   const refreshOutputDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) {
-      setOutputDevices([{ deviceId: 'default', label: 'System default' }])
+      setOutputDevices([{ deviceId: 'default', label: 'Системное устройство по умолчанию' }])
       updateLocalAudioDebug({
         currentOutputDeviceId: 'system-default',
         outputSelectionSupported: false,
-        outputDeviceError: 'Browser does not expose audio output enumeration.',
+        outputDeviceError: 'Браузер не поддерживает перечисление аудиовыходов.',
       })
       return
     }
@@ -465,7 +465,7 @@ export default function BrowserCallPage() {
           deviceId: device.deviceId || 'default',
           label: device.label || `Audio output ${index + 1}`,
         }))
-      const nextOutputs = outputs.length > 0 ? outputs : [{ deviceId: 'default', label: 'System default' }]
+      const nextOutputs = outputs.length > 0 ? outputs : [{ deviceId: 'default', label: 'Системное устройство по умолчанию' }]
       setOutputDevices(nextOutputs)
       setSelectedOutputDeviceId((previous) => {
         if (nextOutputs.some((device) => device.deviceId === previous)) {
@@ -482,11 +482,11 @@ export default function BrowserCallPage() {
         : {
             currentOutputDeviceId: 'system-default',
             outputSelectionSupported: false,
-            outputDeviceError: 'Direct Web Audio playback uses the browser default output device in this browser.',
+            outputDeviceError: 'Прямое воспроизведение Web Audio использует устройство вывода по умолчанию в этом браузере.',
           })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to enumerate audio output devices.'
-      setOutputDevices([{ deviceId: 'default', label: 'System default' }])
+      const message = err instanceof Error ? err.message : 'Не удалось получить список аудиовыходов.'
+      setOutputDevices([{ deviceId: 'default', label: 'Системное устройство по умолчанию' }])
       updateLocalAudioDebug({
         currentOutputDeviceId: 'system-default',
         outputSelectionSupported: false,
@@ -505,7 +505,7 @@ export default function BrowserCallPage() {
       updateLocalAudioDebug({
         currentOutputDeviceId: 'system-default',
         outputSelectionSupported: false,
-        outputDeviceError: 'Audio output selection is not supported for the current playback path.',
+        outputDeviceError: 'Выбор аудиовыхода не поддерживается для текущего пути воспроизведения.',
       })
       return
     }
@@ -520,7 +520,7 @@ export default function BrowserCallPage() {
       })
       logBrowserEvent('audio_output_device_selected', { output_device_id: targetDeviceId })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to switch audio output device.'
+      const message = err instanceof Error ? err.message : 'Не удалось переключить аудиовыход.'
       updateLocalAudioDebug({
         currentOutputDeviceId: 'system-default',
         outputSelectionSupported: true,
@@ -662,7 +662,7 @@ export default function BrowserCallPage() {
     const source = options?.source ?? 'browser_inbound'
     const runtime = audioRuntimeRef.current
     if (!runtime) {
-      updateLocalAudioDebug({ lastPlaybackError: 'Audio runtime is unavailable.' })
+      updateLocalAudioDebug({ lastPlaybackError: 'Аудио runtime недоступен.' })
       logBrowserEvent('playback_skipped_runtime_missing', {}, 'warn')
       return
     }
@@ -724,7 +724,7 @@ export default function BrowserCallPage() {
       }
       if (runtime.playbackElement) {
         await runtime.playbackElement.play().catch((err) => {
-          throw err instanceof Error ? err : new Error('Playback element failed to start.')
+          throw err instanceof Error ? err : new Error('Не удалось запустить элемент воспроизведения.')
         })
       }
       playbackCursorRef.current = Math.max(playbackCursorRef.current, runtime.context.currentTime + 0.02)
@@ -768,7 +768,7 @@ export default function BrowserCallPage() {
         }
       }, 700)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Playback failed.'
+      const message = err instanceof Error ? err.message : 'Ошибка воспроизведения.'
       updateLocalAudioDebug({ lastPlaybackError: message })
       setError((previous) => previous || message)
       logBrowserEvent('playback_error', { error: message }, 'error')
@@ -837,7 +837,7 @@ export default function BrowserCallPage() {
         const AudioContextCtor = window.AudioContext
           || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
         if (!AudioContextCtor) {
-          setError('Browser AudioContext is unavailable.')
+          setError('AudioContext браузера недоступен.')
           setHardcodedPlaybackRunning(false)
           return
         }
@@ -916,7 +916,7 @@ export default function BrowserCallPage() {
               max_amplitude: Number(peak.toFixed(4)),
             })
           } catch (err) {
-            const message = err instanceof Error ? err.message : 'Hardcoded audio playback failed.'
+            const message = err instanceof Error ? err.message : 'Ошибка локального воспроизведения.'
             setError(message)
             logBrowserEvent('hardcoded_playback_failed', { error: message }, 'error')
           } finally {
@@ -925,7 +925,7 @@ export default function BrowserCallPage() {
         })()
       }, 200)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Hardcoded audio playback failed.'
+      const message = err instanceof Error ? err.message : 'Ошибка локального воспроизведения.'
       setError(message)
       setHardcodedPlaybackRunning(false)
       logBrowserEvent('hardcoded_playback_failed', { error: message }, 'error')
@@ -1070,10 +1070,10 @@ export default function BrowserCallPage() {
     const AudioContextCtor = window.AudioContext
       || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!AudioContextCtor) {
-      throw new Error('Browser AudioContext is unavailable.')
+      throw new Error('AudioContext браузера недоступен.')
     }
     if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error('Browser microphone capture is unavailable.')
+      throw new Error('Захват микрофона в браузере недоступен.')
     }
 
     updateLocalAudioDebug({
@@ -1086,7 +1086,7 @@ export default function BrowserCallPage() {
     const track = stream.getAudioTracks()[0]
     if (!track) {
       stream.getTracks().forEach((candidate) => candidate.stop())
-      throw new Error('Browser microphone track is unavailable.')
+      throw new Error('Трек микрофона браузера недоступен.')
     }
 
     const context = new AudioContextCtor()
@@ -1136,7 +1136,7 @@ export default function BrowserCallPage() {
           )
           await playbackElement.play()
         } catch (err) {
-          const message = err instanceof Error ? err.message : 'Browser playback element failed to start.'
+          const message = err instanceof Error ? err.message : 'Не удалось запустить элемент воспроизведения браузера.'
           playbackGain.disconnect()
           playbackGain.connect(context.destination)
           playbackDestination = null
@@ -1156,7 +1156,7 @@ export default function BrowserCallPage() {
         updateLocalAudioDebug({
           currentOutputDeviceId: 'system-default',
           outputSelectionSupported: false,
-          outputDeviceError: 'MediaStreamDestination is unavailable; playback uses browser default output.',
+          outputDeviceError: 'MediaStreamDestination недоступен; воспроизведение использует устройство браузера по умолчанию.',
         })
       }
     }
@@ -1212,16 +1212,16 @@ export default function BrowserCallPage() {
       const AudioContextCtor = window.AudioContext
         || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
       if (!AudioContextCtor) {
-        throw new Error('Browser AudioContext is unavailable.')
+        throw new Error('AudioContext браузера недоступен.')
       }
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('Browser microphone capture is unavailable.')
+        throw new Error('Захват микрофона в браузере недоступен.')
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const track = stream.getAudioTracks()[0]
       if (!track) {
         stream.getTracks().forEach((candidate) => candidate.stop())
-        throw new Error('Browser microphone track is unavailable.')
+        throw new Error('Трек микрофона браузера недоступен.')
       }
 
       const context = new AudioContextCtor()
@@ -1260,7 +1260,7 @@ export default function BrowserCallPage() {
         estimated_latency_ms: estimatedLatencyMs,
       })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Loopback start failed.'
+      const message = err instanceof Error ? err.message : 'Ошибка запуска loopback.'
       updateLoopbackDebug({
         active: false,
         starting: false,
@@ -1277,7 +1277,7 @@ export default function BrowserCallPage() {
       return
     }
     const timeout = window.setTimeout(() => {
-      reject(new Error('Browser call websocket did not open in time.'))
+      reject(new Error('WebSocket браузерного звонка не открылся вовремя.'))
     }, 5000)
     const previousOpen = socket.onopen
     const previousError = socket.onerror
@@ -1289,7 +1289,7 @@ export default function BrowserCallPage() {
     socket.onerror = (event) => {
       previousError?.call(socket, event)
       window.clearTimeout(timeout)
-      reject(new Error('Browser call websocket failed to connect.'))
+      reject(new Error('WebSocket браузерного звонка не смог подключиться.'))
     }
   }), [updateLocalAudioDebug])
 
@@ -1302,7 +1302,7 @@ export default function BrowserCallPage() {
       await teardownConnection(true)
       await fetchStatus(session.status_url)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Stop failed.')
+      setError(err instanceof Error ? err.message : 'Ошибка остановки сессии.')
     } finally {
       setStopping(false)
     }
@@ -1313,7 +1313,7 @@ export default function BrowserCallPage() {
     setRunning: (value: boolean) => void,
   ) => {
     if (!token || !session) {
-      setError('Browser session is not active.')
+      setError('Браузерная сессия неактивна.')
       return
     }
     setRunning(true)
@@ -1329,7 +1329,7 @@ export default function BrowserCallPage() {
         chunks_enqueued: response.chunks_enqueued,
       })
     } catch (err) {
-      const message = err instanceof Error ? err.message : `Browser ${action} failed.`
+      const message = err instanceof Error ? err.message : `Ошибка действия ${action}.`
       setError(message)
       logBrowserEvent('backend_debug_action_failed', { action, error: message }, 'error')
     } finally {
@@ -1339,7 +1339,7 @@ export default function BrowserCallPage() {
 
   const startSession = useCallback(async () => {
     if (!token) {
-      setError('Admin auth token is missing.')
+      setError('Токен авторизации администратора отсутствует.')
       return
     }
     setStarting(true)
@@ -1389,7 +1389,7 @@ export default function BrowserCallPage() {
         enqueuePlaybackChunk(event.data)
       }
       socket.onerror = () => {
-        const message = 'Browser call websocket transport error.'
+        const message = 'Ошибка транспорта WebSocket браузерного звонка.'
         updateLocalAudioDebug({ lastTransportError: message, websocketConnected: false })
         setError((previous) => previous || message)
         logBrowserEvent('websocket_error', { error: message }, 'error')
@@ -1397,7 +1397,7 @@ export default function BrowserCallPage() {
       socket.onclose = () => {
         updateLocalAudioDebug({ websocketConnected: false })
         if (!closingRef.current) {
-          setError((previous) => previous || 'Browser call websocket disconnected.')
+          setError((previous) => previous || 'WebSocket браузерного звонка отключился.')
           logBrowserEvent('websocket_disconnected', {}, 'warn')
           void stopAudioInput()
         }
@@ -1426,13 +1426,13 @@ export default function BrowserCallPage() {
       } else if (err instanceof Error) {
         setError(err.message)
       } else {
-        setError('Browser call start failed.')
+        setError('Не удалось начать браузерный звонок.')
       }
       if (err instanceof DOMException && err.name === 'NotAllowedError') {
         updateLocalAudioDebug({ micPermission: 'denied' })
       }
       logBrowserEvent('start_failed', {
-        error: err instanceof Error ? err.message : 'Browser call start failed.',
+        error: err instanceof Error ? err.message : 'Не удалось начать браузерный звонок.',
       }, 'error')
       await teardownConnection(Boolean(nextSession))
       setSession(null)
@@ -1532,23 +1532,23 @@ export default function BrowserCallPage() {
     <section className="page-grid browser-call-page">
       <article className="hero-card browser-call-hero">
         <div>
-          <p className="eyebrow">Internal QA</p>
-          <h3>Browser Call</h3>
+          <p className="eyebrow">Внутреннее тестирование</p>
+          <h3>Браузерный звонок</h3>
           <p>Тестовая voice session идёт мимо Mango и PSTN, но использует тот же Direct session runtime, transcript и voice strategy.</p>
         </div>
         <div className="browser-call-controls">
           <label>
-            Session label
+            Метка сессии
             <input value={label} onChange={(event) => setLabel(event.target.value)} maxLength={40} />
           </label>
           <label>
-            Agent profile
+            Профиль агента
             <select
               value={selectedAgentId}
               onChange={(event) => setSelectedAgentId(event.target.value)}
               disabled={isActive}
             >
-              <option value="">Default settings prompt</option>
+              <option value="">Промпт по умолчанию</option>
               {agents.map((agent) => (
                 <option key={agent.id} value={agent.id}>
                   {agent.name}
@@ -1557,7 +1557,7 @@ export default function BrowserCallPage() {
             </select>
           </label>
           <label>
-            Output device
+            Устройство вывода
             <select
               value={selectedOutputDeviceId}
               onChange={(event) => setSelectedOutputDeviceId(event.target.value)}
@@ -1571,10 +1571,10 @@ export default function BrowserCallPage() {
           </label>
           <div className="button-row">
             <button type="button" className="primary-button" onClick={() => void startSession()} disabled={starting || isActive}>
-              {starting ? 'Starting…' : 'Start Test Call'}
+              {starting ? 'Запуск…' : 'Начать тестовый звонок'}
             </button>
             <button type="button" className="danger-button" onClick={() => void stopSession()} disabled={!isActive || stopping}>
-              {stopping ? 'Stopping…' : 'Stop Test Call'}
+              {stopping ? 'Остановка…' : 'Завершить звонок'}
             </button>
           </div>
           <div className="button-row">
@@ -1583,14 +1583,14 @@ export default function BrowserCallPage() {
               onClick={() => void startLoopback()}
               disabled={loopbackDebug.active || loopbackDebug.starting || isActive}
             >
-              {loopbackDebug.starting ? 'Starting loopback…' : 'Test Mic Loopback'}
+              {loopbackDebug.starting ? 'Запуск loopback…' : 'Тест микрофона (loopback)'}
             </button>
             <button
               type="button"
               onClick={() => void stopLoopback()}
               disabled={!loopbackDebug.active}
             >
-              Stop Loopback
+              Остановить loopback
             </button>
           </div>
           <div className="button-row">
@@ -1599,14 +1599,14 @@ export default function BrowserCallPage() {
               onClick={() => void runBackendDebugAction('test-tone', setTestToneRunning)}
               disabled={!isActive || testToneRunning}
             >
-              {testToneRunning ? 'Playing tone…' : 'Play Test Tone from Backend'}
+              {testToneRunning ? 'Воспроизведение тона…' : 'Тестовый тон с backend'}
             </button>
             <button
               type="button"
               onClick={() => void runBackendDebugAction('test-tts', setTtsTestRunning)}
               disabled={!isActive || ttsTestRunning}
             >
-              {ttsTestRunning ? 'Testing TTS…' : 'Test TTS'}
+              {ttsTestRunning ? 'Тест TTS…' : 'Тест TTS'}
             </button>
           </div>
           <div className="button-row">
@@ -1615,7 +1615,7 @@ export default function BrowserCallPage() {
               onClick={() => void playHardcodedAudio()}
               disabled={hardcodedPlaybackRunning}
             >
-              {hardcodedPlaybackRunning ? 'Playing local audio…' : 'Play Loud Test Tone'}
+              {hardcodedPlaybackRunning ? 'Воспроизведение…' : 'Громкий тестовый тон'}
             </button>
             <button
               type="button"
@@ -1626,17 +1626,17 @@ export default function BrowserCallPage() {
               }}
               disabled={!lastAudioDownloadUrl}
             >
-              Download last audio
+              Скачать последнее аудио
             </button>
           </div>
           <div className="status-strip">
-            <span className={`status-pill${micState === 'live' ? ' live' : ''}`}>Mic: {micState}</span>
-            <span className={`status-pill${status?.status === 'IN_PROGRESS' ? ' live' : ''}`}>Session: {status?.status || 'idle'}</span>
+            <span className={`status-pill${micState === 'live' ? ' live' : ''}`}>Микрофон: {micState}</span>
+            <span className={`status-pill${status?.status === 'IN_PROGRESS' ? ' live' : ''}`}>Сессия: {status?.status || 'idle'}</span>
             <span className={`status-pill${aiState === 'speaking' ? ' live' : ''}`}>AI: {aiState}</span>
-            <span className={`status-pill${error ? ' error' : ''}`}>Error: {error || 'none'}</span>
-            <span className={`status-pill${audioHealthError ? ' error' : ''}`}>Audio health: {audioHealthError || 'ok'}</span>
+            <span className={`status-pill${error ? ' error' : ''}`}>Ошибка: {error || 'нет'}</span>
+            <span className={`status-pill${audioHealthError ? ' error' : ''}`}>Аудио: {audioHealthError || 'ok'}</span>
             <span className={`status-pill${localAudioDebug.playbackDiagnostic ? ' error' : ''}`}>
-              Playback diag: {localAudioDebug.playbackDiagnostic || 'ok'}
+              Воспроизведение: {localAudioDebug.playbackDiagnostic || 'ok'}
             </span>
           </div>
         </div>
@@ -1645,8 +1645,8 @@ export default function BrowserCallPage() {
       <article className="panel-card transcript-panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">Transcript</p>
-            <h4>Live conversation</h4>
+            <p className="eyebrow">Транскрипт</p>
+            <h4>Живой разговор</h4>
           </div>
         </div>
         <div className="transcript-list">
@@ -1657,7 +1657,7 @@ export default function BrowserCallPage() {
             </article>
           )) : (
             <article className="transcript-bubble empty">
-              <div className="transcript-meta">No transcript yet</div>
+              <div className="transcript-meta">Транскрипт пока пуст</div>
               <div>Ждём greeting или ответ от агента.</div>
             </article>
           )}
@@ -1667,13 +1667,13 @@ export default function BrowserCallPage() {
       <aside className="panel-card debug-panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">Debug</p>
-            <h4>Session state</h4>
+            <p className="eyebrow">Отладка</p>
+            <h4>Состояние сессии</h4>
           </div>
         </div>
         <div className="waveform-block">
-          <p className="eyebrow">Waveform</p>
-          <canvas ref={waveformCanvasRef} width={320} height={96} aria-label="Inbound audio waveform" />
+          <p className="eyebrow">Форма волны</p>
+          <canvas ref={waveformCanvasRef} width={320} height={96} aria-label="Форма входящего аудио" />
         </div>
         <div className="debug-list">
           {debugItems.map(([labelText, value]) => (
