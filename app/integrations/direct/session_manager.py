@@ -475,6 +475,7 @@ class DirectSessionManager:
             voice_name=gemini_voice_name,
             language_code=gemini_language_code,
             model_id=None if _wants_audio_out else settings.gemini_tts_model_id,
+            api_version=None if _wants_audio_out else settings.gemini_tts_api_version,
         )
         session.gemini_client = client
 

@@ -214,6 +214,8 @@ class Settings(BaseSettings):
     gemini_tts_model_id: str = "gemini-2.0-flash-live-001"
     # API version segment for the WebSocket endpoint URL
     gemini_api_version: str = "v1beta"
+    # API version for the TTS model (gemini-2.0-flash-live-001 requires v1alpha, not v1beta)
+    gemini_tts_api_version: str = "v1alpha"
     # System prompt injected into every Direct mode session
     gemini_system_prompt: str = (
         "Ты — AI ассистент по продажам. "

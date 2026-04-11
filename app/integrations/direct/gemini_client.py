@@ -78,6 +78,7 @@ class GeminiLiveClient:
         voice_name: Optional[str] = None,
         language_code: str = "ru-RU",
         model_id: Optional[str] = None,
+        api_version: Optional[str] = None,
     ) -> None:
         self._on_text = on_text
         self._on_audio = on_audio
@@ -89,6 +90,7 @@ class GeminiLiveClient:
         self._voice_name = voice_name
         self._language_code = language_code
         self._model_id = model_id
+        self._api_version = api_version
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._recv_task: Optional[asyncio.Task] = None
         self._setup_done: asyncio.Event = asyncio.Event()
@@ -109,7 +111,7 @@ class GeminiLiveClient:
         log.info(
             "gemini_client.connecting",
             model=self._model_id or settings.gemini_model_id,
-            api_version=settings.gemini_api_version,
+            api_version=self._api_version or settings.gemini_api_version,
         )
         self._ws = await websockets.connect(
             url,
@@ -192,9 +194,10 @@ class GeminiLiveClient:
     # ── Private ───────────────────────────────────────────────────────────────
 
     def _build_url(self) -> str:
+        api_version = self._api_version or settings.gemini_api_version
         return (
             f"wss://generativelanguage.googleapis.com/ws/"
-            f"google.ai.generativelanguage.{settings.gemini_api_version}"
+            f"google.ai.generativelanguage.{api_version}"
             f".GenerativeService.BidiGenerateContent"
             f"?key={settings.gemini_api_key}"
         )
