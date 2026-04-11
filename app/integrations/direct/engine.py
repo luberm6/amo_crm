@@ -111,6 +111,7 @@ class DirectGeminiEngine(AbstractCallEngine):
             getattr(call, "agent_profile", None),
             knowledge_context=knowledge_context,
         )
+        gemini_voice_name = (runtime_agent.config or {}).get("gemini_voice_name") or None
         try:
             session_id = await self._sm.create_session(
                 call_id=call.id,
@@ -121,6 +122,7 @@ class DirectGeminiEngine(AbstractCallEngine):
                 system_prompt=runtime_agent.system_prompt or None,
                 initial_greeting_text=runtime_agent.greeting_text,
                 voice_strategy_name=runtime_agent.voice_strategy,
+                gemini_voice_name=gemini_voice_name,
             )
         except EngineError:
             raise

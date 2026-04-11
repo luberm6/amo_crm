@@ -207,6 +207,7 @@ class DirectSessionManager:
         system_prompt: Optional[str] = None,
         initial_greeting_text: Optional[str] = None,
         voice_strategy_name: Optional[str] = None,
+        gemini_voice_name: Optional[str] = None,
     ) -> str:
         """
         Create a new session: connect to Gemini, start background audio loop,
@@ -405,6 +406,7 @@ class DirectSessionManager:
                 session.voice_state is not None
                 and session.voice_state.wants_gemini_audio_output()
             ),
+            voice_name=gemini_voice_name,
         )
         session.gemini_client = client
 

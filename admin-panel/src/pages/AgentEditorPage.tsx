@@ -85,15 +85,19 @@ const EMPTY_FORM: AgentFormState = {
   greeting_text: '',
   transfer_rules: '',
   prohibited_promises: '',
-  voice_strategy: 'tts_primary',
-  configText: '{\n  "locale": "ru-RU"\n}',
+  voice_strategy: 'gemini_primary',
+  configText: '{\n  "locale": "ru-RU",\n  "gemini_voice_name": "Aoede"\n}',
 }
 
-const STRATEGY_OPTIONS = [
-  { value: 'tts_primary', label: 'tts_primary' },
-  { value: 'gemini_primary', label: 'gemini_primary' },
-  { value: 'experimental_hybrid', label: 'experimental_hybrid' },
-  { value: 'disabled', label: 'disabled' },
+const GEMINI_VOICES = [
+  { value: 'Aoede',   label: 'Aoede — женский, мягкий' },
+  { value: 'Puck',    label: 'Puck — мужской, живой' },
+  { value: 'Charon',  label: 'Charon — мужской, глубокий' },
+  { value: 'Kore',    label: 'Kore — женский, чёткий' },
+  { value: 'Fenrir',  label: 'Fenrir — мужской, уверенный' },
+  { value: 'Leda',    label: 'Leda — женский, спокойный' },
+  { value: 'Zephyr',  label: 'Zephyr — нейтральный, лёгкий' },
+  { value: 'Orus',    label: 'Orus — мужской, строгий' },
 ]
 
 function toFormState(profile: AgentProfile): AgentFormState {
@@ -200,6 +204,25 @@ export default function AgentEditorPage() {
     })
     return map
   }, [bindings])
+
+  // Read / write gemini_voice_name inside the config JSON
+  const geminiVoiceName = useMemo<string>(() => {
+    try {
+      const parsed = JSON.parse(form.configText || '{}') as Record<string, unknown>
+      return typeof parsed.gemini_voice_name === 'string' ? parsed.gemini_voice_name : 'Aoede'
+    } catch {
+      return 'Aoede'
+    }
+  }, [form.configText])
+
+  const setGeminiVoiceName = useCallback((name: string) => {
+    setForm((current) => {
+      let parsed: Record<string, unknown> = {}
+      try { parsed = JSON.parse(current.configText || '{}') as Record<string, unknown> } catch { /* ignore */ }
+      parsed.gemini_voice_name = name
+      return { ...current, configText: JSON.stringify(parsed, null, 2) }
+    })
+  }, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -332,16 +355,53 @@ export default function AgentEditorPage() {
                 />
                 <span>Agent is active</span>
               </label>
-              <label>
-                Voice strategy
-                <select value={form.voice_strategy} onChange={(event) => updateField('voice_strategy', event.target.value)}>
-                  {STRATEGY_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+
+              <div className="voice-strategy-block">
+                <p className="field-label">Голос агента</p>
+                <div className="voice-toggle-group">
+                  <button
+                    type="button"
+                    className={`voice-toggle-btn${form.voice_strategy === 'gemini_primary' ? ' active' : ''}`}
+                    onClick={() => updateField('voice_strategy', 'gemini_primary')}
+                  >
+                    <span className="voice-toggle-icon">🤖</span>
+                    <span className="voice-toggle-title">Gemini голос</span>
+                    <span className="voice-toggle-desc">Нативный голос модели, низкая задержка</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`voice-toggle-btn${form.voice_strategy === 'tts_primary' ? ' active' : ''}`}
+                    onClick={() => updateField('voice_strategy', 'tts_primary')}
+                  >
+                    <span className="voice-toggle-icon">🎙️</span>
+                    <span className="voice-toggle-title">ElevenLabs голос</span>
+                    <span className="voice-toggle-desc">Студийное качество, настраиваемый голос</span>
+                  </button>
+                </div>
+
+                {form.voice_strategy === 'gemini_primary' && (
+                  <div className="voice-sub-options">
+                    <label className="field-label" htmlFor="gemini-voice-select">
+                      Выбор голоса Gemini
+                    </label>
+                    <select
+                      id="gemini-voice-select"
+                      value={geminiVoiceName}
+                      onChange={(event) => setGeminiVoiceName(event.target.value)}
+                    >
+                      {GEMINI_VOICES.map((v) => (
+                        <option key={v.value} value={v.value}>{v.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {form.voice_strategy === 'tts_primary' && (
+                  <div className="voice-sub-options voice-sub-info">
+                    Используется глобальный ElevenLabs Voice ID из настроек провайдера (ELEVENLABS_VOICE_ID).
+                  </div>
+                )}
+              </div>
             </section>
 
             <section className="panel-card form-section">

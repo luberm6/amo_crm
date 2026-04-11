@@ -73,12 +73,14 @@ class GeminiLiveClient:
         on_close: Callable[[], None],
         audio_input: bool = False,
         audio_output: bool = False,
+        voice_name: Optional[str] = None,
     ) -> None:
         self._on_text = on_text
         self._on_audio = on_audio
         self._on_close = on_close
         self._audio_input = audio_input
         self._audio_output = audio_output
+        self._voice_name = voice_name
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._recv_task: Optional[asyncio.Task] = None
         self._setup_done: asyncio.Event = asyncio.Event()
@@ -192,7 +194,7 @@ class GeminiLiveClient:
     async def _send_setup(self, system_prompt: str) -> None:
         # Request AUDIO response modality only when audio_output=True
         gen_config = (
-            GeminiGenerationConfig.for_audio_modality()
+            GeminiGenerationConfig.for_audio_modality(voice_name=self._voice_name or "Aoede")
             if self._audio_output
             else GeminiGenerationConfig()
         )
