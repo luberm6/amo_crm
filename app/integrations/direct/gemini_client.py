@@ -72,6 +72,7 @@ class GeminiLiveClient:
         on_audio: Callable[[bytes], None],
         on_close: Callable[[], None],
         on_interrupted: Optional[Callable[[], None]] = None,
+        on_turn_complete: Optional[Callable[[], None]] = None,
         on_tool_call: Optional[Callable[[str, dict], None]] = None,
         audio_input: bool = False,
         audio_output: bool = False,
@@ -84,6 +85,7 @@ class GeminiLiveClient:
         self._on_audio = on_audio
         self._on_close = on_close
         self._on_interrupted = on_interrupted
+        self._on_turn_complete = on_turn_complete
         self._on_tool_call = on_tool_call
         self._audio_input = audio_input
         self._audio_output = audio_output
@@ -325,6 +327,8 @@ class GeminiLiveClient:
                         # Phase 2: аудио от Gemini
                         pcm = base64.b64decode(part.inline_data.data_b64)
                         self._on_audio(pcm)
+            if sc.turn_complete and self._on_turn_complete:
+                self._on_turn_complete()
             return
 
         if "toolCall" in msg:

@@ -210,12 +210,12 @@ class Settings(BaseSettings):
     # Phase 2: "gemini-2.5-flash-preview-native-audio-dialog"
     gemini_model_id: str = "gemini-2.0-flash-live-001"
     # Model used for tts_primary strategy (audio-in → TEXT-out → ElevenLabs TTS).
-    # gemini-3.1-flash-live-preview is audio-to-audio ONLY and rejects TEXT modality.
-    gemini_tts_model_id: str = "gemini-2.0-flash-live-001"
+    # Empty string = use the same model as gemini_model_id (primary model).
+    gemini_tts_model_id: str = ""
     # API version segment for the WebSocket endpoint URL
     gemini_api_version: str = "v1beta"
-    # API version for the TTS model (gemini-2.0-flash-live-001 requires v1alpha, not v1beta)
-    gemini_tts_api_version: str = "v1alpha"
+    # API version for the TTS model. Empty string = use same as gemini_api_version.
+    gemini_tts_api_version: str = ""
     # System prompt injected into every Direct mode session
     gemini_system_prompt: str = (
         "Ты — AI ассистент по продажам. "

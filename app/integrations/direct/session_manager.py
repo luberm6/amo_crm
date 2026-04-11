@@ -161,6 +161,7 @@ class DirectSessionMetrics:
     last_inbound_sent_at: Optional[float] = None
     last_model_request_at: Optional[float] = None
     awaiting_model_response: bool = False
+    model_turn_active: bool = False  # True while Gemini is mid-turn (first audio → turn_complete/interrupted)
     last_tts_started_at: Optional[float] = None
 
 
@@ -385,6 +386,7 @@ class DirectSessionManager:
                     session.metrics.model_response_latency_ms_last
                 )
                 session.metrics.awaiting_model_response = False
+                session.metrics.model_turn_active = True
                 log.info(
                     "session_manager.assistant_reply_started",
                     session_id=session.session_id,
@@ -421,6 +423,7 @@ class DirectSessionManager:
                     session.metrics.model_response_latency_ms_last
                 )
                 session.metrics.awaiting_model_response = False
+                session.metrics.model_turn_active = True
                 log.info(
                     "session_manager.assistant_reply_started",
                     session_id=session.session_id,
@@ -435,6 +438,7 @@ class DirectSessionManager:
 
         def on_interrupted() -> None:
             # Clear buffered outbound audio so the browser stops playing stale speech.
+            session.metrics.model_turn_active = False
             cleared = 0
             while not session.audio_out_queue.empty():
                 try:
@@ -451,6 +455,9 @@ class DirectSessionManager:
                 session_id=session.session_id,
                 cleared_chunks=cleared,
             )
+
+        def on_turn_complete() -> None:
+            session.metrics.model_turn_active = False
 
         def on_tool_call(name: str, args: dict) -> None:
             if name == "end_call":
@@ -473,6 +480,7 @@ class DirectSessionManager:
                 self._on_gemini_close(session_id)
             ),
             on_interrupted=on_interrupted,
+            on_turn_complete=on_turn_complete,
             on_tool_call=on_tool_call,
             audio_input=bool(session.capabilities.audio_in),
             audio_output=_wants_audio_out,
@@ -917,7 +925,7 @@ class DirectSessionManager:
             observe_direct_inbound_audio_latency(session.metrics.inbound_audio_latency_ms_last)
             session.metrics.last_inbound_sent_at = time.perf_counter()
             session.metrics.last_model_request_at = session.metrics.last_inbound_sent_at
-            if not session.metrics.awaiting_model_response:
+            if not session.metrics.awaiting_model_response and not session.metrics.model_turn_active:
                 session.metrics.awaiting_model_response = True
 
     async def _drain_audio_out_queue(self, session: DirectSession) -> None:
