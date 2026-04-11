@@ -395,9 +395,13 @@ async def browser_call_ws(
         async for chunk in bridge.outbound_audio():
             await websocket.send_bytes(chunk)
 
+    async def _control_sender() -> None:
+        async for message in bridge.control_messages():
+            await websocket.send_json(message)
+
     try:
         await websocket.send_json({"type": "ready", "call_id": str(call_id)})
-        await asyncio.gather(_receiver(), _sender())
+        await asyncio.gather(_receiver(), _sender(), _control_sender())
     except WebSocketDisconnect:
         pass
     finally:

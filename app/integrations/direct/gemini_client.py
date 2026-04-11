@@ -71,6 +71,7 @@ class GeminiLiveClient:
         on_text: Callable[[str, str], None],
         on_audio: Callable[[bytes], None],
         on_close: Callable[[], None],
+        on_interrupted: Optional[Callable[[], None]] = None,
         audio_input: bool = False,
         audio_output: bool = False,
         voice_name: Optional[str] = None,
@@ -79,6 +80,7 @@ class GeminiLiveClient:
         self._on_text = on_text
         self._on_audio = on_audio
         self._on_close = on_close
+        self._on_interrupted = on_interrupted
         self._audio_input = audio_input
         self._audio_output = audio_output
         self._voice_name = voice_name
@@ -275,6 +277,8 @@ class GeminiLiveClient:
             sc = GeminiServerContent.from_dict(msg["serverContent"])
             if sc.interrupted:
                 log.debug("gemini_client.interrupted")
+                if self._on_interrupted:
+                    self._on_interrupted()
                 return
             if sc.model_turn:
                 for part in sc.model_turn.parts:

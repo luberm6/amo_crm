@@ -55,6 +55,7 @@ class BrowserAudioBridge(AbstractAudioBridge):
         self._close_event = asyncio.Event()
         self._inbound_chunks = 0
         self._outbound_chunks = 0
+        self._control_queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=16)
         self.hangup_reason: Optional[str] = None
         self.last_disconnect_reason: Optional[str] = None
 
@@ -179,6 +180,21 @@ class BrowserAudioBridge(AbstractAudioBridge):
         self.agent_id = agent_id
         self.voice_strategy = voice_strategy
         self.active_voice_path = active_voice_path
+
+    def send_control(self, message: dict) -> None:
+        """Enqueue a control message to be sent to the browser as JSON."""
+        try:
+            self._control_queue.put_nowait(message)
+        except asyncio.QueueFull:
+            pass
+
+    async def control_messages(self) -> AsyncIterator[dict]:
+        while self._is_open:
+            try:
+                msg = await asyncio.wait_for(self._control_queue.get(), timeout=0.1)
+                yield msg
+            except asyncio.TimeoutError:
+                continue
 
     def push_audio(self, pcm: bytes) -> None:
         if not self._is_open or not self._client_connected or not pcm:

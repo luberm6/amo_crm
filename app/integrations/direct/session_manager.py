@@ -396,12 +396,32 @@ class DirectSessionManager:
             resampled = _resample_pcm16(pcm, _GEMINI_AUDIO_OUTPUT_RATE, _BROWSER_AUDIO_RATE)
             self._enqueue_audio_out(session, resampled, source="gemini_native")
 
+        def on_interrupted() -> None:
+            # Clear buffered outbound audio so the browser stops playing stale speech.
+            cleared = 0
+            while not session.audio_out_queue.empty():
+                try:
+                    session.audio_out_queue.get_nowait()
+                    cleared += 1
+                except asyncio.QueueEmpty:
+                    break
+            # Signal the browser to cancel already-scheduled playback.
+            bridge = session.audio_bridge
+            if bridge is not None and hasattr(bridge, "send_control"):
+                bridge.send_control({"type": "interrupted"})
+            log.debug(
+                "session_manager.interrupted",
+                session_id=session.session_id,
+                cleared_chunks=cleared,
+            )
+
         client = GeminiLiveClient(
             on_text=on_text,
             on_audio=on_audio,
             on_close=lambda: asyncio.get_event_loop().create_task(
                 self._on_gemini_close(session_id)
             ),
+            on_interrupted=on_interrupted,
             audio_input=bool(session.capabilities.audio_in),
             audio_output=bool(
                 session.voice_state is not None

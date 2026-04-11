@@ -391,6 +391,7 @@ export default function BrowserCallPage() {
   const pendingPlaybackBytesRef = useRef(0)
   const playbackFlushTimerRef = useRef<number | null>(null)
   const playbackSilenceTimerRef = useRef<number | null>(null)
+  const activeSourcesRef = useRef<AudioBufferSourceNode[]>([])
 
   const isActive = Boolean(session)
   const selectedAgentName = useMemo(() => {
@@ -728,11 +729,13 @@ export default function BrowserCallPage() {
         })
       }
       playbackCursorRef.current = Math.max(playbackCursorRef.current, runtime.context.currentTime + 0.02)
+      activeSourcesRef.current.push(bufferSource)
       bufferSource.start(playbackCursorRef.current)
       playbackCursorRef.current += buffer.duration
       lastAssistantAudioAtRef.current = Date.now()
       bumpLocalAudioCounter('playbackStarts')
       bufferSource.onended = () => {
+        activeSourcesRef.current = activeSourcesRef.current.filter((s) => s !== bufferSource)
         setLocalAudioDebug((previous) => ({
           ...previous,
           playbackEndedCount: previous.playbackEndedCount + 1,
@@ -1377,6 +1380,29 @@ export default function BrowserCallPage() {
       }
       socket.onmessage = (event) => {
         if (typeof event.data === 'string') {
+          try {
+            const msg = JSON.parse(event.data) as { type?: string }
+            if (msg.type === 'interrupted') {
+              // Gemini interrupted — cancel all scheduled audio immediately
+              const runtime = audioRuntimeRef.current
+              for (const src of activeSourcesRef.current) {
+                try { src.stop() } catch { /* already ended */ }
+              }
+              activeSourcesRef.current = []
+              pendingPlaybackChunksRef.current = []
+              pendingPlaybackBytesRef.current = 0
+              if (playbackFlushTimerRef.current) {
+                window.clearTimeout(playbackFlushTimerRef.current)
+                playbackFlushTimerRef.current = null
+              }
+              if (runtime) {
+                playbackCursorRef.current = runtime.context.currentTime
+              }
+              setAiState('silent')
+              logBrowserEvent('barge_in_interrupted', {})
+              return
+            }
+          } catch { /* not JSON, fall through */ }
           logBrowserEvent('websocket_message', { payload: event.data })
           return
         }
