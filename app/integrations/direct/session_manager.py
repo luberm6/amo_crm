@@ -637,6 +637,13 @@ class DirectSessionManager:
         if session.event_handler:
             await session.event_handler.flush(timeout=3.0)
 
+        # Signal the browser that the call ended normally before closing.
+        if session.audio_bridge and hasattr(session.audio_bridge, "send_control"):
+            session.audio_bridge.send_control({
+                "type": "call_ended",
+                "reason": reason or "terminated",
+            })
+
         if session.gemini_client:
             await session.gemini_client.close()
 
@@ -910,7 +917,8 @@ class DirectSessionManager:
             observe_direct_inbound_audio_latency(session.metrics.inbound_audio_latency_ms_last)
             session.metrics.last_inbound_sent_at = time.perf_counter()
             session.metrics.last_model_request_at = session.metrics.last_inbound_sent_at
-            session.metrics.awaiting_model_response = True
+            if not session.metrics.awaiting_model_response:
+                session.metrics.awaiting_model_response = True
 
     async def _drain_audio_out_queue(self, session: DirectSession) -> None:
         if not session.capabilities.audio_out:

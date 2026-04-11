@@ -1407,6 +1407,11 @@ export default function BrowserCallPage() {
               logBrowserEvent('barge_in_interrupted', {})
               return
             }
+            if (msg.type === 'call_ended') {
+              // Agent-initiated hangup or normal backend termination — not an error.
+              closingRef.current = true
+              return
+            }
             if (msg.type === 'transcript') {
               const { role, text } = msg as { role: string; text: string }
               setStatus(prev => {
