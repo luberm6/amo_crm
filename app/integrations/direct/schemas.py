@@ -63,7 +63,6 @@ class GeminiGenerationConfig:
                     }
                 },
             },
-            output_audio_transcription=True,
         )
 
     @classmethod
