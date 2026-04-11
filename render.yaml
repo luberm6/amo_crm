@@ -59,13 +59,13 @@ services:
       - key: GEMINI_SETUP_TIMEOUT
         value: "15.0"
       - key: DIRECT_VOICE_STRATEGY
-        value: tts_primary
+        value: gemini_primary
       - key: DIRECT_VOICE_ALLOW_TTS_FALLBACK
-        value: "true"
+        value: "false"
       - key: GEMINI_AUDIO_INPUT_ENABLED
         value: "true"
       - key: GEMINI_AUDIO_OUTPUT_ENABLED
-        value: "false"
+        value: "true"
       - key: DIRECT_INITIAL_GREETING_ENABLED
         value: "true"
       - key: DIRECT_MODEL_RESPONSE_TIMEOUT_SECONDS
