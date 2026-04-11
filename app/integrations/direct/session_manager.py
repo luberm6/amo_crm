@@ -80,17 +80,28 @@ _DAY_NAMES_RU = {
 }
 
 
-def _datetime_context_line() -> str:
-    """Return a Russian datetime string for injecting into the system prompt."""
+def _session_context_block() -> str:
+    """Runtime context injected at the end of every system prompt.
+
+    Provides:
+      - Current date/time in the configured timezone (so the model can answer
+        questions like "что сейчас?" without guessing).
+      - Hangup instruction so the model knows when to call end_call().
+    """
     tz = zoneinfo.ZoneInfo(settings.calling_timezone)
     now = datetime.now(tz)
     weekday = _DAY_NAMES_RU[now.weekday()]
     offset = now.strftime("%z")           # "+0300"
     offset_fmt = f"UTC{offset[:3]}:{offset[3:]}"   # "UTC+03:00"
-    return (
+    datetime_line = (
         f"Текущая дата и время: {weekday}, {now.strftime('%d.%m.%Y %H:%M')} "
         f"({settings.calling_timezone}, {offset_fmt})."
     )
+    hangup_line = (
+        "Когда разговор естественно завершился (клиент попрощался, все вопросы решены "
+        "или клиент явно хочет закончить звонок) — вызови функцию end_call."
+    )
+    return f"{datetime_line}\n{hangup_line}"
 
 
 _AUDIO_IN_QUEUE_MAX = 200
@@ -247,7 +258,7 @@ class DirectSessionManager:
             )
 
         session_id = f"{call_id}-direct"
-        effective_prompt = (system_prompt or settings.gemini_system_prompt) + "\n\n" + _datetime_context_line()
+        effective_prompt = (system_prompt or settings.gemini_system_prompt) + "\n\n" + _session_context_block()
         strategy_override = voice_strategy_name or None
         voice_definition = ensure_voice_strategy_valid(strategy_override=strategy_override)
         if voice_definition.primary_path == "disabled":
@@ -437,6 +448,16 @@ class DirectSessionManager:
                 cleared_chunks=cleared,
             )
 
+        def on_tool_call(name: str, args: dict) -> None:
+            if name == "end_call":
+                log.info(
+                    "session_manager.agent_initiated_hangup",
+                    session_id=session_id,
+                )
+                asyncio.get_event_loop().create_task(
+                    self.terminate_session(session_id, reason="agent_hangup")
+                )
+
         _wants_audio_out = bool(
             session.voice_state is not None
             and session.voice_state.wants_gemini_audio_output()
@@ -448,6 +469,7 @@ class DirectSessionManager:
                 self._on_gemini_close(session_id)
             ),
             on_interrupted=on_interrupted,
+            on_tool_call=on_tool_call,
             audio_input=bool(session.capabilities.audio_in),
             audio_output=_wants_audio_out,
             voice_name=gemini_voice_name,

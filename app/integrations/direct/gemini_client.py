@@ -72,6 +72,7 @@ class GeminiLiveClient:
         on_audio: Callable[[bytes], None],
         on_close: Callable[[], None],
         on_interrupted: Optional[Callable[[], None]] = None,
+        on_tool_call: Optional[Callable[[str, dict], None]] = None,
         audio_input: bool = False,
         audio_output: bool = False,
         voice_name: Optional[str] = None,
@@ -82,6 +83,7 @@ class GeminiLiveClient:
         self._on_audio = on_audio
         self._on_close = on_close
         self._on_interrupted = on_interrupted
+        self._on_tool_call = on_tool_call
         self._audio_input = audio_input
         self._audio_output = audio_output
         self._voice_name = voice_name
@@ -213,7 +215,26 @@ class GeminiLiveClient:
                 model=f"models/{effective_model}",
                 generation_config=gen_config,
                 system_instruction=GeminiSystemInstruction.from_text(system_prompt),
-                tools=[{"googleSearch": {}}],
+                tools=[
+                    {"googleSearch": {}},
+                    {
+                        "functionDeclarations": [
+                            {
+                                "name": "end_call",
+                                "description": (
+                                    "Завершить телефонный разговор. "
+                                    "Вызывай когда разговор естественно завершился: "
+                                    "клиент попрощался, все вопросы решены, "
+                                    "или клиент явно хочет закончить звонок."
+                                ),
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {},
+                                },
+                            }
+                        ]
+                    },
+                ],
             )
         )
         await self._ws.send(json.dumps(msg.to_dict()))
@@ -291,6 +312,26 @@ class GeminiLiveClient:
                         # Phase 2: аудио от Gemini
                         pcm = base64.b64decode(part.inline_data.data_b64)
                         self._on_audio(pcm)
+            return
+
+        if "toolCall" in msg:
+            for fc in msg["toolCall"].get("functionCalls", []):
+                name = fc.get("name", "")
+                args = fc.get("args") or {}
+                call_id = fc.get("id", "")
+                log.info("gemini_client.tool_call", name=name, call_id=call_id)
+                if self._on_tool_call:
+                    self._on_tool_call(name, args)
+                # Acknowledge the tool call so Gemini doesn't wait for a response.
+                if self._ws and not self._closed:
+                    ack = {
+                        "toolResponse": {
+                            "functionResponses": [
+                                {"id": call_id, "name": name, "response": {"result": "ok"}}
+                            ]
+                        }
+                    }
+                    await self._ws.send(json.dumps(ack))
             return
 
         # Неизвестное поле — логируем ключи для диагностики
