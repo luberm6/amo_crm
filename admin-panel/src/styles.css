@@ -232,6 +232,19 @@ textarea {
   grid-template-columns: minmax(0, 1.5fr) minmax(18rem, 0.9fr);
 }
 
+a.info-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+a.info-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+  border-color: var(--accent, #6c63ff);
+}
+
 .hero-card,
 .info-card,
 .panel-card {

@@ -1,8 +1,10 @@
+import { Link } from 'react-router-dom'
+
 const cards = [
-  ['Агенты', 'Следующий этап: карточки агентов и конфигурация маршрутов.'],
-  ['Промпты', 'Место для prompt profiles и prompt revision history.'],
-  ['База знаний', 'Подготовлено пространство под QA базы знаний и indexing status.'],
-  ['Браузерный звонок', 'Уже подключён как реальный QA-контур поверх Direct session runtime.'],
+  { to: '/agents',         title: 'Агенты',           body: 'Следующий этап: карточки агентов и конфигурация маршрутов.' },
+  { to: '/prompts',        title: 'Промпты',           body: 'Место для prompt profiles и prompt revision history.' },
+  { to: '/knowledge-base', title: 'База знаний',       body: 'Подготовлено пространство под QA базы знаний и indexing status.' },
+  { to: '/browser-call',   title: 'Браузерный звонок', body: 'Уже подключён как реальный QA-контур поверх Direct session runtime.' },
 ]
 
 export default function DashboardPage() {
@@ -17,11 +19,11 @@ export default function DashboardPage() {
         </p>
       </article>
       <div className="dashboard-cards">
-        {cards.map(([title, body]) => (
-          <article key={title} className="info-card">
-            <h4>{title}</h4>
-            <p>{body}</p>
-          </article>
+        {cards.map((card) => (
+          <Link key={card.to} to={card.to} className="info-card">
+            <h4>{card.title}</h4>
+            <p>{card.body}</p>
+          </Link>
         ))}
       </div>
     </section>
