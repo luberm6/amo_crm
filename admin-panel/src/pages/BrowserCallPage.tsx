@@ -1515,63 +1515,92 @@ export default function BrowserCallPage() {
     }
   }, [])
 
-  const debugItems = useMemo(() => {
+  const debugGroups = useMemo(() => {
     const debug = status?.debug
     return [
-      ['session id', debug?.session_id || session?.session_id || '—'],
-      ['selected agent', selectedAgentName],
-      ['agent profile id', status?.agent_profile_id || session?.agent_profile_id || selectedAgentId || '—'],
-      ['voice strategy', debug?.voice_strategy || session?.voice_strategy || '—'],
-      ['active voice path', debug?.active_voice_path || session?.active_voice_path || '—'],
-      ['primary voice path', debug?.primary_voice_path || '—'],
-      ['fallback voice path', debug?.fallback_voice_path || session?.fallback_voice_path || '—'],
-      ['fallback used', debug?.fallback_used ? 'yes' : 'no'],
-      ['session status', status?.status || session?.status || 'idle'],
-      ['browser websocket', localAudioDebug.websocketConnected ? 'connected' : 'disconnected'],
-      ['browser mic permission', localAudioDebug.micPermission],
-      ['audio context', localAudioDebug.audioContextState],
-      ['input sample rate', localAudioDebug.inputSampleRate ? `${localAudioDebug.inputSampleRate} Hz` : '—'],
-      ['target sample rate', `${localAudioDebug.targetSampleRate} Hz`],
-      ['channel mode', localAudioDebug.inputChannelMode],
-      ['estimated output latency', localAudioDebug.estimatedOutputLatencyMs != null ? `${localAudioDebug.estimatedOutputLatencyMs} ms` : '—'],
-      ['browser outbound chunks', String(localAudioDebug.outboundChunkCount)],
-      ['browser inbound audio chunks', String(localAudioDebug.inboundAudioChunkCount)],
-      ['browser playback starts', String(localAudioDebug.playbackStarts)],
-      ['playback nodes created', String(localAudioDebug.playbackNodesCreated)],
-      ['playback ended', String(localAudioDebug.playbackEndedCount)],
-      ['playback gain', String(localAudioDebug.playbackGainValue)],
-      ['playback sample rate', localAudioDebug.playbackSampleRate ? `${localAudioDebug.playbackSampleRate} Hz` : '—'],
-      ['playback channels', String(localAudioDebug.playbackChannels)],
-      ['playback bit depth', `${localAudioDebug.playbackBitDepth}-bit`],
-      ['playback buffer length', String(localAudioDebug.playbackBufferLength)],
-      ['playback mismatch', localAudioDebug.playbackFormatMismatch ? 'yes' : 'no'],
-      ['playback diagnostic', localAudioDebug.playbackDiagnostic || 'none'],
-      ['last RMS', localAudioDebug.lastRms != null ? localAudioDebug.lastRms.toFixed(4) : '—'],
-      ['last peak amplitude', localAudioDebug.lastPeak != null ? localAudioDebug.lastPeak.toFixed(4) : '—'],
-      ['audio too quiet', localAudioDebug.audioTooQuiet ? 'yes' : 'no'],
-      ['output device', localAudioDebug.currentOutputDeviceId || 'system-default'],
-      ['output selection', localAudioDebug.outputSelectionSupported ? 'supported' : 'browser default only'],
-      ['output device error', localAudioDebug.outputDeviceError || 'none'],
-      ['audio health', audioHealthError || 'ok'],
-      ['last audio wav size', lastAudioWavSize ? `${lastAudioWavSize} bytes` : '0 bytes'],
-      ['last audio valid', lastAudioValid ? 'yes' : 'no'],
-      ['waveform visible', waveformVisible ? 'yes' : 'no'],
-      ['loopback active', loopbackDebug.active ? 'yes' : 'no'],
-      ['loopback mic chunks', String(loopbackDebug.micChunks)],
-      ['loopback playback chunks', String(loopbackDebug.playbackChunks)],
-      ['loopback latency', loopbackDebug.estimatedLatencyMs != null ? `${loopbackDebug.estimatedLatencyMs} ms` : '—'],
-      ['loopback error', loopbackDebug.lastError || 'none'],
-      ['model latency', formatMetric(debug?.model_response_latency_ms_last)],
-      ['tts latency', formatMetric(debug?.tts_latency_ms_last)],
-      ['playback latency', formatMetric(debug?.outbound_playback_latency_ms_last)],
-      ['inbound chunks', String(debug?.inbound_chunks_received ?? 0)],
-      ['outbound chunks', String(debug?.outbound_chunks_played ?? 0)],
-      ['browser playback error', localAudioDebug.lastPlaybackError || 'none'],
-      ['browser transport error', localAudioDebug.lastTransportError || 'none'],
-      ['last error', debug?.last_error || error || 'none'],
-      ['last failure stage', debug?.last_failure_stage || '—'],
+      {
+        title: 'Сессия',
+        items: [
+          ['id', (debug?.session_id || session?.session_id || '—').slice(-12)],
+          ['агент', selectedAgentName],
+          ['стратегия', debug?.voice_strategy || session?.voice_strategy || '—'],
+          ['путь голоса', debug?.active_voice_path || session?.active_voice_path || '—'],
+          ['fallback', debug?.fallback_used ? (debug?.fallback_voice_path || 'yes') : 'нет'],
+          ['статус', status?.status || session?.status || 'idle'],
+        ],
+      },
+      {
+        title: 'Браузер',
+        items: [
+          ['websocket', localAudioDebug.websocketConnected ? 'connected' : 'disconnected'],
+          ['микрофон', localAudioDebug.micPermission],
+          ['audio ctx', localAudioDebug.audioContextState],
+          ['вход SR', localAudioDebug.inputSampleRate ? `${localAudioDebug.inputSampleRate} Hz` : '—'],
+          ['выход SR', `${localAudioDebug.targetSampleRate} Hz`],
+          ['канал', localAudioDebug.inputChannelMode],
+          ['задержка', localAudioDebug.estimatedOutputLatencyMs != null ? `${localAudioDebug.estimatedOutputLatencyMs} ms` : '—'],
+        ],
+      },
+      {
+        title: 'Чанки',
+        items: [
+          ['исходящих', String(localAudioDebug.outboundChunkCount)],
+          ['входящих', String(localAudioDebug.inboundAudioChunkCount)],
+          ['playback starts', String(localAudioDebug.playbackStarts)],
+          ['nodes created', String(localAudioDebug.playbackNodesCreated)],
+          ['playback ended', String(localAudioDebug.playbackEndedCount)],
+          ['srv inbound', String(debug?.inbound_chunks_received ?? 0)],
+          ['srv outbound', String(debug?.outbound_chunks_played ?? 0)],
+        ],
+      },
+      {
+        title: 'Воспроизведение',
+        items: [
+          ['gain', String(localAudioDebug.playbackGainValue)],
+          ['SR', localAudioDebug.playbackSampleRate ? `${localAudioDebug.playbackSampleRate} Hz` : '—'],
+          ['каналы', String(localAudioDebug.playbackChannels)],
+          ['бит', `${localAudioDebug.playbackBitDepth}-bit`],
+          ['буфер', String(localAudioDebug.playbackBufferLength)],
+          ['mismatch', localAudioDebug.playbackFormatMismatch ? 'yes' : 'no'],
+          ['диагностика', localAudioDebug.playbackDiagnostic || 'none'],
+          ['RMS', localAudioDebug.lastRms != null ? localAudioDebug.lastRms.toFixed(4) : '—'],
+          ['peak', localAudioDebug.lastPeak != null ? localAudioDebug.lastPeak.toFixed(4) : '—'],
+          ['тихо', localAudioDebug.audioTooQuiet ? 'yes' : 'no'],
+          ['устройство', localAudioDebug.currentOutputDeviceId || 'default'],
+          ['здоровье', audioHealthError || 'ok'],
+          ['wav size', lastAudioWavSize ? `${lastAudioWavSize}b` : '0'],
+          ['wav valid', lastAudioValid ? 'yes' : 'no'],
+        ],
+      },
+      {
+        title: 'Loopback',
+        items: [
+          ['активен', loopbackDebug.active ? 'yes' : 'no'],
+          ['mic chunks', String(loopbackDebug.micChunks)],
+          ['play chunks', String(loopbackDebug.playbackChunks)],
+          ['задержка', loopbackDebug.estimatedLatencyMs != null ? `${loopbackDebug.estimatedLatencyMs} ms` : '—'],
+          ['ошибка', loopbackDebug.lastError || 'none'],
+        ],
+      },
+      {
+        title: 'Метрики',
+        items: [
+          ['модель', formatMetric(debug?.model_response_latency_ms_last)],
+          ['tts', formatMetric(debug?.tts_latency_ms_last)],
+          ['playback', formatMetric(debug?.outbound_playback_latency_ms_last)],
+        ],
+      },
+      {
+        title: 'Ошибки',
+        items: [
+          ['playback', localAudioDebug.lastPlaybackError || 'none'],
+          ['transport', localAudioDebug.lastTransportError || 'none'],
+          ['last error', debug?.last_error || error || 'none'],
+          ['stage', debug?.last_failure_stage || '—'],
+        ],
+      },
     ]
-  }, [audioHealthError, error, lastAudioValid, lastAudioWavSize, localAudioDebug, loopbackDebug, selectedAgentId, session, status, waveformVisible])
+  }, [audioHealthError, error, lastAudioValid, lastAudioWavSize, localAudioDebug, loopbackDebug, selectedAgentName, session, status])
 
   return (
     <section className="page-grid browser-call-page">
@@ -1720,11 +1749,16 @@ export default function BrowserCallPage() {
           <p className="eyebrow">Форма волны</p>
           <canvas ref={waveformCanvasRef} width={320} height={96} aria-label="Форма входящего аудио" />
         </div>
-        <div className="debug-list">
-          {debugItems.map(([labelText, value]) => (
-            <div className="debug-row" key={labelText}>
-              <span>{labelText}</span>
-              <strong>{value}</strong>
+        <div className="debug-groups">
+          {debugGroups.map((group) => (
+            <div key={group.title} className="debug-group">
+              <p className="debug-group-title">{group.title}</p>
+              {group.items.map(([labelText, value]) => (
+                <div className="debug-row" key={labelText}>
+                  <span>{labelText}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
             </div>
           ))}
         </div>
