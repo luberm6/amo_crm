@@ -19,7 +19,6 @@ export default function App() {
         <Route element={<AdminLayout />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/agents" element={<AgentsPage />} />
-          <Route path="/agents/new" element={<AgentEditorPage />} />
           <Route path="/agents/:agentId" element={<AgentEditorPage />} />
           <Route path="/prompts" element={<PromptsPage />} />
           <Route path="/knowledge-base" element={<KnowledgeBasePage />} />

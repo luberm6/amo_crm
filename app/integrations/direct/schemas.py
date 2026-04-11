@@ -148,9 +148,7 @@ class GeminiRealtimeInput:
     def to_dict(self) -> dict:
         return {
             "realtimeInput": {
-                "mediaChunks": [
-                    {"mimeType": self.mime_type, "data": self.data_b64}
-                ]
+                "audio": {"data": self.data_b64, "mimeType": self.mime_type}
             }
         }
 

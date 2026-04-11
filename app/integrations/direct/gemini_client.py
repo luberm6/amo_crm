@@ -223,10 +223,6 @@ class GeminiLiveClient:
         try:
             assert self._ws is not None
             async for raw_message in self._ws:
-                log.info(
-                    "gemini_client.raw_message",
-                    preview=str(raw_message)[:500],
-                )
                 try:
                     await self._dispatch(json.loads(raw_message))
                 except Exception as exc:

@@ -74,6 +74,32 @@ _AUDIO_CHUNK_BYTES = 640
 _AUDIO_IN_QUEUE_MAX = 200
 _AUDIO_OUT_QUEUE_MAX = 200
 
+# Gemini Live outputs PCM at 24000 Hz; the browser pipeline expects 16000 Hz.
+_GEMINI_AUDIO_OUTPUT_RATE = 24000
+_BROWSER_AUDIO_RATE = 16000
+
+
+def _resample_pcm16(data: bytes, from_rate: int, to_rate: int) -> bytes:
+    """
+    Linear resampling of 16-bit little-endian mono PCM.
+    Pure-Python; suitable for small chunks (≤ 4 KB).
+    """
+    if from_rate == to_rate or not data:
+        return data
+    import array as _array
+    samples = _array.array("h")
+    samples.frombytes(data)
+    n_in = len(samples)
+    n_out = max(1, round(n_in * to_rate / from_rate))
+    out = _array.array("h", [0] * n_out)
+    for i in range(n_out):
+        pos = i * from_rate / to_rate
+        lo = int(pos)
+        hi = min(lo + 1, n_in - 1)
+        frac = pos - lo
+        out[i] = round(samples[lo] * (1.0 - frac) + samples[hi] * frac)
+    return out.tobytes()
+
 
 @dataclass
 class DirectSessionCapabilities:
@@ -364,7 +390,9 @@ class DirectSessionManager:
                     voice_path=session.voice_state.active_path if session.voice_state else "unknown",
                     source="gemini_native",
                 )
-            self._enqueue_audio_out(session, pcm, source="gemini_native")
+            # Resample Gemini's 24 kHz output to the 16 kHz the browser expects.
+            resampled = _resample_pcm16(pcm, _GEMINI_AUDIO_OUTPUT_RATE, _BROWSER_AUDIO_RATE)
+            self._enqueue_audio_out(session, resampled, source="gemini_native")
 
         client = GeminiLiveClient(
             on_text=on_text,
