@@ -210,7 +210,7 @@ class GeminiLiveClient:
                 model=f"models/{settings.gemini_model_id}",
                 generation_config=gen_config,
                 system_instruction=GeminiSystemInstruction.from_text(system_prompt),
-                tools=[],
+                tools=[{"googleSearch": {}}],
             )
         )
         await self._ws.send(json.dumps(msg.to_dict()))
