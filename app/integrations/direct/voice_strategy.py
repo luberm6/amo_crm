@@ -185,10 +185,10 @@ def inspect_voice_strategy(
             checks.append(
                 VoiceStrategyCheck(
                     name="voice_strategy_hybrid_guard",
-                    status="fail",
+                    status="warn",
                     message=(
-                        "tts_primary forbids GEMINI_AUDIO_OUTPUT_ENABLED=true. "
-                        "Use experimental_hybrid if you want mixed behavior."
+                        "GEMINI_AUDIO_OUTPUT_ENABLED=true is set globally, but tts_primary "
+                        "overrides per-session to TEXT modality. ElevenLabs TTS will be used."
                     ),
                 )
             )

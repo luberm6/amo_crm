@@ -76,6 +76,7 @@ class GeminiLiveClient:
         audio_output: bool = False,
         voice_name: Optional[str] = None,
         language_code: str = "ru-RU",
+        model_id: Optional[str] = None,
     ) -> None:
         self._on_text = on_text
         self._on_audio = on_audio
@@ -85,6 +86,7 @@ class GeminiLiveClient:
         self._audio_output = audio_output
         self._voice_name = voice_name
         self._language_code = language_code
+        self._model_id = model_id
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._recv_task: Optional[asyncio.Task] = None
         self._setup_done: asyncio.Event = asyncio.Event()
@@ -104,7 +106,7 @@ class GeminiLiveClient:
         url = self._build_url()
         log.info(
             "gemini_client.connecting",
-            model=settings.gemini_model_id,
+            model=self._model_id or settings.gemini_model_id,
             api_version=settings.gemini_api_version,
         )
         self._ws = await websockets.connect(
@@ -128,7 +130,7 @@ class GeminiLiveClient:
         except asyncio.TimeoutError:
             self._recv_task.cancel()
             raise
-        log.info("gemini_client.connected", model=settings.gemini_model_id)
+        log.info("gemini_client.connected", model=self._model_id or settings.gemini_model_id)
 
     async def inject_instruction(self, instruction: str) -> None:
         """
@@ -203,11 +205,12 @@ class GeminiLiveClient:
                 language_code=self._language_code,
             )
             if self._audio_output
-            else GeminiGenerationConfig()
+            else GeminiGenerationConfig.for_text_modality()
         )
+        effective_model = self._model_id or settings.gemini_model_id
         msg = GeminiSetupMessage(
             setup=GeminiSetupPayload(
-                model=f"models/{settings.gemini_model_id}",
+                model=f"models/{effective_model}",
                 generation_config=gen_config,
                 system_instruction=GeminiSystemInstruction.from_text(system_prompt),
                 tools=[{"googleSearch": {}}],
@@ -216,7 +219,7 @@ class GeminiLiveClient:
         await self._ws.send(json.dumps(msg.to_dict()))
         log.info(
             "gemini_client.setup_sent",
-            model=f"models/{settings.gemini_model_id}",
+            model=f"models/{effective_model}",
             audio_input=self._audio_input,
             audio_output=self._audio_output,
         )

@@ -415,6 +415,10 @@ class DirectSessionManager:
                 cleared_chunks=cleared,
             )
 
+        _wants_audio_out = bool(
+            session.voice_state is not None
+            and session.voice_state.wants_gemini_audio_output()
+        )
         client = GeminiLiveClient(
             on_text=on_text,
             on_audio=on_audio,
@@ -423,12 +427,10 @@ class DirectSessionManager:
             ),
             on_interrupted=on_interrupted,
             audio_input=bool(session.capabilities.audio_in),
-            audio_output=bool(
-                session.voice_state is not None
-                and session.voice_state.wants_gemini_audio_output()
-            ),
+            audio_output=_wants_audio_out,
             voice_name=gemini_voice_name,
             language_code=gemini_language_code,
+            model_id=None if _wants_audio_out else settings.gemini_tts_model_id,
         )
         session.gemini_client = client
 
