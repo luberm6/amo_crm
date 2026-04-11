@@ -34,7 +34,7 @@ class GeminiGenerationConfig:
     speech_config: Optional[Dict[str, Any]] = None  # Phase 2: AUDIO modality
 
     def to_dict(self) -> dict:
-        d: Dict[str, Any] = {"response_modalities": self.response_modalities}
+        d: Dict[str, Any] = {"responseModalities": self.response_modalities}
         if self.speech_config:
             d["speechConfig"] = self.speech_config
         return d
@@ -71,14 +71,16 @@ class GeminiSetupPayload:
     tools: List[Any] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return {
+        d: Dict[str, Any] = {
             "model": self.model,
             "generationConfig": self.generation_config.to_dict(),
             "systemInstruction": {
                 "parts": self.system_instruction.parts,
             },
-            "tools": self.tools,
         }
+        if self.tools:
+            d["tools"] = self.tools
+        return d
 
 
 @dataclass
