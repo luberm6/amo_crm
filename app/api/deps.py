@@ -49,6 +49,8 @@ _session_coordinator: Optional["SessionCoordinator"] = None   # type: ignore
 _direct_session_manager: Optional["DirectSessionManager"] = None  # type: ignore
 _mango_transfer_engine: Optional[MangoTransferEngine] = None
 _browser_registry: Optional["BrowserSessionRegistry"] = None  # type: ignore
+_voice_provider = None
+_telephony_adapter = None
 
 
 def _get_or_create_session_coordinator() -> "SessionCoordinator":  # type: ignore
@@ -112,6 +114,10 @@ def get_browser_registry() -> "BrowserSessionRegistry":  # type: ignore
 
 
 def _build_voice_provider():
+    global _voice_provider
+    if _voice_provider is not None:
+        return _voice_provider
+
     from app.integrations.voice.stub import StubVoiceProvider
 
     if settings.elevenlabs_configured:
@@ -134,6 +140,7 @@ def _build_voice_provider():
                 "Direct voice calls will fail fast."
             ),
         )
+    _voice_provider = voice
     return voice
 
 
@@ -158,16 +165,16 @@ async def get_call_engine() -> AbstractCallEngine:
     direct_engine: Optional[AbstractCallEngine] = None
     browser_engine: Optional[AbstractCallEngine] = None
     if settings.gemini_configured:
+        global _telephony_adapter
         from app.integrations.direct.engine import DirectGeminiEngine
         from app.integrations.browser.engine import BrowserDirectEngine
         from app.integrations.browser.telephony import BrowserTelephonyAdapter
-        from app.integrations.telephony.registry import build_default_registry
 
-        # Use provider registry — decoupled from Mango-specific logic.
-        # TELEPHONY_PROVIDER="auto" → picks Mango if configured, else Stub.
-        # Override with TELEPHONY_PROVIDER="mango"/"twilio"/"stub" in .env.
-        _telephony_registry = build_default_registry()
-        telephony = _telephony_registry.resolve(settings.telephony_provider)
+        if _telephony_adapter is None:
+            from app.integrations.telephony.registry import build_default_registry
+            _telephony_registry = build_default_registry()
+            _telephony_adapter = _telephony_registry.resolve(settings.telephony_provider)
+        telephony = _telephony_adapter
         voice = _build_voice_provider()
 
         engine = DirectGeminiEngine(

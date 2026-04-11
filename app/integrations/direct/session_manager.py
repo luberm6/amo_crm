@@ -208,6 +208,7 @@ class DirectSessionManager:
         initial_greeting_text: Optional[str] = None,
         voice_strategy_name: Optional[str] = None,
         gemini_voice_name: Optional[str] = None,
+        gemini_language_code: str = "ru-RU",
     ) -> str:
         """
         Create a new session: connect to Gemini, start background audio loop,
@@ -407,6 +408,7 @@ class DirectSessionManager:
                 and session.voice_state.wants_gemini_audio_output()
             ),
             voice_name=gemini_voice_name,
+            language_code=gemini_language_code,
         )
         session.gemini_client = client
 

@@ -40,18 +40,24 @@ class GeminiGenerationConfig:
         return d
 
     @classmethod
-    def for_audio_modality(cls, voice_name: str = "Aoede") -> "GeminiGenerationConfig":
+    def for_audio_modality(
+        cls,
+        voice_name: str = "Aoede",
+        language_code: str = "ru-RU",
+    ) -> "GeminiGenerationConfig":
         """Create config for Gemini AUDIO output modality.
         Audio-to-audio models (e.g. gemini-3.1-flash-live-preview) require AUDIO only.
+        language_code instructs the model to synthesise speech in the given locale.
         """
         return cls(
             response_modalities=["AUDIO"],
             speech_config={
+                "languageCode": language_code,
                 "voiceConfig": {
                     "prebuiltVoiceConfig": {
                         "voiceName": voice_name,
                     }
-                }
+                },
             },
         )
 
