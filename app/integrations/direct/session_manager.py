@@ -400,10 +400,10 @@ class DirectSessionManager:
             on_close=lambda: asyncio.get_event_loop().create_task(
                 self._on_gemini_close(session_id)
             ),
-            audio_modality=bool(
+            audio_input=bool(session.capabilities.audio_in),
+            audio_output=bool(
                 session.voice_state is not None
                 and session.voice_state.wants_gemini_audio_output()
-                and session.capabilities.audio_in
             ),
         )
         session.gemini_client = client

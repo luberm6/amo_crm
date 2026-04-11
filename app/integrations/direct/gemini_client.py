@@ -5,7 +5,7 @@ GeminiLiveClient — WebSocket клиент для Google Gemini Live API.
   1. connect(system_prompt) — открыть WS, отправить setup, дождаться setupComplete
   2. Фоновый recv loop читает serverContent → вызывает on_text / on_audio callbacks
   3. inject_instruction(text) — отправить clientContent в живую сессию (steering)
-  4. send_audio(pcm_bytes) — отправить аудио от телефонии (Phase 2)
+  4. send_audio(pcm_bytes) — отправить аудио от телефонии
   5. close() — завершить WS, отменить recv task
 
 WS endpoint:
@@ -13,9 +13,10 @@ WS endpoint:
   google.ai.generativelanguage.{version}.GenerativeService.BidiGenerateContent
   ?key={API_KEY}
 
-Audio modality:
-  - audio_modality=False: TEXT-only mode, send_audio() is skipped
-  - audio_modality=True: bidirectional audio chunks are sent/received
+Audio flags (независимые):
+  - audio_input=True:  принимать PCM от браузера и отправлять в Gemini
+  - audio_output=True: запросить AUDIO response modality (Gemini говорит голосом)
+  Можно комбинировать: audio_input=True + audio_output=False → микрофон → Gemini TEXT → ElevenLabs TTS
 
 Надёжность:
   - recv loop никогда не падает от неизвестных событий (log + skip)
@@ -50,11 +51,18 @@ log = get_logger(__name__)
 class GeminiLiveClient:
     """
     WebSocket клиент для Gemini Live API.
-    Runtime supports both TEXT-only and audio modality depending on flag.
+
+    audio_input  — отправлять PCM от браузера в Gemini (микрофон → Gemini)
+    audio_output — запрашивать AUDIO modality (Gemini отвечает голосом)
+
+    Комбинации:
+      input=True,  output=True  → full-duplex (Gemini voice)
+      input=True,  output=False → voice input → Gemini TEXT → ElevenLabs TTS
+      input=False, output=False → text steering only
 
     Callbacks (вызываются из recv loop — в asyncio event loop):
-      on_text(role, text) — новая текстовая реплика от модели
-      on_audio(pcm_bytes) — PCM аудио от модели (Phase 2)
+      on_text(role, text) — текстовая реплика от модели
+      on_audio(pcm_bytes) — PCM аудио от модели (только при audio_output=True)
       on_close()          — WS соединение закрыто (штатно или с ошибкой)
     """
 
@@ -63,12 +71,14 @@ class GeminiLiveClient:
         on_text: Callable[[str, str], None],
         on_audio: Callable[[bytes], None],
         on_close: Callable[[], None],
-        audio_modality: bool = False,
+        audio_input: bool = False,
+        audio_output: bool = False,
     ) -> None:
         self._on_text = on_text
         self._on_audio = on_audio
         self._on_close = on_close
-        self._audio_modality = audio_modality
+        self._audio_input = audio_input
+        self._audio_output = audio_output
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._recv_task: Optional[asyncio.Task] = None
         self._setup_done: asyncio.Event = asyncio.Event()
@@ -118,14 +128,14 @@ class GeminiLiveClient:
         """
         Инжектировать steering instruction в живую сессию.
 
-        В audio-only режиме (audio_modality=True) используем realtimeInput.text —
-        clientContent с текстом отклоняется audio-to-audio моделями (код 1007).
-        В text-режиме используем clientContent как раньше.
+        В audio-output режиме используем realtimeInput.text —
+        clientContent отклоняется audio-to-audio моделями (код 1007).
+        В text-режиме используем clientContent.
         """
         if not self._ws or self._closed:
             log.warning("gemini_client.inject_instruction.no_ws")
             return
-        if self._audio_modality:
+        if self._audio_output:
             # Audio-to-audio model: use realtimeInput.text
             payload = {"realtimeInput": {"text": instruction}}
         else:
@@ -138,18 +148,13 @@ class GeminiLiveClient:
 
     async def send_audio(self, pcm_bytes: bytes) -> None:
         """
-        Передать PCM аудио chunk от телефонии в Gemini.
-        TEXT-only mode (audio_modality=False): chunk is skipped.
-        Audio mode (audio_modality=True): sends GeminiRealtimeInput.
+        Передать PCM аудио chunk от браузера в Gemini.
+        audio_input=False: chunk пропускается.
+        audio_input=True: отправляет GeminiRealtimeInput.audio.
         """
         if not self._ws or self._closed:
             return
-        if not self._audio_modality:
-            log.debug(
-                "gemini_client.send_audio.skipped",
-                bytes_len=len(pcm_bytes),
-                note="TEXT-only mode, audio input ignored",
-            )
+        if not self._audio_input:
             return
         # Audio modality: send input chunk to Gemini
         data_b64 = base64.b64encode(pcm_bytes).decode()
@@ -185,10 +190,10 @@ class GeminiLiveClient:
         )
 
     async def _send_setup(self, system_prompt: str) -> None:
-        # Use AUDIO modality if enabled, else TEXT only
+        # Request AUDIO response modality only when audio_output=True
         gen_config = (
             GeminiGenerationConfig.for_audio_modality()
-            if self._audio_modality
+            if self._audio_output
             else GeminiGenerationConfig()
         )
         msg = GeminiSetupMessage(
@@ -199,19 +204,12 @@ class GeminiLiveClient:
                 tools=[],
             )
         )
-        payload = msg.to_dict()
-        log.info(
-            "gemini_client.setup_sending",
-            model=f"models/{settings.gemini_model_id}",
-            audio_modality=self._audio_modality,
-            payload_keys=list(payload.get("setup", {}).keys()),
-            generation_config=payload.get("setup", {}).get("generationConfig"),
-        )
-        await self._ws.send(json.dumps(payload))
+        await self._ws.send(json.dumps(msg.to_dict()))
         log.info(
             "gemini_client.setup_sent",
             model=f"models/{settings.gemini_model_id}",
-            audio_modality=self._audio_modality,
+            audio_input=self._audio_input,
+            audio_output=self._audio_output,
         )
 
     async def _recv_loop(self) -> None:
