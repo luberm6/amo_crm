@@ -1018,7 +1018,12 @@ export default function BrowserCallPage() {
       return
     }
     const data = await apiFetch<BrowserCallRead>(normalizeApiPath(resolvedStatusUrl), {}, token)
-    setStatus(data)
+    // Merge: keep any WebSocket-pushed entries (ws-* ids) not yet in the DB response.
+    setStatus(prev => {
+      const dbIds = new Set(data.transcript_entries.map(e => e.id))
+      const wsOnly = prev?.transcript_entries.filter(e => e.id.startsWith('ws-') && !dbIds.has(e.id)) ?? []
+      return { ...data, transcript_entries: [...data.transcript_entries, ...wsOnly] }
+    })
     if (['FAILED', 'STOPPED', 'COMPLETED'].includes(data.status)) {
       await stopAudioInput()
       if (pollTimerRef.current) {
@@ -1400,6 +1405,20 @@ export default function BrowserCallPage() {
               }
               setAiState('silent')
               logBrowserEvent('barge_in_interrupted', {})
+              return
+            }
+            if (msg.type === 'transcript') {
+              const { role, text } = msg as { role: string; text: string }
+              setStatus(prev => {
+                if (!prev) return prev
+                const entry: TranscriptEntry = {
+                  id: `ws-${Date.now()}-${Math.random()}`,
+                  role,
+                  text,
+                  created_at: new Date().toISOString(),
+                }
+                return { ...prev, transcript_entries: [...prev.transcript_entries, entry] }
+              })
               return
             }
           } catch { /* not JSON, fall through */ }

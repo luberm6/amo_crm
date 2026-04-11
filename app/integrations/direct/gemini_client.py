@@ -301,7 +301,17 @@ class GeminiLiveClient:
             )
 
         if "serverContent" in msg:
-            sc = GeminiServerContent.from_dict(msg["serverContent"])
+            sc_raw = msg["serverContent"]
+            # outputAudioTranscription: text transcript of Gemini's audio output.
+            # Arrives alongside audio parts when outputAudioTranscription={} is set.
+            if "outputTranscription" in sc_raw:
+                transcription_text = "".join(
+                    part.get("text", "")
+                    for part in sc_raw["outputTranscription"].get("parts", [])
+                )
+                if transcription_text.strip():
+                    self._on_text("assistant", transcription_text.strip())
+            sc = GeminiServerContent.from_dict(sc_raw)
             if sc.interrupted:
                 log.debug("gemini_client.interrupted")
                 if self._on_interrupted:

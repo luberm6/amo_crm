@@ -32,11 +32,14 @@ from typing import Any, Dict, List, Optional
 class GeminiGenerationConfig:
     response_modalities: List[str] = field(default_factory=lambda: ["TEXT"])
     speech_config: Optional[Dict[str, Any]] = None  # Phase 2: AUDIO modality
+    output_audio_transcription: bool = False  # Request text transcript of audio output
 
     def to_dict(self) -> dict:
         d: Dict[str, Any] = {"responseModalities": self.response_modalities}
         if self.speech_config:
             d["speechConfig"] = self.speech_config
+        if self.output_audio_transcription:
+            d["outputAudioTranscription"] = {}
         return d
 
     @classmethod
@@ -48,6 +51,7 @@ class GeminiGenerationConfig:
         """Create config for Gemini AUDIO output modality.
         Audio-to-audio models (e.g. gemini-3.1-flash-live-preview) require AUDIO only.
         language_code instructs the model to synthesise speech in the given locale.
+        outputAudioTranscription requests a text transcript of the audio for display.
         """
         return cls(
             response_modalities=["AUDIO"],
@@ -59,6 +63,7 @@ class GeminiGenerationConfig:
                     }
                 },
             },
+            output_audio_transcription=True,
         )
 
     @classmethod

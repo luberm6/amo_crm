@@ -371,6 +371,10 @@ class DirectSessionManager:
 
         def on_text(role: str, text: str) -> None:
             base_text_cb(role, text)
+            # Real-time push to browser — avoid waiting for the 1s polling cycle.
+            _bridge = session.audio_bridge
+            if _bridge is not None and hasattr(_bridge, "send_control"):
+                _bridge.send_control({"type": "transcript", "role": role, "text": text})
             if role != "assistant":
                 return
             if session.metrics.awaiting_model_response and session.metrics.last_model_request_at:
