@@ -363,7 +363,7 @@ export default function ProvidersPage() {
             {providerMessages[definition.provider] ? <div className="status-banner">{providerMessages[definition.provider]}</div> : null}
             {providerErrors[definition.provider] ? <div className="error-banner">{providerErrors[definition.provider]}</div> : null}
 
-            <form className="editor-form" onSubmit={(event) => void handleSave(event, definition.provider)}>
+            <form className="provider-form" onSubmit={(event) => void handleSave(event, definition.provider)}>
               <section className="form-section">
                 <label className="boxed-toggle toggle-row">
                   <input
@@ -371,36 +371,41 @@ export default function ProvidersPage() {
                     checked={form.is_enabled}
                     onChange={(event) => updateEnabled(definition.provider, event.target.checked)}
                   />
-                  <span>Отметить настройки как активные для дальнейшего использования</span>
+                  <span>Провайдер включён</span>
                 </label>
               </section>
 
               <section className="form-section two-column-fields">
                 {definition.configFields.map((field) => (
-                  <label key={field.key}>
-                    <span>{field.label}</span>
-                    {field.kind === 'textarea' ? (
-                      <textarea
-                        value={String(form.config[field.key] ?? '')}
-                        onChange={(event) => updateConfig(definition.provider, field.key, event.target.value)}
-                      />
-                    ) : field.kind === 'boolean' ? (
+                  field.kind === 'boolean' ? (
+                    <div key={field.key} className="boolean-field">
                       <label className="boxed-toggle toggle-row">
                         <input
                           type="checkbox"
                           checked={Boolean(form.config[field.key])}
                           onChange={(event) => updateConfig(definition.provider, field.key, event.target.checked)}
                         />
-                        <span>{field.help || field.label}</span>
+                        <span>{field.label}</span>
                       </label>
-                    ) : (
-                      <input
-                        value={String(form.config[field.key] ?? '')}
-                        onChange={(event) => updateConfig(definition.provider, field.key, event.target.value)}
-                      />
-                    )}
-                    {field.help && field.kind !== 'boolean' ? <small className="table-secondary">{field.help}</small> : null}
-                  </label>
+                      {field.help ? <small className="table-secondary">{field.help}</small> : null}
+                    </div>
+                  ) : (
+                    <label key={field.key}>
+                      <span>{field.label}</span>
+                      {field.kind === 'textarea' ? (
+                        <textarea
+                          value={String(form.config[field.key] ?? '')}
+                          onChange={(event) => updateConfig(definition.provider, field.key, event.target.value)}
+                        />
+                      ) : (
+                        <input
+                          value={String(form.config[field.key] ?? '')}
+                          onChange={(event) => updateConfig(definition.provider, field.key, event.target.value)}
+                        />
+                      )}
+                      {field.help ? <small className="table-secondary">{field.help}</small> : null}
+                    </label>
+                  )
                 ))}
               </section>
 

@@ -601,6 +601,18 @@ a.info-card:hover {
   gap: 1rem;
 }
 
+.provider-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.boolean-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .provider-status-strip {
   justify-content: flex-end;
 }

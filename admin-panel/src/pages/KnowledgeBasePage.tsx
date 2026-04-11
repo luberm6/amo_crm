@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useAuth } from '../auth/AuthContext'
 import { ApiError, apiFetch } from '../lib/api'
@@ -144,6 +144,7 @@ export default function KnowledgeBasePage() {
 
   const [filterCategory, setFilterCategory] = useState('all')
   const [filterState, setFilterState] = useState<'all' | 'active' | 'inactive'>('all')
+  const documentFormRef = useRef<HTMLFormElement | null>(null)
 
   const selectedDocument = useMemo(
     () => documents.find((item) => item.id === selectedDocumentId) || null,
@@ -363,6 +364,9 @@ export default function KnowledgeBasePage() {
     setSelectedDocumentId(null)
     setDocumentForm(EMPTY_DOCUMENT_FORM)
     setDocumentsError(null)
+    setTimeout(() => {
+      documentFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
   }
 
   return (
@@ -464,7 +468,7 @@ export default function KnowledgeBasePage() {
             )}
           </section>
 
-          <form className="panel-card form-section" onSubmit={handleDocumentSubmit}>
+          <form ref={documentFormRef} className="panel-card form-section" onSubmit={handleDocumentSubmit}>
             <div className="panel-header">
               <div>
                 <p className="eyebrow">Редактор документа</p>
