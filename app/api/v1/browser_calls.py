@@ -322,6 +322,9 @@ async def play_browser_test_tts(
         async for chunk in voice_provider.synthesize_streaming(text):
             if not chunk:
                 continue
+            # PCM16 requires even byte count for Int16Array in browser
+            if len(chunk) % 2 != 0:
+                chunk = chunk + b"\x00"
             await bridge.audio_out(chunk)
             chunks_enqueued += 1
     except Exception as exc:

@@ -313,10 +313,9 @@ class GeminiLiveClient:
             # outputAudioTranscription: text transcript of Gemini's audio output.
             # Arrives alongside audio parts when outputAudioTranscription={} is set.
             if "outputTranscription" in sc_raw:
-                transcription_text = "".join(
-                    part.get("text", "")
-                    for part in sc_raw["outputTranscription"].get("parts", [])
-                )
+                # Gemini Live API: outputTranscription = {"text": "..."}
+                # (a plain string field, NOT a parts array like modelTurn)
+                transcription_text = sc_raw["outputTranscription"].get("text", "")
                 if transcription_text.strip():
                     self._on_text("assistant", transcription_text.strip())
             sc = GeminiServerContent.from_dict(sc_raw)
