@@ -38,8 +38,6 @@ class GeminiGenerationConfig:
         d: Dict[str, Any] = {"responseModalities": self.response_modalities}
         if self.speech_config:
             d["speechConfig"] = self.speech_config
-        if self.output_audio_transcription:
-            d["outputAudioTranscription"] = {}
         return d
 
     @classmethod
@@ -95,6 +93,7 @@ class GeminiSetupPayload:
     generation_config: GeminiGenerationConfig
     system_instruction: GeminiSystemInstruction
     tools: List[Any] = field(default_factory=list)
+    output_audio_transcription: bool = False
 
     def to_dict(self) -> dict:
         d: Dict[str, Any] = {
@@ -106,6 +105,9 @@ class GeminiSetupPayload:
         }
         if self.tools:
             d["tools"] = self.tools
+        if self.output_audio_transcription:
+            # outputAudioTranscription lives at the setup level, NOT inside generationConfig.
+            d["outputAudioTranscription"] = {}
         return d
 
 

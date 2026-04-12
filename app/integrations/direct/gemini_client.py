@@ -215,7 +215,6 @@ class GeminiLiveClient:
             GeminiGenerationConfig.for_audio_modality(
                 voice_name=self._voice_name or "Aoede",
                 language_code=self._language_code,
-                with_transcription=self._transcription_output,
             )
             if (self._audio_output or self._transcription_output)
             else GeminiGenerationConfig.for_text_modality()
@@ -226,6 +225,7 @@ class GeminiLiveClient:
                 model=f"models/{effective_model}",
                 generation_config=gen_config,
                 system_instruction=GeminiSystemInstruction.from_text(system_prompt),
+                output_audio_transcription=self._transcription_output,
                 tools=[
                     {"googleSearch": {}},
                     {
