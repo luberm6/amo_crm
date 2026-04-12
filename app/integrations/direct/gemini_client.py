@@ -99,6 +99,11 @@ class GeminiLiveClient:
         self._recv_task: Optional[asyncio.Task] = None
         self._setup_done: asyncio.Event = asyncio.Event()
         self._closed: bool = False
+        # Transcript accumulator for TTS path: outputTranscription arrives as
+        # streaming chunks (one per audio chunk). We accumulate them and call
+        # _on_text once per complete turn (at turn_complete) so that ElevenLabs
+        # is called exactly once per turn, not once per streaming fragment.
+        self._pending_transcription: str = ""
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -311,29 +316,42 @@ class GeminiLiveClient:
         if "serverContent" in msg:
             sc_raw = msg["serverContent"]
             # outputAudioTranscription: text transcript of Gemini's audio output.
-            # Arrives alongside audio parts when outputAudioTranscription={} is set.
+            # Gemini Live API: outputTranscription = {"text": "..."} — a plain
+            # string field, NOT a parts array. Arrives as streaming fragments
+            # (one per audio chunk). We accumulate and flush at turn_complete so
+            # that ElevenLabs TTS is called exactly once per complete turn.
             if "outputTranscription" in sc_raw:
-                # Gemini Live API: outputTranscription = {"text": "..."}
-                # (a plain string field, NOT a parts array like modelTurn)
-                transcription_text = sc_raw["outputTranscription"].get("text", "")
-                if transcription_text.strip():
-                    self._on_text("assistant", transcription_text.strip())
+                chunk = sc_raw["outputTranscription"].get("text", "")
+                if chunk:
+                    self._pending_transcription += chunk
             sc = GeminiServerContent.from_dict(sc_raw)
             if sc.interrupted:
                 log.debug("gemini_client.interrupted")
+                self._pending_transcription = ""  # discard in-flight transcript
                 if self._on_interrupted:
                     self._on_interrupted()
                 return
             if sc.model_turn:
                 for part in sc.model_turn.parts:
-                    if part.text:
+                    if part.text and not self._transcription_output:
+                        # Text parts from modelTurn only on TEXT modality path.
+                        # On TTS path (transcription_output=True) text comes via
+                        # outputTranscription and is flushed at turn_complete.
                         self._on_text("assistant", part.text.strip())
                     elif part.inline_data:
-                        # Phase 2: аудио от Gemini
                         pcm = base64.b64decode(part.inline_data.data_b64)
                         self._on_audio(pcm)
-            if sc.turn_complete and self._on_turn_complete:
-                self._on_turn_complete()
+            if sc.turn_complete:
+                # Flush accumulated transcript (TTS path) before signalling turn done.
+                if self._transcription_output and self._pending_transcription.strip():
+                    self._on_text("assistant", self._pending_transcription.strip())
+                    log.debug(
+                        "gemini_client.transcription_flushed",
+                        length=len(self._pending_transcription),
+                    )
+                self._pending_transcription = ""
+                if self._on_turn_complete:
+                    self._on_turn_complete()
             return
 
         if "toolCall" in msg:
