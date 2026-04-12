@@ -45,6 +45,15 @@ class BrowserCallDebugRead(BaseModel):
     model_response_latency_ms_last: Optional[float] = None
     tts_latency_ms_last: Optional[float] = None
     outbound_playback_latency_ms_last: Optional[float] = None
+    tts_first_chunk_sent_ms_last: Optional[float] = None
+    tts_last_chunk_received_ms_last: Optional[float] = None
+    tts_audio_duration_ms_last: Optional[float] = None
+    tts_leading_silence_trimmed_ms_last: Optional[float] = None
+    tts_trailing_silence_trimmed_ms_last: Optional[float] = None
+    tts_chunks_in_last: int = 0
+    tts_chunks_out_last: int = 0
+    tts_tiny_chunks_in_last: int = 0
+    tts_turn_id_last: Optional[str] = None
     last_error: Optional[str] = None
     last_failure_stage: Optional[str] = None
     last_disconnect_reason: Optional[str] = None

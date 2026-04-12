@@ -46,7 +46,7 @@ async def test_elevenlabs_synthesize_uses_pcm_query_param_and_audio_payload() ->
     assert captured["query"] == {"output_format": "pcm_16000"}
     assert captured["json"] == {
         "text": "Привет, мир",
-        "model_id": "eleven_multilingual_v2",
+        "model_id": "eleven_flash_v2_5",
     }
     assert captured["headers"]["accept"] == "audio/pcm"
     assert "output_format" not in captured["json"]

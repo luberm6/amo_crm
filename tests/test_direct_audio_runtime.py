@@ -8,7 +8,11 @@ import pytest
 
 from app.core.config import settings
 from app.core.exceptions import EngineError
-from app.integrations.direct.session_manager import DirectSession, DirectSessionManager
+from app.integrations.direct.session_manager import (
+    DirectSession,
+    DirectSessionManager,
+    _resample_pcm16,
+)
 from app.integrations.telephony.audio_bridge import AbstractAudioBridge
 from app.integrations.telephony.base import (
     AbstractTelephonyAdapter,
@@ -404,9 +408,19 @@ async def test_initial_greeting_plays_immediately_over_tts(test_session_factory)
                 system_prompt="test",
             )
 
-        await asyncio.sleep(0.05)
-        assert bridge.played[:2] == [b"\x22" * 640, b"\x33" * 640]
-        await sm.terminate_session(sid)
+        try:
+            session = sm.get_session(sid)
+            assert session is not None
+            assert session.gemini_client is not None
+            await asyncio.sleep(0.05)
+            assert session.gemini_client.injected_instructions
+            assert "Здравствуйте" in session.gemini_client.injected_instructions[0]
+
+            session.gemini_client.simulate_text("assistant", "Здравствуйте")
+            await asyncio.sleep(0.05)
+            assert bridge.played[:2] == [b"\x22" * 640, b"\x33" * 640]
+        finally:
+            await sm.terminate_session(sid)
     finally:
         settings.direct_voice_strategy = old_voice_strategy
         settings.gemini_audio_output_enabled = old_gem_audio
@@ -500,14 +514,17 @@ async def test_gemini_primary_routes_assistant_audio_through_gemini_native(test_
                 system_prompt="test",
             )
 
-        session = sm.get_session(sid)
-        assert session is not None
-        assert session.voice_state is not None
-        assert session.voice_state.active_path == "gemini_native"
-        session.gemini_client.simulate_audio(b"\x44" * 640)
-        await asyncio.sleep(0.05)
-        assert bridge.played[-1] == b"\x44" * 640
-        await sm.terminate_session(sid)
+        try:
+            session = sm.get_session(sid)
+            assert session is not None
+            assert session.voice_state is not None
+            assert session.voice_state.active_path == "gemini_native"
+            session.gemini_client.simulate_audio(b"\x44" * 640)
+            await asyncio.sleep(0.05)
+            assert bridge.played
+            assert bridge.played[-1] == _resample_pcm16(b"\x44" * 640, 24000, 16000)
+        finally:
+            await sm.terminate_session(sid)
     finally:
         settings.direct_voice_strategy = old_voice_strategy
         settings.gemini_audio_output_enabled = old_gem_audio
@@ -649,6 +666,10 @@ async def test_tts_failure_terminates_call_with_failed_status(test_session_facto
                 system_prompt="test",
             )
 
+        session = sm.get_session(sid)
+        assert session is not None
+        assert session.gemini_client is not None
+        session.gemini_client.simulate_text("assistant", "Здравствуйте")
         await asyncio.sleep(0.2)
         assert sm.get_session(sid) is None
         assert await _get_call_status(test_session_factory, call_id) == CallStatus.FAILED

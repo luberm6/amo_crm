@@ -48,6 +48,15 @@ type BrowserCallRead = {
     model_response_latency_ms_last?: number | null
     tts_latency_ms_last?: number | null
     outbound_playback_latency_ms_last?: number | null
+    tts_first_chunk_sent_ms_last?: number | null
+    tts_last_chunk_received_ms_last?: number | null
+    tts_audio_duration_ms_last?: number | null
+    tts_leading_silence_trimmed_ms_last?: number | null
+    tts_trailing_silence_trimmed_ms_last?: number | null
+    tts_chunks_in_last?: number
+    tts_chunks_out_last?: number
+    tts_tiny_chunks_in_last?: number
+    tts_turn_id_last?: string | null
     last_error?: string | null
     last_failure_stage?: string | null
     last_disconnect_reason?: string | null
@@ -113,6 +122,12 @@ type LocalAudioDebug = {
   lastRms: number | null
   lastPeak: number | null
   audioTooQuiet: boolean
+  queuedPlaybackBufferMs: number
+  scheduledPlaybackBacklogMs: number
+  firstChunkLatencyMs: number | null
+  firstAudibleLatencyMs: number | null
+  drainLatencyMs: number | null
+  lastTurnId: string | null
   currentOutputDeviceId: string | null
   outputSelectionSupported: boolean
   outputDeviceError: string | null
@@ -143,6 +158,12 @@ const INITIAL_LOCAL_AUDIO_DEBUG: LocalAudioDebug = {
   lastRms: null,
   lastPeak: null,
   audioTooQuiet: false,
+  queuedPlaybackBufferMs: 0,
+  scheduledPlaybackBacklogMs: 0,
+  firstChunkLatencyMs: null,
+  firstAudibleLatencyMs: null,
+  drainLatencyMs: null,
+  lastTurnId: null,
   currentOutputDeviceId: null,
   outputSelectionSupported: false,
   outputDeviceError: null,
@@ -169,9 +190,12 @@ const INITIAL_LOOPBACK_DEBUG: LoopbackDebug = {
 const TARGET_PCM_SAMPLE_RATE = 16000
 const TARGET_PCM_CHANNELS = 1
 const TARGET_PCM_BIT_DEPTH = 16
-const MIN_PLAYBACK_BUFFER_SAMPLES = 2048
-const MIN_PLAYBACK_BUFFER_BYTES = MIN_PLAYBACK_BUFFER_SAMPLES * 2
-const PLAYBACK_FLUSH_DELAY_MS = 120
+const STARTUP_PLAYBACK_BUFFER_BYTES = 1024
+const STEADY_PLAYBACK_BUFFER_BYTES = 3072
+const STARTUP_PLAYBACK_FLUSH_DELAY_MS = 35
+const STEADY_PLAYBACK_FLUSH_DELAY_MS = 70
+const MAX_SCHEDULED_BACKLOG_MS = 240
+const RESUME_SCHEDULED_BACKLOG_MS = 140
 const AUDIO_TOO_QUIET_RMS_THRESHOLD = 0.01
 
 function downsampleBuffer(buffer: Float32Array<ArrayBufferLike>, inputSampleRate: number, outputSampleRate: number) {
@@ -356,6 +380,28 @@ function formatMetric(value?: number | null) {
   return value == null ? '—' : `${Math.round(value)} ms`
 }
 
+function pcm16DurationMs(byteLength: number) {
+  if (byteLength <= 0) {
+    return 0
+  }
+  return Number(((byteLength / (TARGET_PCM_SAMPLE_RATE * TARGET_PCM_CHANNELS * 2)) * 1000).toFixed(2))
+}
+
+function getPlaybackPolicy(playbackStarts: number) {
+  if (playbackStarts <= 0) {
+    return {
+      minimumBytes: STARTUP_PLAYBACK_BUFFER_BYTES,
+      flushDelayMs: STARTUP_PLAYBACK_FLUSH_DELAY_MS,
+      mode: 'startup' as const,
+    }
+  }
+  return {
+    minimumBytes: STEADY_PLAYBACK_BUFFER_BYTES,
+    flushDelayMs: STEADY_PLAYBACK_FLUSH_DELAY_MS,
+    mode: 'steady' as const,
+  }
+}
+
 function normalizeApiPath(urlOrPath: string): string {
   if (urlOrPath.startsWith('/')) {
     return urlOrPath
@@ -425,6 +471,15 @@ export default function BrowserCallPage() {
   const playbackFlushTimerRef = useRef<number | null>(null)
   const playbackSilenceTimerRef = useRef<number | null>(null)
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([])
+  const currentTurnRef = useRef<{
+    turnId: string
+    backendFirstChunkSentMs: number | null
+    frontendFirstChunkReceivedAt: number | null
+    frontendLastChunkReceivedAt: number | null
+    frontendPlaybackStartedAt: number | null
+    backendCompleted: boolean
+    backendAudioDurationMs: number | null
+  } | null>(null)
 
   const isActive = Boolean(session)
   const selectedAgentName = useMemo(() => {
@@ -790,6 +845,7 @@ export default function BrowserCallPage() {
           throw err instanceof Error ? err : new Error('Не удалось запустить элемент воспроизведения.')
         })
       }
+      const scheduledBacklogMs = Math.max(0, (playbackCursorRef.current - runtime.context.currentTime) * 1000)
       playbackCursorRef.current = Math.max(playbackCursorRef.current, runtime.context.currentTime + 0.02)
       activeSourcesRef.current.push(bufferSource)
       bufferSource.start(playbackCursorRef.current)
@@ -808,12 +864,49 @@ export default function BrowserCallPage() {
           source,
           buffer_duration_ms: Math.round(buffer.duration * 1000),
         })
+        if (
+          source === 'browser_inbound'
+          && activeSourcesRef.current.length === 0
+          && currentTurnRef.current?.backendCompleted
+          && currentTurnRef.current.frontendLastChunkReceivedAt != null
+        ) {
+          const drainLatencyMs = Number((performance.now() - currentTurnRef.current.frontendLastChunkReceivedAt).toFixed(2))
+          updateLocalAudioDebug({ drainLatencyMs })
+          logBrowserEvent('browser_playback.queue_drained', {
+            turn_id: currentTurnRef.current.turnId,
+            drain_latency_ms: drainLatencyMs,
+          }, drainLatencyMs > 220 ? 'warn' : 'info')
+        }
+      }
+      if (
+        source === 'browser_inbound'
+        && currentTurnRef.current
+        && currentTurnRef.current.frontendFirstChunkReceivedAt != null
+        && currentTurnRef.current.frontendPlaybackStartedAt == null
+      ) {
+        const now = performance.now()
+        const frontendQueueStartMs = now - currentTurnRef.current.frontendFirstChunkReceivedAt
+        const estimatedFirstAudibleMs = (currentTurnRef.current.backendFirstChunkSentMs || 0) + frontendQueueStartMs
+        currentTurnRef.current = {
+          ...currentTurnRef.current,
+          frontendPlaybackStartedAt: now,
+        }
+        updateLocalAudioDebug({
+          firstChunkLatencyMs: currentTurnRef.current.backendFirstChunkSentMs,
+          firstAudibleLatencyMs: Number(estimatedFirstAudibleMs.toFixed(2)),
+        })
+        logBrowserEvent('browser_playback.playback_queue_started', {
+          turn_id: currentTurnRef.current.turnId,
+          frontend_queue_start_ms: Number(frontendQueueStartMs.toFixed(2)),
+          estimated_total_first_audible_ms: Number(estimatedFirstAudibleMs.toFixed(2)),
+        }, frontendQueueStartMs > 120 ? 'warn' : 'info')
       }
       updateLocalAudioDebug({
         lastPlaybackError: null,
         audioContextState: runtime.context.state,
         // Only flag as likely failure if audio is playing but silent (RMS too low)
         playbackDiagnostic: audioTooQuiet ? 'PLAYBACK_FAILURE_LIKELY' : null,
+        scheduledPlaybackBacklogMs: Number(scheduledBacklogMs.toFixed(2)),
       })
       setAiState('speaking')
       logBrowserEvent('browser_playback.output_started', {
@@ -821,6 +914,7 @@ export default function BrowserCallPage() {
         format: 'pcm_s16le',
         pcm_bytes: arrayBuffer.byteLength,
         playback_cursor_s: playbackCursorRef.current,
+        scheduled_backlog_ms: Number(scheduledBacklogMs.toFixed(2)),
         gain: playbackGain.gain.value,
         rms: Number(rms.toFixed(4)),
         max_amplitude: Number(peak.toFixed(4)),
@@ -850,16 +944,40 @@ export default function BrowserCallPage() {
     if (pendingPlaybackBytesRef.current === 0 || pendingPlaybackChunksRef.current.length === 0) {
       return
     }
+    const runtime = audioRuntimeRef.current
+    const scheduledBacklogMs = runtime
+      ? Math.max(0, (playbackCursorRef.current - runtime.context.currentTime) * 1000)
+      : 0
+    if (reason !== 'force' && scheduledBacklogMs > MAX_SCHEDULED_BACKLOG_MS) {
+      updateLocalAudioDebug({
+        scheduledPlaybackBacklogMs: Number(scheduledBacklogMs.toFixed(2)),
+        queuedPlaybackBufferMs: pcm16DurationMs(pendingPlaybackBytesRef.current),
+      })
+      logBrowserEvent('playback_queue_too_large', {
+        reason,
+        queued_bytes: pendingPlaybackBytesRef.current,
+        queued_audio_ms: pcm16DurationMs(pendingPlaybackBytesRef.current),
+        scheduled_backlog_ms: Number(scheduledBacklogMs.toFixed(2)),
+      }, 'warn')
+      playbackFlushTimerRef.current = window.setTimeout(() => {
+        void flushPlaybackQueue('timer')
+      }, Math.min(80, Math.max(20, scheduledBacklogMs - RESUME_SCHEDULED_BACKLOG_MS)))
+      return
+    }
     const mergedBuffer = concatArrayBuffers(pendingPlaybackChunksRef.current).buffer
     const mergedBytes = pendingPlaybackBytesRef.current
     pendingPlaybackChunksRef.current = []
     pendingPlaybackBytesRef.current = 0
     inboundOddByteCarryRef.current = null
+    const policy = getPlaybackPolicy(localAudioDebugRef.current.playbackStarts)
     logBrowserEvent('playback_buffer_flushed', {
       reason,
       merged_bytes: mergedBytes,
       merged_samples: Math.floor(mergedBytes / 2),
-      minimum_samples: MIN_PLAYBACK_BUFFER_SAMPLES,
+      minimum_bytes: policy.minimumBytes,
+      policy_mode: policy.mode,
+      queued_audio_ms: pcm16DurationMs(mergedBytes),
+      scheduled_backlog_ms: Number(scheduledBacklogMs.toFixed(2)),
     })
     await playPcm16Buffer(mergedBuffer, { source: 'browser_inbound' })
   }, [logBrowserEvent, playPcm16Buffer])
@@ -867,7 +985,11 @@ export default function BrowserCallPage() {
   const enqueuePlaybackChunk = useCallback((arrayBuffer: ArrayBuffer) => {
     pendingPlaybackChunksRef.current.push(arrayBuffer.slice(0))
     pendingPlaybackBytesRef.current += arrayBuffer.byteLength
-    if (pendingPlaybackBytesRef.current >= MIN_PLAYBACK_BUFFER_BYTES) {
+    const policy = getPlaybackPolicy(localAudioDebugRef.current.playbackStarts)
+    updateLocalAudioDebug({
+      queuedPlaybackBufferMs: pcm16DurationMs(pendingPlaybackBytesRef.current),
+    })
+    if (pendingPlaybackBytesRef.current >= policy.minimumBytes) {
       void flushPlaybackQueue('threshold')
       return
     }
@@ -876,8 +998,8 @@ export default function BrowserCallPage() {
     }
     playbackFlushTimerRef.current = window.setTimeout(() => {
       void flushPlaybackQueue('timer')
-    }, PLAYBACK_FLUSH_DELAY_MS)
-  }, [flushPlaybackQueue])
+    }, policy.flushDelayMs)
+  }, [flushPlaybackQueue, updateLocalAudioDebug])
 
   const playHardcodedAudio = useCallback(async () => {
     setHardcodedPlaybackRunning(true)
@@ -1062,6 +1184,7 @@ export default function BrowserCallPage() {
     await runtime.context.close()
     audioRuntimeRef.current = null
     playbackCursorRef.current = 0
+    currentTurnRef.current = null
     setMicState('idle')
     setAiState('silent')
     inboundPcmChunksRef.current = []
@@ -1425,6 +1548,7 @@ export default function BrowserCallPage() {
     setStarting(true)
     setError(null)
     setLocalAudioDebug(INITIAL_LOCAL_AUDIO_DEBUG)
+    currentTurnRef.current = null
     setLastAudioDownloadUrl(null)
     setLastAudioWavSize(0)
     setLastAudioValid(false)
@@ -1476,6 +1600,7 @@ export default function BrowserCallPage() {
               if (runtime) {
                 playbackCursorRef.current = runtime.context.currentTime
               }
+              currentTurnRef.current = null
               setAiState('silent')
               logBrowserEvent('barge_in_interrupted', {})
               return
@@ -1483,6 +1608,54 @@ export default function BrowserCallPage() {
             if (msg.type === 'call_ended') {
               // Agent-initiated hangup or normal backend termination — not an error.
               closingRef.current = true
+              return
+            }
+            if (msg.type === 'tts_turn_metrics') {
+              const typed = msg as {
+                type: 'tts_turn_metrics'
+                phase?: 'started' | 'completed'
+                turn_id?: string
+                tts_first_chunk_sent_to_bridge_ms?: number
+                emitted_audio_duration_ms?: number
+                leading_silence_trimmed_ms?: number
+                trailing_silence_trimmed_ms?: number
+                raw_chunks_in?: number
+                optimized_chunks_out?: number
+              }
+              if (typed.turn_id) {
+                if (typed.phase === 'started') {
+                  currentTurnRef.current = {
+                    turnId: typed.turn_id,
+                    backendFirstChunkSentMs: typed.tts_first_chunk_sent_to_bridge_ms ?? null,
+                    frontendFirstChunkReceivedAt: null,
+                    frontendLastChunkReceivedAt: null,
+                    frontendPlaybackStartedAt: null,
+                    backendCompleted: false,
+                    backendAudioDurationMs: null,
+                  }
+                  updateLocalAudioDebug({
+                    lastTurnId: typed.turn_id,
+                    firstChunkLatencyMs: typed.tts_first_chunk_sent_to_bridge_ms ?? null,
+                    firstAudibleLatencyMs: null,
+                    drainLatencyMs: null,
+                  })
+                }
+                if (typed.phase === 'completed' && currentTurnRef.current?.turnId === typed.turn_id) {
+                  currentTurnRef.current = {
+                    ...currentTurnRef.current,
+                    backendCompleted: true,
+                    backendAudioDurationMs: typed.emitted_audio_duration_ms ?? null,
+                  }
+                  logBrowserEvent('browser_playback.turn_completed', {
+                    turn_id: typed.turn_id,
+                    raw_chunks_in: typed.raw_chunks_in,
+                    optimized_chunks_out: typed.optimized_chunks_out,
+                    emitted_audio_duration_ms: typed.emitted_audio_duration_ms,
+                    leading_silence_trimmed_ms: typed.leading_silence_trimmed_ms,
+                    trailing_silence_trimmed_ms: typed.trailing_silence_trimmed_ms,
+                  })
+                }
+              }
               return
             }
             if (msg.type === 'transcript') {
@@ -1508,6 +1681,17 @@ export default function BrowserCallPage() {
           void event.data.arrayBuffer().then((payload) => {
             const normalized = normalizePcm16Chunk(payload, inboundOddByteCarryRef.current)
             inboundOddByteCarryRef.current = normalized.nextCarry
+            if (currentTurnRef.current) {
+              const now = performance.now()
+              if (currentTurnRef.current.frontendFirstChunkReceivedAt == null) {
+                currentTurnRef.current.frontendFirstChunkReceivedAt = now
+                logBrowserEvent('browser_playback.frontend_first_chunk_received', {
+                  turn_id: currentTurnRef.current.turnId,
+                  backend_first_chunk_sent_ms: currentTurnRef.current.backendFirstChunkSentMs,
+                })
+              }
+              currentTurnRef.current.frontendLastChunkReceivedAt = now
+            }
             logBrowserEvent('browser_call.audio_chunk_received', {
               transport: 'websocket_blob',
               format: 'pcm_s16le',
@@ -1530,6 +1714,17 @@ export default function BrowserCallPage() {
         bumpLocalAudioCounter('inboundAudioChunkCount')
         const normalized = normalizePcm16Chunk(event.data, inboundOddByteCarryRef.current)
         inboundOddByteCarryRef.current = normalized.nextCarry
+        if (currentTurnRef.current) {
+          const now = performance.now()
+          if (currentTurnRef.current.frontendFirstChunkReceivedAt == null) {
+            currentTurnRef.current.frontendFirstChunkReceivedAt = now
+            logBrowserEvent('browser_playback.frontend_first_chunk_received', {
+              turn_id: currentTurnRef.current.turnId,
+              backend_first_chunk_sent_ms: currentTurnRef.current.backendFirstChunkSentMs,
+            })
+          }
+          currentTurnRef.current.frontendLastChunkReceivedAt = now
+        }
         logBrowserEvent('browser_call.audio_chunk_received', {
           transport: 'websocket_arraybuffer',
           format: 'pcm_s16le',
@@ -1665,6 +1860,9 @@ export default function BrowserCallPage() {
           ['playback ended', String(localAudioDebug.playbackEndedCount)],
           ['srv inbound', String(debug?.inbound_chunks_received ?? 0)],
           ['srv outbound', String(debug?.outbound_chunks_played ?? 0)],
+          ['srv tts raw', String(debug?.tts_chunks_in_last ?? 0)],
+          ['srv tts optimized', String(debug?.tts_chunks_out_last ?? 0)],
+          ['srv tts tiny', String(debug?.tts_tiny_chunks_in_last ?? 0)],
         ],
       },
       {
@@ -1680,6 +1878,10 @@ export default function BrowserCallPage() {
           ['RMS', localAudioDebug.lastRms != null ? localAudioDebug.lastRms.toFixed(4) : '—'],
           ['peak', localAudioDebug.lastPeak != null ? localAudioDebug.lastPeak.toFixed(4) : '—'],
           ['тихо', localAudioDebug.audioTooQuiet ? 'yes' : 'no'],
+          ['queue ms', `${Math.round(localAudioDebug.queuedPlaybackBufferMs)} ms`],
+          ['backlog ms', `${Math.round(localAudioDebug.scheduledPlaybackBacklogMs)} ms`],
+          ['first audible', formatMetric(localAudioDebug.firstAudibleLatencyMs)],
+          ['drain', formatMetric(localAudioDebug.drainLatencyMs)],
           ['устройство', localAudioDebug.currentOutputDeviceId || 'default'],
           ['здоровье', audioHealthError || 'ok'],
           ['wav size', lastAudioWavSize ? `${lastAudioWavSize}b` : '0'],
@@ -1701,7 +1903,14 @@ export default function BrowserCallPage() {
         items: [
           ['модель', formatMetric(debug?.model_response_latency_ms_last)],
           ['tts', formatMetric(debug?.tts_latency_ms_last)],
+          ['tts -> bridge', formatMetric(debug?.tts_first_chunk_sent_ms_last)],
+          ['tts tail', formatMetric(debug?.tts_last_chunk_received_ms_last)],
+          ['tts audio', formatMetric(debug?.tts_audio_duration_ms_last)],
+          ['trim lead', formatMetric(debug?.tts_leading_silence_trimmed_ms_last)],
+          ['trim tail', formatMetric(debug?.tts_trailing_silence_trimmed_ms_last)],
+          ['frontend first chunk', formatMetric(localAudioDebug.firstChunkLatencyMs)],
           ['playback', formatMetric(debug?.outbound_playback_latency_ms_last)],
+          ['turn id', localAudioDebug.lastTurnId || debug?.tts_turn_id_last || '—'],
         ],
       },
       {

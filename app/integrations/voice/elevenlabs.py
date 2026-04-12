@@ -32,7 +32,10 @@ log = get_logger(__name__)
 
 _BASE_URL = "https://api.elevenlabs.io"
 _TIMEOUT = 30.0
-_MODEL_ID = "eleven_multilingual_v2"
+# Flash model is the practical default for realtime browser/direct voice:
+# live measurements showed materially lower first-byte latency than
+# eleven_multilingual_v2 while preserving clean PCM output for this path.
+_MODEL_ID = "eleven_flash_v2_5"
 _OUTPUT_FORMAT = "pcm_16000"
 _VALIDATION_TEXT = "Тест"
 _MAX_ERROR_BODY_PREVIEW = 400
@@ -284,6 +287,7 @@ class ElevenLabsClient(AbstractVoiceProvider):
                     aligner = Pcm16ChunkAligner()
                     chunk_index = 0
                     emitted_bytes = 0
+                    odd_chunk_log_samples = 0
                     raw_stream = bytearray()
 
                     async for chunk in response.aiter_bytes():
@@ -293,7 +297,11 @@ class ElevenLabsClient(AbstractVoiceProvider):
                         total_bytes += len(chunk)
                         raw_stream.extend(chunk)
                         aligned = aligner.push(chunk)
-                        if chunk_index <= 3 or chunk_index % 50 == 0 or len(chunk) % 2 != 0:
+                        should_log_chunk = chunk_index <= 3 or chunk_index % 50 == 0
+                        if len(chunk) % 2 != 0 and odd_chunk_log_samples < 5:
+                            should_log_chunk = True
+                            odd_chunk_log_samples += 1
+                        if should_log_chunk:
                             log.info(
                                 "elevenlabs.audio_bytes_received",
                                 provider="elevenlabs",
@@ -304,6 +312,7 @@ class ElevenLabsClient(AbstractVoiceProvider):
                                 chunk_index=chunk_index,
                                 byte_length=len(chunk),
                                 odd_length=bool(len(chunk) % 2),
+                                odd_chunk_log_samples=odd_chunk_log_samples,
                                 first_bytes_hex=chunk[:12].hex(),
                             )
                         if aligned:

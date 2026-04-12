@@ -101,6 +101,25 @@ def _build_browser_read(call, session, bridge, transcript_entries) -> BrowserCal
             outbound_playback_latency_ms_last=(
                 metrics.outbound_playback_latency_ms_last if metrics is not None else None
             ),
+            tts_first_chunk_sent_ms_last=(
+                metrics.tts_first_chunk_sent_ms_last if metrics is not None else None
+            ),
+            tts_last_chunk_received_ms_last=(
+                metrics.tts_last_chunk_received_ms_last if metrics is not None else None
+            ),
+            tts_audio_duration_ms_last=(
+                metrics.tts_audio_duration_ms_last if metrics is not None else None
+            ),
+            tts_leading_silence_trimmed_ms_last=(
+                metrics.tts_leading_silence_trimmed_ms_last if metrics is not None else None
+            ),
+            tts_trailing_silence_trimmed_ms_last=(
+                metrics.tts_trailing_silence_trimmed_ms_last if metrics is not None else None
+            ),
+            tts_chunks_in_last=metrics.tts_chunks_in_last if metrics is not None else 0,
+            tts_chunks_out_last=metrics.tts_chunks_out_last if metrics is not None else 0,
+            tts_tiny_chunks_in_last=metrics.tts_tiny_chunks_in_last if metrics is not None else 0,
+            tts_turn_id_last=metrics.tts_turn_id_last if metrics is not None else None,
             last_error=session.last_error if session is not None else None,
             last_failure_stage=session.last_failure_stage if session is not None else None,
             last_disconnect_reason=(

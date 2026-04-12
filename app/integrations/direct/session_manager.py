@@ -43,7 +43,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.audio_utils import (
     Pcm16ChunkAligner,
+    Pcm16RealtimeOptimizer,
     dump_pcm16le_wav,
+    pcm16_duration_ms_for_bytes,
     pcm16le_stats,
 )
 from app.core.config import settings
@@ -111,6 +113,10 @@ def _session_context_block() -> str:
 
 _AUDIO_IN_QUEUE_MAX = 200
 _AUDIO_OUT_QUEUE_MAX = 200
+_AUDIO_IN_DRAIN_BATCH_MAX = 40
+_AUDIO_OUT_DRAIN_BATCH_MAX = 100
+_AUDIO_LOOP_IDLE_SLEEP_SECONDS = 0.01
+_AUDIO_LOOP_ACTIVE_SLEEP_SECONDS = 0.002
 
 # Gemini Live outputs PCM at 24000 Hz; the browser pipeline expects 16000 Hz.
 _GEMINI_AUDIO_OUTPUT_RATE = 24000
@@ -163,6 +169,15 @@ class DirectSessionMetrics:
     model_response_latency_ms_last: Optional[float] = None
     tts_latency_ms_last: Optional[float] = None
     outbound_playback_latency_ms_last: Optional[float] = None
+    tts_first_chunk_sent_ms_last: Optional[float] = None
+    tts_last_chunk_received_ms_last: Optional[float] = None
+    tts_audio_duration_ms_last: Optional[float] = None
+    tts_leading_silence_trimmed_ms_last: Optional[float] = None
+    tts_trailing_silence_trimmed_ms_last: Optional[float] = None
+    tts_chunks_in_last: int = 0
+    tts_chunks_out_last: int = 0
+    tts_tiny_chunks_in_last: int = 0
+    tts_turn_id_last: Optional[str] = None
     last_inbound_sent_at: Optional[float] = None
     last_model_request_at: Optional[float] = None
     awaiting_model_response: bool = False
@@ -768,7 +783,14 @@ class DirectSessionManager:
                 await self._drain_audio_in_queue(session)
                 await self._drain_audio_out_queue(session)
                 await self._check_model_response_timeout(session)
-                await asyncio.sleep(0.01)
+                if (
+                    not session.instruction_queue.empty()
+                    or not session.audio_in_queue.empty()
+                    or not session.audio_out_queue.empty()
+                ):
+                    await asyncio.sleep(_AUDIO_LOOP_ACTIVE_SLEEP_SECONDS)
+                else:
+                    await asyncio.sleep(_AUDIO_LOOP_IDLE_SLEEP_SECONDS)
         except asyncio.CancelledError:
             pass
         except Exception as exc:
@@ -951,6 +973,20 @@ class DirectSessionManager:
         session.metrics.outbound_chunks_enqueued += 1
         inc_direct_audio_out("enqueued", source)
         item = (aligned, time.perf_counter(), source)
+        queue_depth = session.audio_out_queue.qsize()
+        if queue_depth >= 40:
+            log.warning(
+                "session_manager.playback_queue_too_large",
+                call_id=str(session.call_id),
+                session_id=session.session_id,
+                voice_path=source,
+                queue_depth=queue_depth,
+                buffered_audio_ms=pcm16_duration_ms_for_bytes(sum(
+                    len(queued_chunk)
+                    for queued_chunk, _queued_at, _queued_source in list(session.audio_out_queue._queue)  # type: ignore[attr-defined]
+                    if _queued_source == source
+                )),
+            )
         try:
             session.audio_out_queue.put_nowait(item)
             return aligned
@@ -1027,7 +1063,7 @@ class DirectSessionManager:
             return
         assert session.gemini_client is not None
         drained = 0
-        while not session.audio_in_queue.empty() and drained < 20:
+        while not session.audio_in_queue.empty() and drained < _AUDIO_IN_DRAIN_BATCH_MAX:
             chunk, enqueued_at = session.audio_in_queue.get_nowait()
             await session.gemini_client.send_audio(chunk)
             drained += 1
@@ -1047,7 +1083,7 @@ class DirectSessionManager:
             return
         assert session.audio_bridge is not None
         drained = 0
-        while not session.audio_out_queue.empty() and drained < 20:
+        while not session.audio_out_queue.empty() and drained < _AUDIO_OUT_DRAIN_BATCH_MAX:
             chunk, enqueued_at, _source = session.audio_out_queue.get_nowait()
             await session.audio_bridge.audio_out(chunk)
             drained += 1
@@ -1078,9 +1114,13 @@ class DirectSessionManager:
         try:
             started = time.perf_counter()
             session.metrics.last_tts_started_at = started
+            session.metrics.tts_turn_id_last = f"{session.session_id}-tts-{int(started * 1000)}"
             first_chunk = True
+            first_chunk_sent = True
             collect_prepared_audio = settings.audio_debug_dump_enabled
             prepared_pcm = bytearray() if collect_prepared_audio else None
+            optimizer = Pcm16RealtimeOptimizer()
+            last_provider_chunk_at: Optional[float] = None
             tts_source = source_override or (
                 session.voice_state.active_path
                 if session.voice_state is not None
@@ -1098,11 +1138,13 @@ class DirectSessionManager:
                 voice_id_source=diagnostics.get("voice_id_source"),
                 voice_id_masked=diagnostics.get("voice_id_masked"),
                 text_chars=len(text),
+                turn_id=session.metrics.tts_turn_id_last,
             )
             async for pcm in voice.synthesize_streaming(text):
+                last_provider_chunk_at = time.perf_counter()
                 if first_chunk:
                     session.metrics.tts_latency_ms_last = (
-                        (time.perf_counter() - started) * 1000
+                        (last_provider_chunk_at - started) * 1000
                     )
                     observe_direct_tts_latency(session.metrics.tts_latency_ms_last)
                     first_chunk = False
@@ -1113,13 +1155,126 @@ class DirectSessionManager:
                         provider=provider_name,
                         voice_strategy=session.voice_state.strategy if session.voice_state else "unknown",
                         voice_path=tts_source,
+                        turn_id=session.metrics.tts_turn_id_last,
                     )
-                aligned = self._enqueue_audio_out(session, pcm, source=tts_source)
-                if prepared_pcm is not None and aligned:
+                for optimized_chunk in optimizer.push(pcm):
+                    aligned = self._enqueue_audio_out(session, optimized_chunk, source=tts_source)
+                    if not aligned:
+                        continue
+                    if first_chunk_sent:
+                        session.metrics.tts_first_chunk_sent_ms_last = (
+                            (time.perf_counter() - started) * 1000
+                        )
+                        first_chunk_sent = False
+                        if session.audio_bridge and hasattr(session.audio_bridge, "send_control"):
+                            session.audio_bridge.send_control({
+                                "type": "tts_turn_metrics",
+                                "phase": "started",
+                                "turn_id": session.metrics.tts_turn_id_last,
+                                "voice_path": tts_source,
+                                "tts_first_chunk_received_ms": round(session.metrics.tts_latency_ms_last or 0, 2),
+                                "tts_first_chunk_sent_to_bridge_ms": round(session.metrics.tts_first_chunk_sent_ms_last or 0, 2),
+                            })
+                    if prepared_pcm is not None:
+                        prepared_pcm.extend(aligned)
+            optimized_tail, chunking = optimizer.flush()
+            for optimized_chunk in optimized_tail:
+                aligned = self._enqueue_audio_out(session, optimized_chunk, source=tts_source)
+                if not aligned:
+                    continue
+                if first_chunk_sent:
+                    session.metrics.tts_first_chunk_sent_ms_last = (
+                        (time.perf_counter() - started) * 1000
+                    )
+                    first_chunk_sent = False
+                if prepared_pcm is not None:
                     prepared_pcm.extend(aligned)
             final_chunk = self._flush_audio_out_alignment(session, tts_source)
             if prepared_pcm is not None and final_chunk:
                 prepared_pcm.extend(final_chunk)
+
+            session.metrics.tts_last_chunk_received_ms_last = (
+                (last_provider_chunk_at - started) * 1000 if last_provider_chunk_at is not None else None
+            )
+            session.metrics.tts_audio_duration_ms_last = chunking.emitted_audio_duration_ms
+            session.metrics.tts_leading_silence_trimmed_ms_last = chunking.leading_silence_trimmed_ms
+            session.metrics.tts_trailing_silence_trimmed_ms_last = chunking.trailing_silence_trimmed_ms
+            session.metrics.tts_chunks_in_last = chunking.chunks_in
+            session.metrics.tts_chunks_out_last = chunking.chunks_out
+            session.metrics.tts_tiny_chunks_in_last = chunking.tiny_chunks_in
+
+            log.info(
+                "session_manager.tts_turn_completed",
+                call_id=str(session.call_id),
+                session_id=session.session_id,
+                turn_id=session.metrics.tts_turn_id_last,
+                provider=provider_name,
+                voice_strategy=session.voice_state.strategy if session.voice_state else "unknown",
+                voice_path=tts_source,
+                raw_chunks_in=chunking.chunks_in,
+                tiny_chunks_in=chunking.tiny_chunks_in,
+                optimized_chunks_out=chunking.chunks_out,
+                raw_bytes_in=chunking.bytes_in,
+                optimized_bytes_out=chunking.bytes_out,
+                tts_first_chunk_received_ms=round(session.metrics.tts_latency_ms_last or 0, 2),
+                tts_first_chunk_sent_to_bridge_ms=round(session.metrics.tts_first_chunk_sent_ms_last or 0, 2),
+                tts_last_chunk_received_ms=(
+                    round(session.metrics.tts_last_chunk_received_ms_last, 2)
+                    if session.metrics.tts_last_chunk_received_ms_last is not None
+                    else None
+                ),
+                emitted_audio_duration_ms=chunking.emitted_audio_duration_ms,
+                leading_silence_trimmed_ms=chunking.leading_silence_trimmed_ms,
+                trailing_silence_trimmed_ms=chunking.trailing_silence_trimmed_ms,
+                trailing_silence_kept_ms=chunking.trailing_silence_kept_ms,
+                silence_chunk_ratio=round(chunking.silence_chunk_ratio, 4),
+                stream_delivery_ratio=round(
+                    (
+                        chunking.emitted_audio_duration_ms
+                        / max(1.0, session.metrics.tts_last_chunk_received_ms_last or 1.0)
+                    ),
+                    3,
+                ),
+            )
+            if chunking.tiny_chunks_in >= 24:
+                log.warning(
+                    "session_manager.tts_chunking_overfragmented",
+                    call_id=str(session.call_id),
+                    session_id=session.session_id,
+                    turn_id=session.metrics.tts_turn_id_last,
+                    provider=provider_name,
+                    tiny_chunks_in=chunking.tiny_chunks_in,
+                    raw_chunks_in=chunking.chunks_in,
+                    optimized_chunks_out=chunking.chunks_out,
+                )
+            if chunking.trailing_silence_trimmed_ms >= 120:
+                log.warning(
+                    "session_manager.trailing_silence_excessive",
+                    call_id=str(session.call_id),
+                    session_id=session.session_id,
+                    turn_id=session.metrics.tts_turn_id_last,
+                    provider=provider_name,
+                    trailing_silence_trimmed_ms=chunking.trailing_silence_trimmed_ms,
+                )
+            if session.audio_bridge and hasattr(session.audio_bridge, "send_control"):
+                session.audio_bridge.send_control({
+                    "type": "tts_turn_metrics",
+                    "phase": "completed",
+                    "turn_id": session.metrics.tts_turn_id_last,
+                    "voice_path": tts_source,
+                    "tts_first_chunk_received_ms": round(session.metrics.tts_latency_ms_last or 0, 2),
+                    "tts_first_chunk_sent_to_bridge_ms": round(session.metrics.tts_first_chunk_sent_ms_last or 0, 2),
+                    "tts_last_chunk_received_ms": (
+                        round(session.metrics.tts_last_chunk_received_ms_last, 2)
+                        if session.metrics.tts_last_chunk_received_ms_last is not None
+                        else None
+                    ),
+                    "emitted_audio_duration_ms": chunking.emitted_audio_duration_ms,
+                    "leading_silence_trimmed_ms": chunking.leading_silence_trimmed_ms,
+                    "trailing_silence_trimmed_ms": chunking.trailing_silence_trimmed_ms,
+                    "raw_chunks_in": chunking.chunks_in,
+                    "optimized_chunks_out": chunking.chunks_out,
+                })
             if prepared_pcm:
                 artifact_path = dump_pcm16le_wav(
                     "backend_prepared_tts",
