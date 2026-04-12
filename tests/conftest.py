@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.db.base import Base
 from app.db.session import get_db
+from app.api.deps import get_call_engine
 from app.integrations.call_engine.stub import StubEngine
 from app.integrations.direct.engine import DirectGeminiEngine
 from app.integrations.direct.session_manager import DirectSessionManager
@@ -63,12 +64,22 @@ class MockGeminiLiveClient:
         on_text: Callable[[str, str], None],
         on_audio: Callable[[bytes], None],
         on_close: Callable[[], None],
-        audio_modality: bool = False,
+        on_interrupted: Optional[Callable[[], None]] = None,
+        on_turn_complete: Optional[Callable[[], None]] = None,
+        on_tool_call: Optional[Callable] = None,
+        audio_input: bool = False,
+        audio_output: bool = False,
+        transcription_output: bool = False,
+        voice_name: Optional[str] = None,
+        language_code: str = "ru-RU",
+        model_id: Optional[str] = None,
+        api_version: Optional[str] = None,
     ) -> None:
         self._on_text = on_text
         self._on_audio = on_audio
         self._on_close = on_close
-        self._audio_modality = audio_modality
+        self._on_interrupted = on_interrupted
+        self._on_turn_complete = on_turn_complete
         self.injected_instructions: List[str] = []
         self.sent_audio_chunks: List[bytes] = []
         self.connected: bool = False
@@ -138,7 +149,19 @@ def app(session: AsyncSession) -> FastAPI:
     async def override_get_db():
         yield session
 
+    async def override_get_call_engine():
+        # Use RoutingCallEngine with no real sub-engines to keep routing logic
+        # (e.g. mode=vapi without credentials → 502) but avoid real Gemini connections.
+        from app.integrations.call_engine.router_engine import RoutingCallEngine
+        return RoutingCallEngine(
+            vapi_engine=None,
+            direct_engine=None,
+            browser_engine=None,
+            fallback_engine=StubEngine(),
+        )
+
     application.dependency_overrides[get_db] = override_get_db
+    application.dependency_overrides[get_call_engine] = override_get_call_engine
     return application
 
 

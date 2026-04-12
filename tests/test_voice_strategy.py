@@ -26,7 +26,10 @@ def _restore_settings(old: dict[str, object]) -> None:
         setattr(settings, key, value)
 
 
-def test_tts_primary_rejects_implicit_hybrid_mode() -> None:
+def test_tts_primary_warns_when_gemini_audio_output_enabled() -> None:
+    # tts_primary + GEMINI_AUDIO_OUTPUT_ENABLED=true is now a warning, not an error.
+    # tts_primary uses AUDIO modality (required by gemini-3.1-flash-live-preview) but
+    # discards Gemini's audio and pipes the outputAudioTranscription to ElevenLabs instead.
     old = _save_settings()
     try:
         settings.direct_voice_strategy = "tts_primary"
@@ -35,8 +38,9 @@ def test_tts_primary_rejects_implicit_hybrid_mode() -> None:
         settings.elevenlabs_api_key = "k"
         settings.elevenlabs_voice_id = "v"
 
-        with pytest.raises(EngineError):
-            ensure_voice_strategy_valid()
+        # Should not raise — validation passes with a warning
+        definition = ensure_voice_strategy_valid()
+        assert definition.primary_path == "tts_primary"
     finally:
         _restore_settings(old)
 

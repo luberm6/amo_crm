@@ -507,7 +507,7 @@ class DirectSessionManager:
             self._run_audio_loop(session),
             name=f"direct_audio_{session_id}",
         )
-        await self._start_initial_greeting(session, voice, base_text_cb)
+        await self._start_initial_greeting(session)
 
         # ── Distributed coordination ──────────────────────────────────────────
         if self._coordinator is not None:
@@ -1012,8 +1012,6 @@ class DirectSessionManager:
     async def _start_initial_greeting(
         self,
         session: DirectSession,
-        voice: AbstractVoiceProvider,
-        text_callback: Callable[[str, str], None],
     ) -> None:
         greeting = (
             session.initial_greeting_text
@@ -1027,31 +1025,14 @@ class DirectSessionManager:
         ):
             return
 
-        if session.voice_state.initial_greeting_path in {"tts_primary", "tts_fallback"}:
-            text_callback("assistant", greeting)
-            task = asyncio.create_task(
-                self._synthesize_to_audio_queue(
-                    session,
-                    voice,
-                    greeting,
-                    source_override=session.voice_state.initial_greeting_path,
-                ),
-                name=f"initial_greeting_{session.session_id}",
-            )
-            session.tts_tasks.add(task)
-            task.add_done_callback(lambda t: session.tts_tasks.discard(t))
-            log.info(
-                "session_manager.initial_greeting_started",
-                session_id=session.session_id,
-                voice_strategy=session.voice_state.strategy,
-                path=session.voice_state.initial_greeting_path,
-            )
-            return
-
-        if (
-            session.voice_state.initial_greeting_path == "gemini_native"
-            and session.gemini_client is not None
-        ):
+        path = session.voice_state.initial_greeting_path
+        if path in {"tts_primary", "tts_fallback", "gemini_native"} and session.gemini_client is not None:
+            # Inject instruction so Gemini speaks the greeting.
+            # For tts_primary/tts_fallback: Gemini's audio is discarded; the outputAudioTranscription
+            # text fires on_text → ElevenLabs synthesis (single synthesis, no noise).
+            # For gemini_native: Gemini's native audio is played directly via on_audio.
+            # Previously tts_primary had an explicit _synthesize_to_audio_queue call here,
+            # which ran in parallel with Gemini's autonomous greeting → interleaved chunks → noise.
             instruction = (
                 "Сразу после соединения поздоровайся с клиентом этой фразой "
                 f"без изменений: {greeting}"
@@ -1061,7 +1042,7 @@ class DirectSessionManager:
                 "session_manager.initial_greeting_started",
                 session_id=session.session_id,
                 voice_strategy=session.voice_state.strategy,
-                path="gemini_native",
+                path=path,
             )
 
     async def _check_model_response_timeout(self, session: DirectSession) -> None:
