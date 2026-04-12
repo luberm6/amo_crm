@@ -15,6 +15,7 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audio_utils import Pcm16ChunkAligner, dump_pcm16le_wav, pcm16le_stats
 from app.api.admin_auth import require_admin_auth
 from app.api.deps import (
     get_browser_registry,
@@ -318,14 +319,22 @@ async def play_browser_test_tts(
 
     text = "Это тестовое воспроизведение TTS из браузерного debug режима."
     chunks_enqueued = 0
+    aligner = Pcm16ChunkAligner()
+    prepared_pcm = bytearray()
     try:
         async for chunk in voice_provider.synthesize_streaming(text):
             if not chunk:
                 continue
-            # PCM16 requires even byte count for Int16Array in browser
-            if len(chunk) % 2 != 0:
-                chunk = chunk + b"\x00"
-            await bridge.audio_out(chunk)
+            prepared = aligner.push(chunk)
+            if not prepared:
+                continue
+            prepared_pcm.extend(prepared)
+            await bridge.audio_out(prepared)
+            chunks_enqueued += 1
+        final_chunk = aligner.flush(pad_final_byte=True)
+        if final_chunk:
+            prepared_pcm.extend(final_chunk)
+            await bridge.audio_out(final_chunk)
             chunks_enqueued += 1
     except Exception as exc:
         detail = exc.detail if isinstance(exc, AppError) and isinstance(exc.detail, dict) else {}
@@ -360,7 +369,27 @@ async def play_browser_test_tts(
         voice_strategy=live_session.voice_state.strategy if live_session.voice_state else None,
         active_voice_path=live_session.voice_state.active_path if live_session.voice_state else None,
         chunks_enqueued=chunks_enqueued,
+        odd_chunks_seen=aligner.odd_chunks,
+        **pcm16le_stats(bytes(prepared_pcm)),
     )
+    artifact_path = dump_pcm16le_wav(
+        "browser_bridge_outgoing_tts",
+        bytes(prepared_pcm),
+        session_id=call.mango_call_id,
+        call_id=str(call.id),
+    )
+    if artifact_path:
+        log.info(
+            "browser_bridge.tts_chunk_sent",
+            call_id=str(call.id),
+            session_id=call.mango_call_id,
+            agent_id=str(call.agent_profile_id) if call.agent_profile_id else None,
+            voice_strategy=live_session.voice_state.strategy if live_session.voice_state else None,
+            active_voice_path=live_session.voice_state.active_path if live_session.voice_state else None,
+            chunk_count=chunks_enqueued,
+            odd_chunks_seen=aligner.odd_chunks,
+            artifact_path=artifact_path,
+        )
     return BrowserCallDebugActionRead(
         action="test_tts",
         message="TTS debug playback enqueued for browser playback",
@@ -402,7 +431,25 @@ async def browser_call_ws(
             if message["type"] == "websocket.disconnect":
                 break
             if message.get("bytes"):
-                bridge.push_audio(message["bytes"])
+                payload = message["bytes"]
+                log.info(
+                    "browser_call.audio_chunk_received",
+                    call_id=str(call_id),
+                    session_id=bridge.session_id,
+                    agent_id=bridge.agent_id,
+                    voice_strategy=bridge.voice_strategy,
+                    active_voice_path=bridge.active_voice_path,
+                    format="pcm_s16le",
+                    sample_rate=_PCM_SAMPLE_RATE,
+                    channels=1,
+                    sample_width_bits=16,
+                    encoding_type="pcm_s16le",
+                    container="raw",
+                    endian="little",
+                    byte_length=len(payload),
+                    first_bytes_preview_hex=payload[:12].hex(),
+                )
+                bridge.push_audio(payload)
 
     async def _sender() -> None:
         async for chunk in bridge.outbound_audio():

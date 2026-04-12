@@ -8,7 +8,7 @@ import pytest
 
 from app.core.config import settings
 from app.core.exceptions import EngineError
-from app.integrations.direct.session_manager import DirectSessionManager
+from app.integrations.direct.session_manager import DirectSession, DirectSessionManager
 from app.integrations.telephony.audio_bridge import AbstractAudioBridge
 from app.integrations.telephony.base import (
     AbstractTelephonyAdapter,
@@ -90,6 +90,25 @@ async def _create_call_record(session_factory, call_id, phone="+79991234567"):
         call = Call(id=call_id, phone=phone, status=CallStatus.IN_PROGRESS)
         session.add(call)
         await session.commit()
+
+
+def test_session_manager_audio_out_alignment_preserves_pcm16_stream() -> None:
+    sm = DirectSessionManager()
+    direct_session = DirectSession(
+        session_id="test-direct",
+        call_id=uuid.uuid4(),
+        phone="+79991230000",
+    )
+
+    first = sm._enqueue_audio_out(direct_session, b"\x01", "tts_primary")
+    second = sm._enqueue_audio_out(direct_session, b"\x02\x03", "tts_primary")
+    third = sm._enqueue_audio_out(direct_session, b"\x04\x05\x06", "tts_primary")
+    tail = sm._flush_audio_out_alignment(direct_session, "tts_primary")
+
+    assert first == b""
+    assert second == b"\x01\x02"
+    assert third == b"\x03\x04\x05\x06"
+    assert tail == b""
 
 
 class BridgeTelephonyAdapter(AbstractTelephonyAdapter):

@@ -41,6 +41,11 @@ from typing import TYPE_CHECKING, Callable, List, Optional
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.core.audio_utils import (
+    Pcm16ChunkAligner,
+    dump_pcm16le_wav,
+    pcm16le_stats,
+)
 from app.core.config import settings
 from app.core.exceptions import EngineError
 from app.core.logging import get_logger
@@ -205,6 +210,7 @@ class DirectSession:
     metrics: DirectSessionMetrics = field(default_factory=DirectSessionMetrics)
     bridge_reader_task: Optional[asyncio.Task] = None
     tts_tasks: set[asyncio.Task] = field(default_factory=set)
+    audio_out_aligners: dict[str, Pcm16ChunkAligner] = field(default_factory=dict)
     voice_state: Optional[SessionVoiceState] = None
     initial_greeting_text: Optional[str] = None
     last_error: Optional[str] = None
@@ -880,19 +886,74 @@ class DirectSessionManager:
                 session.metrics.inbound_chunks_dropped += 1
                 inc_direct_audio_in("dropped")
 
-    def _enqueue_audio_out(self, session: DirectSession, chunk: bytes, source: str) -> None:
+    def _enqueue_audio_out(self, session: DirectSession, chunk: bytes, source: str) -> bytes:
         if not chunk:
-            return
-        # PCM16 requires an even byte count so the browser can create Int16Array.
-        # Odd-byte chunks can arrive from ElevenLabs HTTP streaming or Gemini audio.
-        if len(chunk) % 2 != 0:
-            chunk = chunk + b"\x00"
+            return b""
+        aligner = session.audio_out_aligners.setdefault(source, Pcm16ChunkAligner())
+        aligned = aligner.push(chunk)
+        if not aligned:
+            log.info(
+                "session_manager.tts_audio_prepared",
+                call_id=str(session.call_id),
+                session_id=session.session_id,
+                voice_strategy=session.voice_state.strategy if session.voice_state else None,
+                voice_path=source,
+                provider=(
+                    getattr(session.voice_provider, "runtime_diagnostics", lambda: {})().get("provider")
+                    if session.voice_provider is not None
+                    else None
+                ),
+                format="pcm_s16le",
+                sample_rate=16000,
+                channels=1,
+                sample_width_bits=16,
+                encoding_type="pcm_s16le",
+                endian="little",
+                container="raw",
+                byte_length=0,
+                chunk_count=aligner.chunks_seen,
+                first_bytes_preview_hex="",
+                carry_bytes=len(aligner.carry),
+                odd_chunks_seen=aligner.odd_chunks,
+            )
+            return b""
+
+        stats = pcm16le_stats(aligned)
+        log.info(
+            "session_manager.tts_audio_prepared",
+            call_id=str(session.call_id),
+            session_id=session.session_id,
+            voice_strategy=session.voice_state.strategy if session.voice_state else None,
+            voice_path=source,
+            provider=(
+                getattr(session.voice_provider, "runtime_diagnostics", lambda: {})().get("provider")
+                if session.voice_provider is not None
+                else None
+            ),
+            format=stats["format"],
+            sample_rate=stats["sample_rate"],
+            channels=stats["channels"],
+            sample_width_bits=stats["sample_width_bits"],
+            encoding_type=stats["format"],
+            endian=stats["endian"],
+            container=stats["container"],
+            byte_length=stats["byte_length"],
+            chunk_count=aligner.chunks_seen,
+            first_bytes_preview_hex=stats["first_bytes_hex"],
+            rms=stats["rms"],
+            peak=stats["peak"],
+            silence_ratio=stats["silence_ratio"],
+            clipping_ratio=stats["clipping_ratio"],
+            carry_bytes=len(aligner.carry),
+            odd_chunks_seen=aligner.odd_chunks,
+        )
+
         session.metrics.outbound_chunks_enqueued += 1
         inc_direct_audio_out("enqueued", source)
-        item = (chunk, time.perf_counter(), source)
+        item = (aligned, time.perf_counter(), source)
         try:
             session.audio_out_queue.put_nowait(item)
-            return
+            return aligned
         except asyncio.QueueFull:
             session.metrics.outbound_chunks_dropped += 1
             inc_direct_audio_out("dropped", source)
@@ -905,6 +966,46 @@ class DirectSessionManager:
             except asyncio.QueueFull:
                 session.metrics.outbound_chunks_dropped += 1
                 inc_direct_audio_out("dropped", source)
+        return aligned
+
+    def _flush_audio_out_alignment(self, session: DirectSession, source: str) -> bytes:
+        aligner = session.audio_out_aligners.pop(source, None)
+        if aligner is None:
+            return b""
+        final_chunk = aligner.flush(pad_final_byte=True)
+        if not final_chunk:
+            return b""
+        stats = pcm16le_stats(final_chunk)
+        log.warning(
+            "session_manager.tts_audio_alignment_flushed",
+            call_id=str(session.call_id),
+            session_id=session.session_id,
+            voice_strategy=session.voice_state.strategy if session.voice_state else None,
+            voice_path=source,
+            format=stats["format"],
+            sample_rate=stats["sample_rate"],
+            channels=stats["channels"],
+            sample_width_bits=stats["sample_width_bits"],
+            encoding_type=stats["format"],
+            endian=stats["endian"],
+            container=stats["container"],
+            byte_length=stats["byte_length"],
+            first_bytes_preview_hex=stats["first_bytes_hex"],
+            rms=stats["rms"],
+            peak=stats["peak"],
+            silence_ratio=stats["silence_ratio"],
+            clipping_ratio=stats["clipping_ratio"],
+            padded_final_byte=True,
+        )
+        session.metrics.outbound_chunks_enqueued += 1
+        inc_direct_audio_out("enqueued", source)
+        item = (final_chunk, time.perf_counter(), source)
+        try:
+            session.audio_out_queue.put_nowait(item)
+        except asyncio.QueueFull:
+            session.metrics.outbound_chunks_dropped += 1
+            inc_direct_audio_out("dropped", source)
+        return final_chunk
 
     async def _drain_instruction_queue(self, session: DirectSession) -> None:
         assert session.gemini_client is not None
@@ -978,6 +1079,8 @@ class DirectSessionManager:
             started = time.perf_counter()
             session.metrics.last_tts_started_at = started
             first_chunk = True
+            collect_prepared_audio = settings.audio_debug_dump_enabled
+            prepared_pcm = bytearray() if collect_prepared_audio else None
             tts_source = source_override or (
                 session.voice_state.active_path
                 if session.voice_state is not None
@@ -1011,7 +1114,28 @@ class DirectSessionManager:
                         voice_strategy=session.voice_state.strategy if session.voice_state else "unknown",
                         voice_path=tts_source,
                     )
-                self._enqueue_audio_out(session, pcm, source=tts_source)
+                aligned = self._enqueue_audio_out(session, pcm, source=tts_source)
+                if prepared_pcm is not None and aligned:
+                    prepared_pcm.extend(aligned)
+            final_chunk = self._flush_audio_out_alignment(session, tts_source)
+            if prepared_pcm is not None and final_chunk:
+                prepared_pcm.extend(final_chunk)
+            if prepared_pcm:
+                artifact_path = dump_pcm16le_wav(
+                    "backend_prepared_tts",
+                    bytes(prepared_pcm),
+                    session_id=session.session_id,
+                    call_id=str(session.call_id),
+                )
+                if artifact_path:
+                    log.info(
+                        "session_manager.tts_audio_dumped",
+                        call_id=str(session.call_id),
+                        session_id=session.session_id,
+                        voice_strategy=session.voice_state.strategy if session.voice_state else None,
+                        voice_path=tts_source,
+                        artifact_path=artifact_path,
+                    )
         except Exception as exc:
             detail = exc.detail if isinstance(exc, EngineError) and isinstance(exc.detail, dict) else {}
             tts_stage = str(detail.get("stage") or "tts")

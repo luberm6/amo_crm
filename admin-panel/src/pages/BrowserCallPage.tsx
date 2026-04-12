@@ -239,7 +239,7 @@ function resampleFloat32Linear(
   return output
 }
 
-function concatArrayBuffers(chunks: ArrayBuffer[]) {
+function concatArrayBuffers(chunks: ArrayBufferLike[]) {
   const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
   const output = new Uint8Array(totalLength)
   let offset = 0
@@ -320,6 +320,38 @@ function computeAudioStats(buffer: Float32Array<ArrayBufferLike>) {
   }
 }
 
+function normalizePcm16Chunk(
+  chunk: ArrayBuffer,
+  carry: Uint8Array | null,
+): {
+  alignedBuffer: ArrayBuffer | null
+  nextCarry: Uint8Array | null
+  rawByteLength: number
+  alignedByteLength: number
+  hadOddBoundary: boolean
+  firstBytesHex: string
+} {
+  const incoming = new Uint8Array(chunk)
+  const carryBuffer = carry
+    ? carry.slice(0).buffer
+    : null
+  const merged = carry && carry.byteLength > 0
+    ? concatArrayBuffers([carryBuffer as ArrayBuffer, chunk])
+    : incoming
+  const mergedLength = merged.byteLength
+  const evenLength = mergedLength - (mergedLength % 2)
+  const aligned = evenLength > 0 ? merged.slice(0, evenLength) : null
+  const nextCarry = mergedLength % 2 === 0 ? null : merged.slice(mergedLength - 1)
+  return {
+    alignedBuffer: aligned ? aligned.buffer.slice(aligned.byteOffset, aligned.byteOffset + aligned.byteLength) : null,
+    nextCarry,
+    rawByteLength: incoming.byteLength,
+    alignedByteLength: evenLength,
+    hadOddBoundary: mergedLength % 2 !== 0 || Boolean(carry && carry.byteLength > 0),
+    firstBytesHex: Array.from(incoming.slice(0, 12)).map((value) => value.toString(16).padStart(2, '0')).join(''),
+  }
+}
+
 function formatMetric(value?: number | null) {
   return value == null ? '—' : `${Math.round(value)} ms`
 }
@@ -389,6 +421,7 @@ export default function BrowserCallPage() {
   const latestWaveformRef = useRef<Float32Array<ArrayBufferLike> | null>(null)
   const pendingPlaybackChunksRef = useRef<ArrayBuffer[]>([])
   const pendingPlaybackBytesRef = useRef(0)
+  const inboundOddByteCarryRef = useRef<Uint8Array | null>(null)
   const playbackFlushTimerRef = useRef<number | null>(null)
   const playbackSilenceTimerRef = useRef<number | null>(null)
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([])
@@ -672,14 +705,43 @@ export default function BrowserCallPage() {
       if (options?.preserveArtifact !== false) {
         recordInboundAudioArtifact(arrayBuffer)
       }
+      if (arrayBuffer.byteLength % 2 !== 0) {
+        const message = 'Получен нечётный PCM16 buffer; отбрасываю последний байт перед decode.'
+        logBrowserEvent('browser_playback.decode_suspicious', {
+          source,
+          byte_length: arrayBuffer.byteLength,
+          reason: 'odd_byte_length',
+        }, 'warn')
+        updateLocalAudioDebug({ lastPlaybackError: message })
+      }
       const pcmFloat = int16ToFloat32(arrayBuffer)
       latestWaveformRef.current = pcmFloat
       setWaveformVersion((previous) => previous + 1)
       const playbackSampleRate = runtime.context.sampleRate
       const formatMismatch = playbackSampleRate !== inputSampleRate
+      logBrowserEvent('browser_playback.audio_format_detected', {
+        source,
+        format: 'pcm_s16le',
+        expected_sample_rate: inputSampleRate,
+        actual_sample_rate: playbackSampleRate,
+        channels: TARGET_PCM_CHANNELS,
+        sample_width_bits: TARGET_PCM_BIT_DEPTH,
+        container: 'raw',
+        endian: 'little',
+        byte_length: arrayBuffer.byteLength,
+      })
       const playbackFloat = formatMismatch
         ? resampleFloat32Linear(pcmFloat, inputSampleRate, playbackSampleRate)
         : pcmFloat
+      if (formatMismatch) {
+        logBrowserEvent('browser_playback.resample_applied', {
+          source,
+          from_sample_rate: inputSampleRate,
+          to_sample_rate: playbackSampleRate,
+          samples_in: pcmFloat.length,
+          samples_out: playbackFloat.length,
+        })
+      }
       const { rms, peak } = computeAudioStats(playbackFloat)
       const audioTooQuiet = rms < AUDIO_TOO_QUIET_RMS_THRESHOLD
       const buffer = runtime.context.createBuffer(1, playbackFloat.length, playbackSampleRate)
@@ -754,13 +816,15 @@ export default function BrowserCallPage() {
         playbackDiagnostic: audioTooQuiet ? 'PLAYBACK_FAILURE_LIKELY' : null,
       })
       setAiState('speaking')
-      logBrowserEvent('playback_started', {
+      logBrowserEvent('browser_playback.output_started', {
         source,
+        format: 'pcm_s16le',
         pcm_bytes: arrayBuffer.byteLength,
         playback_cursor_s: playbackCursorRef.current,
         gain: playbackGain.gain.value,
         rms: Number(rms.toFixed(4)),
         max_amplitude: Number(peak.toFixed(4)),
+        output_device: localAudioDebugRef.current.currentOutputDeviceId || 'system-default',
       })
       if (playbackSilenceTimerRef.current) {
         window.clearTimeout(playbackSilenceTimerRef.current)
@@ -790,6 +854,7 @@ export default function BrowserCallPage() {
     const mergedBytes = pendingPlaybackBytesRef.current
     pendingPlaybackChunksRef.current = []
     pendingPlaybackBytesRef.current = 0
+    inboundOddByteCarryRef.current = null
     logBrowserEvent('playback_buffer_flushed', {
       reason,
       merged_bytes: mergedBytes,
@@ -969,6 +1034,12 @@ export default function BrowserCallPage() {
     }
     pendingPlaybackChunksRef.current = []
     pendingPlaybackBytesRef.current = 0
+    if (inboundOddByteCarryRef.current?.byteLength) {
+      logBrowserEvent('browser_playback.decode_suspicious', {
+        reason: 'dangling_carry_byte_on_stop',
+        dangling_bytes: inboundOddByteCarryRef.current.byteLength,
+      }, 'warn')
+    }
     if (!runtime) {
       setMicState('idle')
       updateLocalAudioDebug({
@@ -994,6 +1065,7 @@ export default function BrowserCallPage() {
     setMicState('idle')
     setAiState('silent')
     inboundPcmChunksRef.current = []
+    inboundOddByteCarryRef.current = null
     latestWaveformRef.current = null
     setWaveformVisible(false)
     if (lastAudioUrlRef.current) {
@@ -1357,6 +1429,7 @@ export default function BrowserCallPage() {
     setLastAudioWavSize(0)
     setLastAudioValid(false)
     inboundPcmChunksRef.current = []
+    inboundOddByteCarryRef.current = null
     latestWaveformRef.current = null
     setWaveformVisible(false)
     let nextSession: BrowserCallStartResponse | null = null
@@ -1432,11 +1505,47 @@ export default function BrowserCallPage() {
         }
         if (event.data instanceof Blob) {
           bumpLocalAudioCounter('inboundAudioChunkCount')
-          void event.data.arrayBuffer().then((payload) => enqueuePlaybackChunk(payload))
+          void event.data.arrayBuffer().then((payload) => {
+            const normalized = normalizePcm16Chunk(payload, inboundOddByteCarryRef.current)
+            inboundOddByteCarryRef.current = normalized.nextCarry
+            logBrowserEvent('browser_call.audio_chunk_received', {
+              transport: 'websocket_blob',
+              format: 'pcm_s16le',
+              sample_rate: TARGET_PCM_SAMPLE_RATE,
+              channels: TARGET_PCM_CHANNELS,
+              sample_width_bits: TARGET_PCM_BIT_DEPTH,
+              container: 'raw',
+              endian: 'little',
+              raw_byte_length: normalized.rawByteLength,
+              aligned_byte_length: normalized.alignedByteLength,
+              had_odd_boundary: normalized.hadOddBoundary,
+              first_bytes_preview_hex: normalized.firstBytesHex,
+            }, normalized.hadOddBoundary ? 'warn' : 'info')
+            if (normalized.alignedBuffer) {
+              enqueuePlaybackChunk(normalized.alignedBuffer)
+            }
+          })
           return
         }
         bumpLocalAudioCounter('inboundAudioChunkCount')
-        enqueuePlaybackChunk(event.data)
+        const normalized = normalizePcm16Chunk(event.data, inboundOddByteCarryRef.current)
+        inboundOddByteCarryRef.current = normalized.nextCarry
+        logBrowserEvent('browser_call.audio_chunk_received', {
+          transport: 'websocket_arraybuffer',
+          format: 'pcm_s16le',
+          sample_rate: TARGET_PCM_SAMPLE_RATE,
+          channels: TARGET_PCM_CHANNELS,
+          sample_width_bits: TARGET_PCM_BIT_DEPTH,
+          container: 'raw',
+          endian: 'little',
+          raw_byte_length: normalized.rawByteLength,
+          aligned_byte_length: normalized.alignedByteLength,
+          had_odd_boundary: normalized.hadOddBoundary,
+          first_bytes_preview_hex: normalized.firstBytesHex,
+        }, normalized.hadOddBoundary ? 'warn' : 'info')
+        if (normalized.alignedBuffer) {
+          enqueuePlaybackChunk(normalized.alignedBuffer)
+        }
       }
       socket.onerror = () => {
         const message = 'Ошибка транспорта WebSocket браузерного звонка.'

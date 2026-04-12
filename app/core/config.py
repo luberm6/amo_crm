@@ -157,6 +157,9 @@ class Settings(BaseSettings):
     # ── Metrics / observability ──────────────────────────────────────────────
     # Enables /metrics endpoint and Prometheus telemetry exporters.
     metrics_enabled: bool = True
+    # Optional local-only WAV dumps for debugging audio corruption in browser/direct runtime.
+    audio_debug_dump_enabled: bool = False
+    audio_debug_dump_dir: str = "/tmp/amo_crm_audio_debug"
 
     # ── Rate limiting ─────────────────────────────────────────────────────────
     # Global enable/disable for all rate limiting checks (disabled during testing)

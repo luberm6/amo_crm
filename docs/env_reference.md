@@ -156,6 +156,8 @@ Legend for `Required`:
 | `DIRECT_INITIAL_GREETING_TEXT` | No | default greeting | Direct runtime | Greeting text | First-turn text only |
 | `DIRECT_MODEL_RESPONSE_TIMEOUT_SECONDS` | No | `8.0` | Direct runtime | Fail-fast timeout for no model response | Runtime failure behavior only |
 | `SUMMARY_LLM_PROVIDER` | No | empty | summaries/whispers | Optional summary provider | Summary enrichment only |
+| `AUDIO_DEBUG_DUMP_ENABLED` | No | `false` | Direct runtime, Browser Call debug | Writes PCM debug WAV artifacts to disk for format investigation | Nothing functional; diagnostics only |
+| `AUDIO_DEBUG_DUMP_DIR` | No | `/tmp/amo_crm_audio_debug` | Direct runtime, Browser Call debug | Target directory for PCM debug WAV artifacts | Nothing functional; diagnostics only |
 
 ## ElevenLabs
 

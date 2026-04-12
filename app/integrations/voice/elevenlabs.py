@@ -18,6 +18,11 @@ from typing import Any, AsyncIterator, Optional
 
 import httpx
 
+from app.core.audio_utils import (
+    Pcm16ChunkAligner,
+    dump_pcm16le_wav,
+    pcm16le_stats,
+)
 from app.core.config import settings
 from app.core.exceptions import EngineError
 from app.core.logging import get_logger
@@ -185,6 +190,31 @@ class ElevenLabsClient(AbstractVoiceProvider):
             byte_length=len(content),
             streaming=False,
         )
+        stats = pcm16le_stats(content)
+        log.info(
+            "elevenlabs.response_audio_metadata",
+            provider="elevenlabs",
+            stage="response_parse",
+            config_source=config.config_source,
+            voice_id_source=config.voice_id_source,
+            voice_id_masked=config.voice_id_masked,
+            api_key_set=config.api_key_set,
+            **stats,
+        )
+        artifact_path = dump_pcm16le_wav(
+            "raw_elevenlabs_response",
+            content,
+        )
+        if artifact_path:
+            log.info(
+                "elevenlabs.audio_bytes_received",
+                provider="elevenlabs",
+                stage="response_parse",
+                config_source=config.config_source,
+                voice_id_source=config.voice_id_source,
+                byte_length=len(content),
+                artifact_path=artifact_path,
+            )
         return content
 
     async def synthesize_streaming(
@@ -251,11 +281,47 @@ class ElevenLabsClient(AbstractVoiceProvider):
                         streaming=True,
                     )
 
+                    aligner = Pcm16ChunkAligner()
+                    chunk_index = 0
+                    emitted_bytes = 0
+                    raw_stream = bytearray()
+
                     async for chunk in response.aiter_bytes():
                         if not chunk:
                             continue
+                        chunk_index += 1
                         total_bytes += len(chunk)
-                        yield chunk
+                        raw_stream.extend(chunk)
+                        aligned = aligner.push(chunk)
+                        if chunk_index <= 3 or chunk_index % 50 == 0 or len(chunk) % 2 != 0:
+                            log.info(
+                                "elevenlabs.audio_bytes_received",
+                                provider="elevenlabs",
+                                stage="response_stream",
+                                config_source=config.config_source,
+                                voice_id_source=config.voice_id_source,
+                                voice_id_masked=config.voice_id_masked,
+                                chunk_index=chunk_index,
+                                byte_length=len(chunk),
+                                odd_length=bool(len(chunk) % 2),
+                                first_bytes_hex=chunk[:12].hex(),
+                            )
+                        if aligned:
+                            emitted_bytes += len(aligned)
+                            yield aligned
+
+                    final_chunk = aligner.flush(pad_final_byte=True)
+                    if final_chunk:
+                        emitted_bytes += len(final_chunk)
+                        log.warning(
+                            "elevenlabs.response_stream_padded_final_byte",
+                            provider="elevenlabs",
+                            config_source=config.config_source,
+                            voice_id_source=config.voice_id_source,
+                            voice_id_masked=config.voice_id_masked,
+                            padded_bytes=len(final_chunk),
+                        )
+                        yield final_chunk
 
                     if total_bytes == 0:
                         raise self._engine_error(
@@ -267,6 +333,37 @@ class ElevenLabsClient(AbstractVoiceProvider):
                                 "content_type": content_type,
                                 "byte_length": total_bytes,
                             },
+                        )
+                    stream_stats = pcm16le_stats(bytes(raw_stream[:len(raw_stream) - (len(raw_stream) % 2)]))
+                    log.info(
+                        "elevenlabs.response_audio_metadata",
+                        provider="elevenlabs",
+                        stage="response_stream",
+                        config_source=config.config_source,
+                        voice_id_source=config.voice_id_source,
+                        voice_id_masked=config.voice_id_masked,
+                        api_key_set=config.api_key_set,
+                        chunk_count=chunk_index,
+                        raw_byte_length=total_bytes,
+                        aligned_byte_length=emitted_bytes,
+                        odd_chunks=aligner.odd_chunks,
+                        **stream_stats,
+                    )
+                    artifact_path = dump_pcm16le_wav(
+                        "raw_elevenlabs_stream",
+                        bytes(raw_stream),
+                    )
+                    if artifact_path:
+                        log.info(
+                            "elevenlabs.audio_bytes_received",
+                            provider="elevenlabs",
+                            stage="response_stream",
+                            config_source=config.config_source,
+                            voice_id_source=config.voice_id_source,
+                            raw_byte_length=total_bytes,
+                            aligned_byte_length=emitted_bytes,
+                            odd_chunks=aligner.odd_chunks,
+                            artifact_path=artifact_path,
                         )
         except EngineError:
             raise

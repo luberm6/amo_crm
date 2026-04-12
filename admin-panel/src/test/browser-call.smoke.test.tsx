@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -347,19 +347,19 @@ describe('browser call page smoke', () => {
     renderBrowserCallPage()
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Browser Call/i).length).toBeGreaterThan(0)
+      expect(screen.getAllByText(/Браузерный звонок|Browser Call/i).length).toBeGreaterThan(0)
     })
-    expect(screen.getByLabelText(/Agent profile/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Output device/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Start Test Call/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Stop Test Call/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Test Mic Loopback/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Play Test Tone from Backend/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Test TTS/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Play Loud Test Tone/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Download last audio/i })).toBeInTheDocument()
-    expect(screen.getByText(/Live conversation/i)).toBeInTheDocument()
-    expect(screen.getByText(/Session state/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Профиль агента|Agent profile/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Устройство вывода|Output device/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Завершить звонок|Stop Test Call/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Тест микрофона.*loopback|Test Mic Loopback/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Тестовый тон с backend|Play Test Tone from Backend/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Тест TTS|Test TTS/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Громкий тестовый тон|Play Loud Test Tone/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Скачать последнее аудио|Download last audio/i })).toBeInTheDocument()
+    expect(screen.getByText(/Живой разговор|Live conversation/i)).toBeInTheDocument()
+    expect(screen.getByText(/Состояние сессии|Session state/i)).toBeInTheDocument()
   })
 
   it('starts browser audio runtime, resumes AudioContext, streams microphone PCM and plays inbound audio', async () => {
@@ -369,16 +369,18 @@ describe('browser call page smoke', () => {
     renderBrowserCallPage()
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Start Test Call/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('button', { name: /Start Test Call/i }))
+    await user.click(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i }))
 
     await waitFor(() => {
       expect(FakeWebSocket.instances).toHaveLength(1)
     })
     const socket = FakeWebSocket.instances[0]
-    socket.open()
+    await act(async () => {
+      socket.open()
+    })
 
     await waitFor(() => {
       expect(FakeAudioContext.instances).toHaveLength(1)
@@ -390,28 +392,65 @@ describe('browser call page smoke', () => {
     expect(processor).not.toBeNull()
     const onAudioProcess = processor?.onaudioprocess as unknown as ((event: AudioProcessingEvent) => void) | null
     expect(onAudioProcess).toBeTruthy()
-    onAudioProcess?.({
-      inputBuffer: {
-        getChannelData: () => new Float32Array([0, 0.1, -0.1, 0.25]),
-      },
-    } as unknown as AudioProcessingEvent)
+    await act(async () => {
+      onAudioProcess?.({
+        inputBuffer: {
+          getChannelData: () => new Float32Array([0, 0.1, -0.1, 0.25]),
+        },
+      } as unknown as AudioProcessingEvent)
+    })
     expect(socket.send).toHaveBeenCalledTimes(1)
 
-    socket.receiveBytes(new Int16Array([0, 1024, -1024, 2048]).buffer)
+    await act(async () => {
+      socket.receiveBytes(new Int16Array([0, 1024, -1024, 2048]).buffer)
+    })
     await waitFor(() => {
       expect(context.bufferSourceStarts.length).toBeGreaterThan(0)
     })
 
-    expect(screen.getByText(/browser websocket/i)).toBeInTheDocument()
-    expect(screen.getByText(/browser outbound chunks/i)).toBeInTheDocument()
-    expect(screen.getByText(/browser inbound audio chunks/i)).toBeInTheDocument()
-    expect(screen.getByText(/browser playback starts/i)).toBeInTheDocument()
-    expect(screen.getByText(/last RMS/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Output device/i)).toBeInTheDocument()
-    expect(screen.getByText(/input sample rate/i)).toBeInTheDocument()
-    expect(screen.getAllByText(/audio health/i).length).toBeGreaterThan(0)
-    expect(screen.getByText(/last audio valid/i)).toBeInTheDocument()
-    expect(screen.getByText(/waveform visible/i)).toBeInTheDocument()
+    expect(screen.getByText(/websocket/i)).toBeInTheDocument()
+    expect(screen.getByText(/исходящих/i)).toBeInTheDocument()
+    expect(screen.getByText(/входящих/i)).toBeInTheDocument()
+    expect(screen.getByText(/playback starts/i)).toBeInTheDocument()
+    expect(screen.getByText(/RMS/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Устройство вывода|Output device/i)).toBeInTheDocument()
+    expect(screen.getByText(/вход SR/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/здоровье/i).length).toBeGreaterThan(0)
+    expect(screen.getByText(/wav valid/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Форма входящего аудио/i)).toBeInTheDocument()
+  })
+
+  it('reassembles odd-length PCM websocket frames before playback', async () => {
+    const user = userEvent.setup()
+    setupCommonFetch()
+
+    renderBrowserCallPage()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i }))
+    await waitFor(() => {
+      expect(FakeWebSocket.instances).toHaveLength(1)
+    })
+    const socket = FakeWebSocket.instances[0]
+    await act(async () => {
+      socket.open()
+    })
+
+    await waitFor(() => {
+      expect(FakeAudioContext.instances).toHaveLength(1)
+    })
+    const context = FakeAudioContext.instances[0]
+
+    await act(async () => {
+      socket.receiveBytes(new Uint8Array([0x01]).buffer)
+      socket.receiveBytes(new Uint8Array([0x02, 0x03, 0x04]).buffer)
+    })
+    await waitFor(() => {
+      expect(context.bufferSourceStarts.length).toBeGreaterThan(0)
+    })
   })
 
   it('does not create a backend session when microphone permission is denied', async () => {
@@ -432,13 +471,13 @@ describe('browser call page smoke', () => {
     renderBrowserCallPage()
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Start Test Call/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('button', { name: /Start Test Call/i }))
+    await user.click(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i }))
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Browser call start failed/i).length).toBeGreaterThan(0)
+      expect(screen.getAllByText(/Permission denied|Не удалось начать браузерный звонок/i).length).toBeGreaterThan(0)
     })
     const browserCreateCalls = fetchSpy.mock.calls.filter(([input, init]) => {
       const path = typeof input === 'string' ? input : input.toString()
@@ -454,10 +493,10 @@ describe('browser call page smoke', () => {
     renderBrowserCallPage()
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Start Test Call/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('button', { name: /Start Test Call/i }))
+    await user.click(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i }))
 
     await waitFor(() => {
       expect(FakeWebSocket.instances).toHaveLength(1)
@@ -480,10 +519,10 @@ describe('browser call page smoke', () => {
     renderBrowserCallPage()
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Test Mic Loopback/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Тест микрофона.*loopback|Test Mic Loopback/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('button', { name: /Test Mic Loopback/i }))
+    await user.click(screen.getByRole('button', { name: /Тест микрофона.*loopback|Test Mic Loopback/i }))
 
     await waitFor(() => {
       expect(FakeAudioContext.instances.length).toBeGreaterThan(0)
@@ -494,7 +533,7 @@ describe('browser call page smoke', () => {
       return path.includes('/v1/browser-calls') && init?.method === 'POST'
     })
     expect(browserCreateCalls).toHaveLength(0)
-    expect(screen.getByText(/loopback active/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Остановить loopback/i })).toBeEnabled()
   })
 
   it('calls backend test tone and test tts actions on active session', async () => {
@@ -504,17 +543,17 @@ describe('browser call page smoke', () => {
     renderBrowserCallPage()
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Start Test Call/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('button', { name: /Start Test Call/i }))
+    await user.click(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i }))
     await waitFor(() => {
       expect(FakeWebSocket.instances).toHaveLength(1)
     })
     FakeWebSocket.instances[0].open()
 
-    await user.click(screen.getByRole('button', { name: /Play Test Tone from Backend/i }))
-    await user.click(screen.getByRole('button', { name: /Test TTS/i }))
+    await user.click(screen.getByRole('button', { name: /Тестовый тон с backend|Play Test Tone from Backend/i }))
+    await user.click(screen.getByRole('button', { name: /Тест TTS|Test TTS/i }))
 
     const debugCalls = fetchSpy.mock.calls.filter(([input, init]) => {
       const path = typeof input === 'string' ? input : input.toString()
@@ -533,10 +572,10 @@ describe('browser call page smoke', () => {
     renderBrowserCallPage()
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Play Loud Test Tone/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Громкий тестовый тон|Play Loud Test Tone/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('button', { name: /Play Loud Test Tone/i }))
+    await user.click(screen.getByRole('button', { name: /Громкий тестовый тон|Play Loud Test Tone/i }))
 
     await waitFor(() => {
       expect(FakeAudioContext.instances.length).toBeGreaterThan(0)

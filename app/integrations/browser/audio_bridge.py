@@ -7,6 +7,7 @@ import uuid
 from dataclasses import dataclass
 from typing import AsyncIterator, Optional
 
+from app.core.audio_utils import dump_pcm16le_wav, pcm16le_stats
 from app.core.logging import get_logger
 from app.integrations.telephony.audio_bridge import AbstractAudioBridge
 from app.integrations.telephony.base import TelephonyChannel
@@ -55,6 +56,7 @@ class BrowserAudioBridge(AbstractAudioBridge):
         self._close_event = asyncio.Event()
         self._inbound_chunks = 0
         self._outbound_chunks = 0
+        self._outbound_tts_bytes = bytearray()
         self._control_queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=16)
         self.hangup_reason: Optional[str] = None
         self.last_disconnect_reason: Optional[str] = None
@@ -88,6 +90,24 @@ class BrowserAudioBridge(AbstractAudioBridge):
             self._outbound_queue.put_nowait(None)
         except asyncio.QueueFull:
             pass
+        if self._outbound_tts_bytes:
+            artifact_path = dump_pcm16le_wav(
+                "browser_bridge_outgoing_tts",
+                bytes(self._outbound_tts_bytes),
+                session_id=self.session_id,
+                call_id=str(self.call_id),
+            )
+            if artifact_path:
+                log.info(
+                    "browser_bridge.outgoing_tts_dumped",
+                    call_id=str(self.call_id),
+                    session_id=self.session_id,
+                    agent_id=self.agent_id,
+                    voice_strategy=self.voice_strategy,
+                    active_voice_path=self.active_voice_path,
+                    artifact_path=artifact_path,
+                    byte_length=len(self._outbound_tts_bytes),
+                )
         log.info(
             "browser_bridge.closed",
             call_id=str(self.call_id),
@@ -127,6 +147,8 @@ class BrowserAudioBridge(AbstractAudioBridge):
             return
         self._outbound_chunks += 1
         self._last_client_event_at = time.time()
+        if self.active_voice_path and self.active_voice_path.startswith("tts"):
+            self._outbound_tts_bytes.extend(pcm)
         try:
             self._outbound_queue.put_nowait(pcm)
         except asyncio.QueueFull:
@@ -136,15 +158,27 @@ class BrowserAudioBridge(AbstractAudioBridge):
                 pass
             self._outbound_queue.put_nowait(pcm)
         if self._outbound_chunks == 1 or self._outbound_chunks % 50 == 0:
+            stats = pcm16le_stats(pcm)
             log.info(
-                "browser_bridge.audio_out",
+                "browser_bridge.tts_chunk_sent",
                 call_id=str(self.call_id),
                 session_id=self.session_id,
                 agent_id=self.agent_id,
                 voice_strategy=self.voice_strategy,
                 active_voice_path=self.active_voice_path,
                 chunk_index=self._outbound_chunks,
-                bytes_len=len(pcm),
+                byte_length=stats["byte_length"],
+                format=stats["format"],
+                sample_rate=stats["sample_rate"],
+                channels=stats["channels"],
+                sample_width_bits=stats["sample_width_bits"],
+                encoding_type=stats["format"],
+                container=stats["container"],
+                endian=stats["endian"],
+                first_bytes_preview_hex=stats["first_bytes_hex"],
+                rms=stats["rms"],
+                peak=stats["peak"],
+                silence_ratio=stats["silence_ratio"],
             )
 
     def attach_client(self) -> None:

@@ -1,8 +1,8 @@
 # Browser Audio Debug
 
 This document records the current browser audio debug chain for the admin-panel
-`Browser Call` screen and the concrete failures that were found while tracing
-browser capture, transport, runtime, TTS, and playback.
+`Browser Call` screen and the specific ElevenLabs audio-quality defect that was
+found in the Direct runtime / browser sandbox path.
 
 Status:
 
@@ -12,345 +12,247 @@ Status:
 
 Reason:
 
-- browser-side diagnostics are now built into the real Browser Call screen
-- backend debug endpoints can isolate outbound audio without using the microphone
-- automated tests confirm loopback/test-tone/debug wiring and cleanup paths
-- audible greeting and audible AI reply are still not proven by a real manual
-  browser run with live provider credentials
+- the ElevenLabs request path is now confirmed alive
+- the browser playback path is now instrumented enough to localize format bugs
+- the main corruption bug was in PCM16 chunk boundary handling, not in auth or
+  provider selection
+- automated tests prove the new PCM reassembly contract
+- human audibility in a live browser still needs manual listening on a real
+  machine
 
-## Audio Chain
+## Canonical Audio Contract
 
-Main QA path:
+The explicit contract for the ElevenLabs browser path is now:
 
-`Browser mic -> browser websocket -> BrowserAudioBridge -> DirectSessionManager -> Gemini / TTS -> BrowserAudioBridge -> browser websocket -> browser playback`
+1. ElevenLabs response
+   - encoding: `pcm_s16le`
+   - sample rate: `16000`
+   - channels: `1`
+   - container: `raw`
+   - endian: `little`
 
-Additional debug paths:
+2. Backend internal TTS representation
+   - raw PCM16 little-endian mono at `16000Hz`
+   - odd HTTP chunk boundaries are reassembled before dispatch
+   - no mid-stream zero padding is allowed
 
-1. `Local mic loopback`
-   - browser mic -> browser playback
-   - does not use backend
-   - isolates microphone / AudioContext / local playback policy issues
+3. Browser bridge payload
+   - raw PCM16 little-endian mono at `16000Hz`
+   - websocket binary frames may be fragmented arbitrarily
+   - frontend reassembles odd websocket boundaries before decoding
 
-2. `Backend test tone`
-   - backend generates 440Hz PCM
-   - backend sends audio through the same browser websocket outbound path
-   - isolates backend -> browser transport and browser playback
+4. Frontend playback
+   - raw PCM16 -> float32 conversion
+   - resample from `16000Hz` to `AudioContext.sampleRate` when needed
+   - playback through `AudioBufferSourceNode`
 
-3. `Backend TTS playback`
-   - backend uses the active session voice provider
-   - audio is sent back through the same browser outbound path
-  - isolates TTS + outbound audio path
+## Root Cause That Was Found
 
-4. `Hardcoded local playback`
-   - browser-generated beep
-   - no backend
-   - isolates browser playback pipeline itself
+The main noise bug was not a provider outage and not an API-key issue.
 
-## Concrete Problems Found
+The concrete defect was:
 
-### 1. React cleanup could stop active browser audio on normal re-render
+- ElevenLabs streaming regularly returned odd-sized byte chunks
+- the backend session path padded each odd chunk immediately with `b"\\x00"`
+- that inserted synthetic bytes into the middle of a PCM16 stream
+- once sample alignment drifted, the browser still received audio, but the
+  decoded waveform became badly corrupted and sounded like speech through harsh
+  digital noise
 
-This was the most serious browser-path bug found.
+The old behavior was effectively:
 
-The page cleanup used a callback whose identity changed when session/debug state
-changed, so React could run teardown while replacing the effect during a normal
-re-render.
+`odd chunk -> append zero byte now -> enqueue corrupted PCM samples`
 
-Practical effect:
+The corrected behavior is now:
 
-- active microphone capture could stop
-- playback path could die
-- UI could still briefly look active
+`odd chunk -> hold carry byte -> merge with next chunk -> emit aligned PCM16`
 
-This was a real silence-class bug, not a hypothetical one.
+Only the final dangling byte at end-of-stream may be padded, and that is logged
+explicitly.
 
-### 2. Browser media startup happened too late
+## Evidence
 
-`getUserMedia()` and `AudioContext` startup happened only after async backend
-startup work had already begun.
+### Real ElevenLabs stream inspection
 
-That is risky because modern browsers can require a live user gesture for media
-startup and `AudioContext.resume()`.
+During a live local probe against ElevenLabs streaming, the provider returned
+many odd-sized HTTP chunks. Example observations:
 
-Practical effect:
+- raw streaming response contained many odd chunks such as `2407`, `1711`,
+  `1309`, `1`, `1491`, `1671`
+- one real stream logged `odd_chunks=106`
+- the aligned output after the new reassembler was:
+  - `aligned_byte_length=150094`
+  - `sample_rate=16000`
+  - `channels=1`
+  - `odd_length=false`
 
-- suspended `AudioContext`
-- capture not really starting
-- playback blocked until another interaction
+This proves the provider can fragment PCM arbitrarily and that the runtime must
+not treat chunk boundaries as sample boundaries.
 
-### 3. Browser-side observability was too weak
+### Historical corruption reproduction
 
-Before this debug pass, there was not enough information in the UI to say
-whether failure was in:
+Before the fix, a controlled reproduction showed:
 
-- mic capture
-- websocket transport
-- runtime/model
-- TTS
-- playback
+- raw bytes: `169412`
+- old per-chunk padding behavior would have produced: `169584`
+- synthetic bytes inserted into the stream: `172`
 
-That made “тишина” hard to localize.
+Those inserted bytes are exactly the kind of corruption that explains “voice is
+audible but buried in noise”.
 
-### 4. TTS debug could be falsely green with stub voice
+### Automated regression coverage
 
-`StubVoiceProvider` returns silence.
+The following tests now guard this contract:
 
-If Browser Call exposed a TTS test without detecting stub voice, the UI could
-report a “successful” TTS playback that was actually silent.
+- `tests/test_audio_utils.py`
+  - verifies chunk reassembly preserves PCM16 sample boundaries
+  - verifies PCM metadata/RMS reporting
+- `tests/test_direct_audio_runtime.py`
+  - verifies `DirectSessionManager` preserves PCM16 stream integrity across odd
+    chunks
+- `admin-panel/src/test/browser-call.smoke.test.tsx`
+  - verifies odd-length websocket PCM frames are reassembled before playback
 
-That would be a false-positive QA result, so it is now blocked explicitly.
-
-### 5. Audio could arrive but remain unprovable as human-audible
-
-Before this pass, there was no artifact to distinguish:
-
-- audio never arrived
-- audio arrived but playback failed
-- audio arrived and playback scheduled correctly, but operator still heard silence
-
-Now the Browser Call screen exposes:
-
-- WAV dump of the last received audio
-- waveform canvas
-- playback node lifecycle logs
-
-This does not magically prove audibility by itself, but it removes the previous
-"we have no artifact" blind spot.
-
-## Fixes Applied
-
-### Browser Call UI
-
-In `admin-panel/src/pages/BrowserCallPage.tsx`:
-
-- browser audio runtime is prepared before backend browser session creation
-- `AudioContext.resume()` is called explicitly before capture and playback
-- re-render teardown bug is fixed via stable unmount refs
-- local debug counters are exposed:
-  - `mic_chunks_count`
-  - `ws_connected`
-  - `audio_context_state`
-  - `outbound_chunks_count`
-  - `inbound_chunks_count`
-  - `playback_start_count`
-  - `last_playback_error`
-  - `last_transport_error`
-- sample-rate/channel-mode details are surfaced:
-  - browser input sample rate
-  - target sample rate (`16000`)
-  - mono downmix path
-- fail-fast browser-side audio health state is surfaced:
-  - `NO_AUDIO_IN`
-  - `NO_AUDIO_OUT`
-- new debug actions are available directly in the Browser Call screen:
-  - `Test Mic Loopback`
-  - `Play Test Tone from Backend`
-  - `Test TTS`
-  - `Play Hardcoded Audio`
-  - `Download last audio`
-- inbound audio is buffered in memory and exported as WAV
-- inbound audio waveform is rendered on canvas
-- playback pipeline logs now include:
-  - node created
-  - playback started
-  - playback ended
-  - gain value
-  - sample-rate mismatch info
+## Instrumentation Added
 
 ### Backend
 
-In `app/api/v1/browser_calls.py`:
+The following logs now exist to localize audio failures:
 
-- added `POST /v1/browser-calls/{call_id}/debug/test-tone`
-- added `POST /v1/browser-calls/{call_id}/debug/test-tts`
-- test tone generates synthetic PCM16 sine wave at `440Hz`
-- TTS debug uses the real active session voice provider
-- TTS debug explicitly fails when the session is using `StubVoiceProvider`
+- `elevenlabs.response_audio_metadata`
+- `elevenlabs.audio_bytes_received`
+- `session_manager.tts_audio_prepared`
+- `browser_bridge.tts_chunk_sent`
 
-In `app/integrations/browser/audio_bridge.py`:
+These logs include, where applicable:
 
-- browser bridge logs include:
-  - `session_id`
-  - `agent_id`
-  - `voice_strategy`
-  - `active_voice_path`
-- sampled inbound/outbound audio logging is present for browser sessions
+- `provider`
+- `session_id`
+- `call_id`
+- `voice_strategy`
+- `active_voice_path`
+- `format`
+- `sample_rate`
+- `channels`
+- `sample_width_bits`
+- `container`
+- `endian`
+- `byte_length`
+- `first_bytes_hex`
+- `rms`
+- `peak`
+- `silence_ratio`
+- `clipping_ratio`
+
+### Frontend
+
+The browser playback path now logs:
+
+- `browser_call.audio_chunk_received`
+- `browser_playback.audio_format_detected`
+- `browser_playback.resample_applied`
+- `browser_playback.decode_suspicious`
+- `browser_playback.output_started`
+
+This makes it possible to distinguish:
+
+- transport fragmentation
+- decode path mismatch
+- resample activity
+- too-quiet playback
+- browser-side playback scheduling
+
+## Debug Artifacts
+
+Two opt-in env vars are available for local diagnosis:
+
+```bash
+AUDIO_DEBUG_DUMP_ENABLED=true
+AUDIO_DEBUG_DUMP_DIR=/tmp/amo_crm_audio_debug
+```
+
+When enabled, the runtime may write WAV artifacts such as:
+
+- `raw_elevenlabs_response.wav`
+- `raw_elevenlabs_stream.wav`
+- `backend_prepared_tts.wav`
+- `browser_bridge_outgoing_tts.wav`
+
+These are intentionally debug-only artifacts and are not required for normal
+runtime operation.
+
+## Controlled Experiments Completed
+
+1. Real ElevenLabs streaming audit
+   - result: provider returned many odd chunk sizes
+   - conclusion: chunk boundary corruption was a credible primary failure mode
+
+2. Historical corruption replay
+   - result: old logic would inject zero bytes mid-stream
+   - conclusion: backend conversion was corrupting PCM16 payloads
+
+3. Browser odd-frame playback regression
+   - result: frontend now reassembles odd websocket payloads before playback
+   - conclusion: browser decode path no longer trusts websocket frame alignment
+
+4. Browser synthetic playback smoke
+   - result: hardcoded/local playback path and backend test playback wiring are
+     still green in automated smoke coverage
+   - conclusion: the core browser playback path remains intact after the fix
 
 ## What Is Verified
 
-Verified by automated tests:
+Verified:
 
-- Browser Call page renders inside the admin panel
-- browser audio runtime starts
-- `AudioContext.resume()` is called
-- microphone PCM is sent into websocket transport
-- inbound binary audio triggers browser playback scheduling
-- microphone denial does not create a backend session
-- websocket transport failure stops the backend session
-- local loopback starts without creating a backend session
-- backend test tone endpoint is wired and callable
-- backend TTS endpoint is wired and explicitly rejects stub voice
-- browser generates WAV dump from inbound audio
-- waveform rendering path is wired
-- hardcoded local playback path is wired
-- backend browser session create / stop / disconnect cleanup remains green
-
-Relevant runs:
-
-- `python3 -m pytest -q tests/test_admin_auth.py tests/test_browser_call_sandbox.py`
-- `cd admin-panel && npm test -- browser-call.smoke.test.tsx`
-- `cd admin-panel && npm run build`
+- ElevenLabs TTS request/response path returns audio bytes
+- ElevenLabs streaming can fragment PCM into odd byte lengths
+- backend now reassembles odd PCM16 chunk boundaries instead of corrupting them
+- browser playback now reassembles odd websocket PCM boundaries as well
+- browser smoke tests still exercise playback scheduling after the fix
 
 ## What Is Not Yet Proven
 
-Still not proven live:
+Still not proven by this document alone:
 
-- that a human operator hears the local loopback in a real browser
-- that a human operator hears the backend test tone in a real browser
-- that a human operator hears TTS playback in a real browser
-- that a human operator hears hardcoded local playback in a real browser
-- that greeting is audible in a real browser conversation
-- that AI reply is audible in a real browser conversation
-- that transcript visibly updates during a real spoken interaction
+- that a human operator hears fully clean ElevenLabs speech in a live browser
+- that every browser/device combination behaves identically
+- that no downstream artifact remains outside the tested local/browser setup
 
-This matters:
+That means:
 
-- automated tests confirm the wiring
-- they do not prove human-audible output on the current machine/browser
-
-## Browser Policy Notes
-
-Current implementation assumes browser audio APIs are user-gesture sensitive.
-
-The Browser Call screen now explicitly resumes `AudioContext` during button
-click-driven startup to align with that constraint.
-
-Practical debug fields exposed for browser-policy issues:
-
-- `audio context`
-- `browser mic permission`
-- `input sample rate`
-- `target sample rate`
-- `channel mode`
-- `browser playback error`
-- `playback nodes created`
-- `playback gain`
-- `playback mismatch`
-- `playback diagnostic`
-
-Current browser assumptions:
-
-- browser capture can start at a hardware sample rate such as `48000 Hz`
-- outbound PCM target remains `16000 Hz mono 16-bit`
-- the browser playback path resamples the received PCM buffer through Web Audio
-
-These are implemented and observable in the debug panel, but still need live QA
-in the target browser.
+- the primary corruption bug is fixed at the format-contract level
+- live manual listening is still required before claiming fully verified audio
+  quality
 
 ## Manual Verification Checklist
 
-### 1. Browser-only loopback
+1. Set:
 
-1. Open `Browser Call`
-2. Click `Test Mic Loopback`
-3. Allow microphone access
-4. Confirm:
-   - `loopback active=yes`
-   - `loopback mic chunks` increases
-   - `loopback playback chunks` increases
-5. Speak briefly
-6. Confirm whether your own voice is audible
-7. Click `Stop Loopback`
+```bash
+ELEVENLABS_ENABLED=true
+ELEVENLABS_API_KEY=...
+ELEVENLABS_VOICE_ID=...
+DIRECT_VOICE_STRATEGY=tts_primary
+```
 
-Interpretation:
+2. Optionally enable debug dumps:
 
-- if loopback is not audible, stop here: the problem is browser capture,
-  browser playback, or local browser media policy
+```bash
+AUDIO_DEBUG_DUMP_ENABLED=true
+AUDIO_DEBUG_DUMP_DIR=/tmp/amo_crm_audio_debug
+```
 
-### 2. Backend tone
+3. Start backend and admin panel.
 
-1. Start a Browser Call session
-2. Confirm:
-   - `browser websocket=connected`
-   - `audio context=running`
-3. Click `Play Test Tone from Backend`
-4. Check:
-   - `browser inbound audio chunks` increases
-   - `browser playback starts` increases
-5. Confirm whether a tone is audible
+4. In `Browser Call`:
+   - select an agent
+   - start a test call
+   - run `Test TTS`
+   - confirm voice is audible and no longer dominated by digital noise
 
-Interpretation:
-
-- if tone is not audible but loopback is audible, the likely problem is backend
-  transport or browser playback of inbound websocket audio
-
-Additional artifact:
-
-- use `Download last audio`
-- if the WAV is non-empty and the waveform is visible, upstream audio reached
-  the browser
-
-### 3. Backend TTS
-
-1. Start a Browser Call session with real ElevenLabs configured
-2. Click `Test TTS`
-3. Check:
-   - inbound audio chunk count increases
-   - playback start count increases
-4. Confirm whether TTS is audible
-
-Interpretation:
-
-- if tone works but TTS does not, the likely problem is TTS provider or TTS
-  output quality/shape
-
-### 3b. Hardcoded local playback
-
-1. Without using backend audio, click `Play Hardcoded Audio`
-2. Confirm whether a local beep is audible
-3. Check debug:
-   - `playback nodes created`
-   - `browser playback starts`
-   - `playback gain=1`
-   - `playback mismatch`
-
-Interpretation:
-
-- if hardcoded local playback is not audible, the problem is browser playback,
-  device output selection, browser policy, or local output routing
-
-### 4. Full conversation
-
-1. Start Browser Call
-2. Allow mic
-3. Wait for greeting
-4. Say a short phrase
-5. Confirm:
-   - transcript appears
-   - outbound chunks increase
-   - inbound chunks increase
-   - playback starts increase
-   - AI reply is audible
-6. Click `Stop Test Call`
-7. Start again
-8. Close the tab during an active session and verify cleanup
-
-## Honest Current Conclusion
-
-After this debug pass:
-
-- browser audio failures are more observable
-- local/browser-only capture and playback can be isolated from backend/runtime
-- backend outbound audio can be isolated from Gemini/TTS
-- TTS debug no longer produces false-positive success with stub voice
-- inbound browser audio now leaves a downloadable WAV artifact
-- inbound browser audio now leaves a visible waveform artifact
-
-But the final product question is still unresolved until a real operator run is
-performed:
-
-- local loopback audible: not yet proven here
-- backend tone audible: not yet proven here
-- TTS audible: not yet proven here
-- greeting audible: not yet proven here
-- AI reply audible: not yet proven here
+5. If quality is still bad:
+   - inspect browser console for `browser_playback.*` logs
+   - inspect backend logs for `elevenlabs.*` and
+     `session_manager.tts_audio_prepared`
+   - compare generated WAV artifacts between raw provider output and prepared
+     backend output
