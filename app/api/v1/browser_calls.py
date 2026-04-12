@@ -328,6 +328,7 @@ async def play_browser_test_tts(
             await bridge.audio_out(chunk)
             chunks_enqueued += 1
     except Exception as exc:
+        detail = exc.detail if isinstance(exc, AppError) and isinstance(exc.detail, dict) else {}
         log.error(
             "browser_call.debug_test_tts_failed",
             call_id=str(call.id),
@@ -335,6 +336,15 @@ async def play_browser_test_tts(
             agent_id=str(call.agent_profile_id) if call.agent_profile_id else None,
             voice_strategy=live_session.voice_state.strategy if live_session.voice_state else None,
             active_voice_path=live_session.voice_state.active_path if live_session.voice_state else None,
+            provider=detail.get("provider"),
+            stage=detail.get("stage"),
+            http_status=detail.get("http_status"),
+            content_type=detail.get("content_type"),
+            response_bytes=detail.get("byte_length"),
+            voice_id_source=detail.get("voice_id_source"),
+            voice_id_masked=detail.get("voice_id_masked"),
+            api_key_set=detail.get("api_key_set"),
+            body_preview=detail.get("body_preview"),
             error=str(exc),
         )
         raise HTTPException(

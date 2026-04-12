@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 import app.core.config as cfg
 from app.db.session import get_db
+from app.integrations.voice.elevenlabs import ElevenLabsClient
 from app.main import create_app
 from app.services.provider_settings_service import ProviderSettingsService
 
@@ -150,6 +151,50 @@ async def test_validate_gemini_settings_uses_remote_check(session, admin_and_pro
     assert payload["status"] == "configured"
     assert payload["remote_checked"] is True
     assert payload["message"] == "Gemini model settings responded successfully."
+
+
+@pytest.mark.anyio
+async def test_validate_elevenlabs_settings_uses_runtime_tts_contract(
+    session, admin_and_provider_settings
+):
+    app = create_app()
+
+    async def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    async def fake_validate(self):
+        diagnostics = self.runtime_diagnostics()
+        assert diagnostics["provider"] == "elevenlabs"
+        assert diagnostics["config_source"] == "provider_settings"
+        assert diagnostics["api_key_set"] is True
+        assert diagnostics["voice_id_source"] == "constructor"
+        return b"\x01\x02" * 320
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        token = await _login(ac)
+        save_response = await ac.patch(
+            "/v1/providers/settings/elevenlabs",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "is_enabled": True,
+                "config": {"voice_id": "voice-123"},
+                "secrets": {"api_key": "elevenlabs-secret-key"},
+            },
+        )
+        assert save_response.status_code == 200
+        with patch.object(ElevenLabsClient, "validate_tts_contract", new=fake_validate):
+            validate_response = await ac.post(
+                "/v1/providers/settings/elevenlabs/validate",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert validate_response.status_code == 200
+    payload = validate_response.json()
+    assert payload["status"] == "configured"
+    assert payload["remote_checked"] is True
+    assert payload["message"] == "ElevenLabs voice settings responded successfully."
 
 
 @pytest.mark.anyio

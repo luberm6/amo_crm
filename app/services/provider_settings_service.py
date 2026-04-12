@@ -12,8 +12,9 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import AppError, NotFoundError
+from app.core.exceptions import AppError, EngineError, NotFoundError
 from app.core.logging import get_logger
+from app.integrations.voice.elevenlabs import ElevenLabsClient
 from app.models.provider_setting import ProviderSetting
 from app.repositories.provider_setting_repo import ProviderSettingRepository
 from app.schemas.provider_settings import ProviderSecretRead, ProviderSettingRead, ProviderValidationRead
@@ -289,17 +290,26 @@ class ProviderSettingsService:
             raise ProviderSettingsValidationError(f"Gemini validation failed with HTTP {response.status_code}.")
 
     async def _validate_elevenlabs(self, config: dict[str, Any], secrets: dict[str, str]) -> None:
+        client = ElevenLabsClient(
+            api_key=secrets["api_key"],
+            default_voice_id=config["voice_id"],
+            enabled=True,
+            config_source="provider_settings",
+            timeout=10.0,
+        )
         try:
-            async with httpx.AsyncClient(
-                base_url="https://api.elevenlabs.io",
-                timeout=10.0,
-                headers={"xi-api-key": secrets["api_key"]},
-            ) as client:
-                response = await client.get(f"/v1/voices/{config['voice_id']}")
-        except httpx.RequestError as exc:
-            raise ProviderSettingsValidationError(f"ElevenLabs validation network error: {exc}") from exc
-        if response.status_code >= 400:
-            raise ProviderSettingsValidationError(f"ElevenLabs validation failed with HTTP {response.status_code}.")
+            await client.validate_tts_contract()
+        except EngineError as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            stage = detail.get("stage", "unknown")
+            http_status = detail.get("http_status")
+            message = f"ElevenLabs validation failed at stage={stage}"
+            if http_status is not None:
+                message += f" with HTTP {http_status}"
+            body_preview = detail.get("body_preview")
+            if body_preview:
+                message += f": {body_preview}"
+            raise ProviderSettingsValidationError(message) from exc
 
     async def _validate_vapi(self, config: dict[str, Any], secrets: dict[str, str]) -> None:
         base_url = str(config.get("base_url") or "https://api.vapi.ai")

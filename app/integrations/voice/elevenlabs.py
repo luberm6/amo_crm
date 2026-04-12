@@ -1,23 +1,20 @@
 """
-ElevenLabsClient — TTS провайдер через ElevenLabs API.
+ElevenLabs TTS provider for Direct mode / Browser sandbox.
 
-STUB Phase 1: структура и интерфейс готовы, реальные API вызовы закомментированы.
-Раскомментировать в Phase 2 когда понадобится кастомный голос.
+The integration contract is intentionally explicit:
+- runtime requests PCM16 @ 16kHz
+- request/response stages are logged with enough context to debug failures
+- configuration resolution is deterministic and never logs raw secrets
 
-Документация API: https://elevenlabs.io/docs/api-reference/text-to-speech
-
-ENV переменные:
-  ELEVENLABS_API_KEY    — API ключ из elevenlabs.io → Profile → API Key
-  ELEVENLABS_VOICE_ID   — ID голоса из Library или My Voices
-  ELEVENLABS_ENABLED    — true/false (по умолчанию false)
-
-Выбор voice_id:
-  Не хардкодить! Передавать через settings.elevenlabs_voice_id
-  или через параметр voice_id в методе.
+Important current runtime rule:
+- live runtime still resolves ElevenLabs credentials from env-backed settings
+- provider settings UI validates and stores credentials independently
+- provider settings do not silently rewire the active runtime path
 """
 from __future__ import annotations
 
-from typing import AsyncIterator, Optional
+from dataclasses import dataclass
+from typing import Any, AsyncIterator, Optional
 
 import httpx
 
@@ -30,83 +27,397 @@ log = get_logger(__name__)
 
 _BASE_URL = "https://api.elevenlabs.io"
 _TIMEOUT = 30.0
+_MODEL_ID = "eleven_multilingual_v2"
+_OUTPUT_FORMAT = "pcm_16000"
+_VALIDATION_TEXT = "Тест"
+_MAX_ERROR_BODY_PREVIEW = 400
+_ALLOWED_AUDIO_CONTENT_TYPES = (
+    "audio/",
+    "application/octet-stream",
+    "binary/octet-stream",
+)
+
+
+@dataclass(frozen=True)
+class ElevenLabsResolvedConfig:
+    api_key: str
+    voice_id: str
+    api_key_set: bool
+    voice_id_source: str
+    config_source: str
+    enabled: bool
+    model_id: str
+    output_format: str
+
+    @property
+    def voice_id_masked(self) -> Optional[str]:
+        return _mask_value(self.voice_id)
 
 
 class ElevenLabsClient(AbstractVoiceProvider):
     """
-    ElevenLabs TTS — STUB Phase 1.
+    ElevenLabs runtime client.
 
-    Phase 1: synthesize() и synthesize_streaming() возвращают тишину.
-             Структура готова для Phase 2.
-    Phase 2: Раскомментировать блоки с httpx запросами.
+    By default it resolves credentials from env-backed settings on every request,
+    so the request contract stays accurate even if the process reuses the same
+    provider object across multiple sessions.
     """
 
-    def __init__(self) -> None:
-        self._http = httpx.AsyncClient(
-            base_url=_BASE_URL,
-            headers={
-                "xi-api-key": settings.elevenlabs_api_key,
-                "Content-Type": "application/json",
-            },
-            timeout=_TIMEOUT,
-        )
+    def __init__(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        default_voice_id: Optional[str] = None,
+        enabled: Optional[bool] = None,
+        config_source: str = "env",
+        model_id: str = _MODEL_ID,
+        output_format: str = _OUTPUT_FORMAT,
+        base_url: str = _BASE_URL,
+        timeout: float = _TIMEOUT,
+        transport: Optional[httpx.BaseTransport] = None,
+    ) -> None:
+        self._explicit_api_key = (api_key or "").strip()
+        self._explicit_voice_id = (default_voice_id or "").strip()
+        self._explicit_enabled = enabled
+        self._config_source = config_source
+        self._model_id = model_id
+        self._output_format = output_format
+        self._base_url = base_url.rstrip("/")
+        self._timeout = timeout
+        self._transport = transport
 
-    def _resolve_voice(self, voice_id: Optional[str]) -> str:
-        return voice_id or settings.elevenlabs_voice_id
+    def runtime_diagnostics(self) -> dict[str, Any]:
+        try:
+            config = self._resolve_runtime_config(None)
+        except EngineError as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            return {
+                "provider": "elevenlabs",
+                "config_source": self._config_source,
+                "api_key_set": detail.get("api_key_set", bool(self._explicit_api_key or settings.elevenlabs_api_key)),
+                "voice_id_source": detail.get("voice_id_source", "unavailable"),
+                "voice_id_masked": detail.get("voice_id_masked"),
+                "enabled": detail.get("enabled", self._explicit_enabled if self._explicit_enabled is not None else settings.elevenlabs_enabled),
+                "stage": detail.get("stage", "provider_resolve"),
+            }
+        return {
+            "provider": "elevenlabs",
+            "config_source": config.config_source,
+            "api_key_set": config.api_key_set,
+            "voice_id_source": config.voice_id_source,
+            "voice_id_masked": config.voice_id_masked,
+            "enabled": config.enabled,
+            "model_id": config.model_id,
+            "output_format": config.output_format,
+        }
+
+    async def validate_tts_contract(self, text: str = _VALIDATION_TEXT) -> bytes:
+        return await self.synthesize(text)
 
     async def synthesize(
         self,
         text: str,
         voice_id: Optional[str] = None,
     ) -> bytes:
-        """
-        Synthesize text to PCM using ElevenLabs API.
-        Returns 16kHz mono 16bit PCM bytes.
-        """
-        vid = self._resolve_voice(voice_id)
+        config = self._resolve_runtime_config(voice_id)
+        request = self._build_request(text=text, config=config, streaming=False)
+
+        log.info(
+            "elevenlabs.request_started",
+            provider="elevenlabs",
+            stage="request_build",
+            endpoint=request["path"],
+            config_source=config.config_source,
+            voice_id_source=config.voice_id_source,
+            voice_id_masked=config.voice_id_masked,
+            api_key_set=config.api_key_set,
+            model_id=config.model_id,
+            output_format=config.output_format,
+            streaming=False,
+            text_chars=len(text),
+        )
+
         try:
-            resp = await self._http.post(
-                f"/v1/text-to-speech/{vid}",
-                json={
-                    "text": text,
-                    "model_id": "eleven_multilingual_v2",
-                    "output_format": "pcm_16000",
+            async with self._make_client(config) as client:
+                response = await client.post(
+                    request["path"],
+                    params=request["params"],
+                    json=request["json"],
+                )
+        except httpx.RequestError as exc:
+            raise self._engine_error(
+                message="ElevenLabs request failed",
+                stage="http_request",
+                config=config,
+                extra={"error": str(exc)},
+            ) from exc
+
+        if response.status_code >= 400:
+            raise self._engine_error(
+                message=f"ElevenLabs returned HTTP {response.status_code}",
+                stage="http_request",
+                config=config,
+                extra={
+                    "http_status": response.status_code,
+                    "content_type": response.headers.get("content-type"),
+                    "body_preview": _truncate_text(response.text),
                 },
             )
-        except httpx.RequestError as exc:
-            raise EngineError(f"ElevenLabs unreachable: {exc}") from exc
-        if resp.status_code >= 400:
-            raise EngineError(f"ElevenLabs error {resp.status_code}: {resp.text}")
-        return resp.content
+
+        content = response.content
+        content_type = response.headers.get("content-type", "")
+        self._ensure_audio_payload(
+            content_type=content_type,
+            byte_length=len(content),
+            config=config,
+            stage="response_parse",
+        )
+
+        log.info(
+            "elevenlabs.response_received",
+            provider="elevenlabs",
+            stage="response_parse",
+            config_source=config.config_source,
+            voice_id_source=config.voice_id_source,
+            voice_id_masked=config.voice_id_masked,
+            api_key_set=config.api_key_set,
+            content_type=content_type,
+            byte_length=len(content),
+            streaming=False,
+        )
+        return content
 
     async def synthesize_streaming(
         self,
         text: str,
         voice_id: Optional[str] = None,
     ) -> AsyncIterator[bytes]:
-        """
-        Stream-synthesize text to PCM using ElevenLabs API.
-        Yields 640-byte chunks (20ms @ 16kHz).
-        """
-        vid = self._resolve_voice(voice_id)
+        config = self._resolve_runtime_config(voice_id)
+        request = self._build_request(text=text, config=config, streaming=True)
+
+        log.info(
+            "elevenlabs.request_started",
+            provider="elevenlabs",
+            stage="request_build",
+            endpoint=request["path"],
+            config_source=config.config_source,
+            voice_id_source=config.voice_id_source,
+            voice_id_masked=config.voice_id_masked,
+            api_key_set=config.api_key_set,
+            model_id=config.model_id,
+            output_format=config.output_format,
+            streaming=True,
+            text_chars=len(text),
+        )
+
         try:
-            async with self._http.stream(
-                "POST",
-                f"/v1/text-to-speech/{vid}/stream",
-                json={
-                    "text": text,
-                    "model_id": "eleven_multilingual_v2",
-                    "output_format": "pcm_16000",
-                },
-            ) as resp:
-                if resp.status_code >= 400:
-                    raise EngineError(
-                        f"ElevenLabs error {resp.status_code}: {resp.text}"
+            async with self._make_client(config) as client:
+                async with client.stream(
+                    "POST",
+                    request["path"],
+                    params=request["params"],
+                    json=request["json"],
+                ) as response:
+                    if response.status_code >= 400:
+                        body_preview = await _read_error_preview(response)
+                        raise self._engine_error(
+                            message=f"ElevenLabs returned HTTP {response.status_code}",
+                            stage="http_request",
+                            config=config,
+                            extra={
+                                "http_status": response.status_code,
+                                "content_type": response.headers.get("content-type"),
+                                "body_preview": body_preview,
+                            },
+                        )
+
+                    content_type = response.headers.get("content-type", "")
+                    total_bytes = 0
+                    self._ensure_audio_payload(
+                        content_type=content_type,
+                        byte_length=None,
+                        config=config,
+                        stage="response_parse",
                     )
-                async for chunk in resp.aiter_bytes(chunk_size=640):
-                    yield chunk
+                    log.info(
+                        "elevenlabs.response_received",
+                        provider="elevenlabs",
+                        stage="response_parse",
+                        config_source=config.config_source,
+                        voice_id_source=config.voice_id_source,
+                        voice_id_masked=config.voice_id_masked,
+                        api_key_set=config.api_key_set,
+                        content_type=content_type,
+                        streaming=True,
+                    )
+
+                    async for chunk in response.aiter_bytes():
+                        if not chunk:
+                            continue
+                        total_bytes += len(chunk)
+                        yield chunk
+
+                    if total_bytes == 0:
+                        raise self._engine_error(
+                            message="ElevenLabs returned an empty audio stream",
+                            stage="response_parse",
+                            config=config,
+                            extra={
+                                "http_status": response.status_code,
+                                "content_type": content_type,
+                                "byte_length": total_bytes,
+                            },
+                        )
+        except EngineError:
+            raise
         except httpx.RequestError as exc:
-            raise EngineError(f"ElevenLabs unreachable: {exc}") from exc
+            raise self._engine_error(
+                message="ElevenLabs request failed",
+                stage="http_request",
+                config=config,
+                extra={"error": str(exc)},
+            ) from exc
 
     async def close(self) -> None:
-        await self._http.aclose()
+        # Requests use short-lived AsyncClient instances; nothing persistent to close.
+        return None
+
+    def _resolve_runtime_config(self, voice_id_override: Optional[str]) -> ElevenLabsResolvedConfig:
+        enabled = self._explicit_enabled if self._explicit_enabled is not None else settings.elevenlabs_enabled
+        api_key = (self._explicit_api_key or settings.elevenlabs_api_key or "").strip()
+        if voice_id_override:
+            voice_id = voice_id_override.strip()
+            voice_id_source = "override"
+        elif self._explicit_voice_id:
+            voice_id = self._explicit_voice_id
+            voice_id_source = "constructor"
+        else:
+            voice_id = (settings.elevenlabs_voice_id or "").strip()
+            voice_id_source = "env"
+
+        detail = {
+            "provider": "elevenlabs",
+            "stage": "provider_resolve",
+            "config_source": self._config_source,
+            "api_key_set": bool(api_key),
+            "voice_id_source": voice_id_source,
+            "voice_id_masked": _mask_value(voice_id),
+            "enabled": bool(enabled),
+        }
+        if not enabled:
+            raise EngineError("ElevenLabs provider is disabled.", detail=detail)
+        if not api_key:
+            raise EngineError("ElevenLabs API key is not configured.", detail=detail)
+        if not voice_id:
+            raise EngineError("ElevenLabs voice ID is not configured.", detail=detail)
+
+        return ElevenLabsResolvedConfig(
+            api_key=api_key,
+            voice_id=voice_id,
+            api_key_set=True,
+            voice_id_source=voice_id_source,
+            config_source=self._config_source,
+            enabled=True,
+            model_id=self._model_id,
+            output_format=self._output_format,
+        )
+
+    def _build_request(
+        self,
+        *,
+        text: str,
+        config: ElevenLabsResolvedConfig,
+        streaming: bool,
+    ) -> dict[str, Any]:
+        path = f"/v1/text-to-speech/{config.voice_id}"
+        if streaming:
+            path += "/stream"
+        return {
+            "path": path,
+            "params": {"output_format": config.output_format},
+            "json": {
+                "text": text,
+                "model_id": config.model_id,
+            },
+        }
+
+    def _make_client(self, config: ElevenLabsResolvedConfig) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            base_url=self._base_url,
+            timeout=self._timeout,
+            headers={
+                "xi-api-key": config.api_key,
+                "Content-Type": "application/json",
+                "Accept": "audio/pcm",
+            },
+            transport=self._transport,
+        )
+
+    def _ensure_audio_payload(
+        self,
+        *,
+        content_type: str,
+        byte_length: Optional[int],
+        config: ElevenLabsResolvedConfig,
+        stage: str,
+    ) -> None:
+        lowered = (content_type or "").lower()
+        if lowered and any(token in lowered for token in _ALLOWED_AUDIO_CONTENT_TYPES):
+            if byte_length is not None and byte_length <= 0:
+                raise self._engine_error(
+                    message="ElevenLabs returned an empty audio payload",
+                    stage=stage,
+                    config=config,
+                    extra={"content_type": content_type, "byte_length": byte_length},
+                )
+            return
+        raise self._engine_error(
+            message="ElevenLabs response is not an audio payload",
+            stage=stage,
+            config=config,
+            extra={"content_type": content_type, "byte_length": byte_length},
+        )
+
+    def _engine_error(
+        self,
+        *,
+        message: str,
+        stage: str,
+        config: ElevenLabsResolvedConfig,
+        extra: Optional[dict[str, Any]] = None,
+    ) -> EngineError:
+        detail = {
+            "provider": "elevenlabs",
+            "stage": stage,
+            "config_source": config.config_source,
+            "api_key_set": config.api_key_set,
+            "voice_id_source": config.voice_id_source,
+            "voice_id_masked": config.voice_id_masked,
+            "model_id": config.model_id,
+            "output_format": config.output_format,
+        }
+        if extra:
+            detail.update(extra)
+        return EngineError(message, detail=detail)
+
+
+async def _read_error_preview(response: httpx.Response) -> str:
+    try:
+        raw = await response.aread()
+    except Exception:
+        return "<unavailable>"
+    return _truncate_text(raw.decode("utf-8", errors="replace"))
+
+
+def _truncate_text(value: str) -> str:
+    if len(value) <= _MAX_ERROR_BODY_PREVIEW:
+        return value
+    return value[:_MAX_ERROR_BODY_PREVIEW] + "..."
+
+
+def _mask_value(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    if len(value) <= 4:
+        return "*" * len(value)
+    return f"{value[:2]}***{value[-2:]}"

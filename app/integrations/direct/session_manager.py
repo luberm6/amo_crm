@@ -971,6 +971,9 @@ class DirectSessionManager:
         Synthesize text to PCM stream and enqueue for playback.
         Errors are caught and logged — must not crash the session.
         """
+        diagnostics_fn = getattr(voice, "runtime_diagnostics", None)
+        diagnostics = diagnostics_fn() if callable(diagnostics_fn) else {}
+        provider_name = diagnostics.get("provider", type(voice).__name__)
         try:
             started = time.perf_counter()
             session.metrics.last_tts_started_at = started
@@ -979,6 +982,19 @@ class DirectSessionManager:
                 session.voice_state.active_path
                 if session.voice_state is not None
                 else "tts_fallback"
+            )
+            log.info(
+                "session_manager.tts_request_started",
+                call_id=str(session.call_id),
+                session_id=session.session_id,
+                provider=provider_name,
+                voice_strategy=session.voice_state.strategy if session.voice_state else "unknown",
+                voice_path=tts_source,
+                config_source=diagnostics.get("config_source"),
+                api_key_set=diagnostics.get("api_key_set"),
+                voice_id_source=diagnostics.get("voice_id_source"),
+                voice_id_masked=diagnostics.get("voice_id_masked"),
+                text_chars=len(text),
             )
             async for pcm in voice.synthesize_streaming(text):
                 if first_chunk:
@@ -991,21 +1007,34 @@ class DirectSessionManager:
                         "session_manager.tts_reply_started",
                         session_id=session.session_id,
                         call_id=str(session.call_id),
+                        provider=provider_name,
                         voice_strategy=session.voice_state.strategy if session.voice_state else "unknown",
                         voice_path=tts_source,
                     )
                 self._enqueue_audio_out(session, pcm, source=tts_source)
         except Exception as exc:
+            detail = exc.detail if isinstance(exc, EngineError) and isinstance(exc.detail, dict) else {}
+            tts_stage = str(detail.get("stage") or "tts")
+            failure_stage = f"tts_{tts_stage}"
             log.error(
                 "session_manager.tts_error",
                 call_id=str(session.call_id),
                 session_id=session.session_id,
-                stage="tts",
+                stage=failure_stage,
+                provider=detail.get("provider", provider_name),
                 error=str(exc),
+                config_source=detail.get("config_source", diagnostics.get("config_source")),
+                api_key_set=detail.get("api_key_set", diagnostics.get("api_key_set")),
+                voice_id_source=detail.get("voice_id_source", diagnostics.get("voice_id_source")),
+                voice_id_masked=detail.get("voice_id_masked", diagnostics.get("voice_id_masked")),
+                http_status=detail.get("http_status"),
+                content_type=detail.get("content_type"),
+                response_bytes=detail.get("byte_length"),
+                body_preview=detail.get("body_preview"),
             )
             self._schedule_failure(
                 session,
-                stage="tts",
+                stage=failure_stage,
                 error=f"tts failed: {exc}",
             )
 

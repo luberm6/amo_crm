@@ -49,7 +49,6 @@ _session_coordinator: Optional["SessionCoordinator"] = None   # type: ignore
 _direct_session_manager: Optional["DirectSessionManager"] = None  # type: ignore
 _mango_transfer_engine: Optional[MangoTransferEngine] = None
 _browser_registry: Optional["BrowserSessionRegistry"] = None  # type: ignore
-_voice_provider = None
 _telephony_adapter = None
 
 
@@ -114,19 +113,28 @@ def get_browser_registry() -> "BrowserSessionRegistry":  # type: ignore
 
 
 def _build_voice_provider():
-    global _voice_provider
-    if _voice_provider is not None:
-        return _voice_provider
-
     from app.integrations.voice.stub import StubVoiceProvider
 
     if settings.elevenlabs_configured:
         from app.integrations.voice.elevenlabs import ElevenLabsClient
 
-        voice = ElevenLabsClient()
-        log.info("deps.direct_engine.using_elevenlabs_voice")
+        voice = ElevenLabsClient(config_source="env")
+        log.info(
+            "deps.direct_engine.using_elevenlabs_voice",
+            provider="elevenlabs",
+            config_source="env",
+            api_key_set=bool(settings.elevenlabs_api_key),
+            voice_id_set=bool(settings.elevenlabs_voice_id),
+        )
     else:
         voice = StubVoiceProvider()
+        log.info(
+            "deps.direct_engine.using_stub_voice",
+            provider="stub",
+            elevenlabs_enabled=settings.elevenlabs_enabled,
+            api_key_set=bool(settings.elevenlabs_api_key),
+            voice_id_set=bool(settings.elevenlabs_voice_id),
+        )
 
     if (
         settings.is_production
@@ -140,7 +148,6 @@ def _build_voice_provider():
                 "Direct voice calls will fail fast."
             ),
         )
-    _voice_provider = voice
     return voice
 
 
