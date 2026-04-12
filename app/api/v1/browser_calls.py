@@ -397,7 +397,11 @@ async def browser_call_ws(
 
     async def _control_sender() -> None:
         async for message in bridge.control_messages():
-            await websocket.send_json(message)
+            try:
+                await websocket.send_json(message)
+            except (RuntimeError, Exception):
+                # WebSocket already closed (e.g. client disconnected before call_ended arrived)
+                break
 
     try:
         await websocket.send_json({"type": "ready", "call_id": str(call_id)})

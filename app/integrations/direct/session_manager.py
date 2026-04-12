@@ -883,6 +883,10 @@ class DirectSessionManager:
     def _enqueue_audio_out(self, session: DirectSession, chunk: bytes, source: str) -> None:
         if not chunk:
             return
+        # PCM16 requires an even byte count so the browser can create Int16Array.
+        # Odd-byte chunks can arrive from ElevenLabs HTTP streaming or Gemini audio.
+        if len(chunk) % 2 != 0:
+            chunk = chunk + b"\x00"
         session.metrics.outbound_chunks_enqueued += 1
         inc_direct_audio_out("enqueued", source)
         item = (chunk, time.perf_counter(), source)
