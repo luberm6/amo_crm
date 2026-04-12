@@ -473,6 +473,14 @@ class DirectSessionManager:
             session.voice_state is not None
             and session.voice_state.wants_gemini_audio_output()
         )
+        # TTS path: request AUDIO modality + outputAudioTranscription so Gemini returns
+        # a text transcript of its speech. We discard Gemini's audio (on_audio returns
+        # early when not wants_gemini_audio_output) and pipe the transcript to ElevenLabs.
+        # TEXT modality is unsupported by audio-only models (returns error 1011).
+        _wants_tts = bool(
+            session.voice_state is not None
+            and session.voice_state.wants_tts_for_assistant_text()
+        )
         client = GeminiLiveClient(
             on_text=on_text,
             on_audio=on_audio,
@@ -484,10 +492,11 @@ class DirectSessionManager:
             on_tool_call=on_tool_call,
             audio_input=bool(session.capabilities.audio_in),
             audio_output=_wants_audio_out,
+            transcription_output=_wants_tts,
             voice_name=gemini_voice_name,
             language_code=gemini_language_code,
-            model_id=None if _wants_audio_out else settings.gemini_tts_model_id,
-            api_version=None if _wants_audio_out else settings.gemini_tts_api_version,
+            model_id=None,
+            api_version=None,
         )
         session.gemini_client = client
 

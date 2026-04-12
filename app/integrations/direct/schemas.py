@@ -47,11 +47,14 @@ class GeminiGenerationConfig:
         cls,
         voice_name: str = "Aoede",
         language_code: str = "ru-RU",
+        with_transcription: bool = False,
     ) -> "GeminiGenerationConfig":
         """Create config for Gemini AUDIO output modality.
         Audio-to-audio models (e.g. gemini-3.1-flash-live-preview) require AUDIO only.
         language_code instructs the model to synthesise speech in the given locale.
-        outputAudioTranscription requests a text transcript of the audio for display.
+        with_transcription=True adds outputAudioTranscription so the model also returns
+        a text transcript of its audio output — used by the tts_primary path to feed
+        text to ElevenLabs while discarding Gemini's native audio.
         """
         return cls(
             response_modalities=["AUDIO"],
@@ -63,6 +66,7 @@ class GeminiGenerationConfig:
                     }
                 },
             },
+            output_audio_transcription=with_transcription,
         )
 
     @classmethod

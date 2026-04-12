@@ -76,6 +76,7 @@ class GeminiLiveClient:
         on_tool_call: Optional[Callable[[str, dict], None]] = None,
         audio_input: bool = False,
         audio_output: bool = False,
+        transcription_output: bool = False,
         voice_name: Optional[str] = None,
         language_code: str = "ru-RU",
         model_id: Optional[str] = None,
@@ -89,6 +90,7 @@ class GeminiLiveClient:
         self._on_tool_call = on_tool_call
         self._audio_input = audio_input
         self._audio_output = audio_output
+        self._transcription_output = transcription_output
         self._voice_name = voice_name
         self._language_code = language_code
         self._model_id = model_id
@@ -149,8 +151,9 @@ class GeminiLiveClient:
         if not self._ws or self._closed:
             log.warning("gemini_client.inject_instruction.no_ws")
             return
-        if self._audio_output:
-            # Audio-to-audio model: use realtimeInput.text
+        if self._audio_output or self._transcription_output:
+            # Audio-to-audio model (native or TTS path): use realtimeInput.text.
+            # clientContent is rejected by audio-only models (error 1007).
             payload = {"realtimeInput": {"text": instruction}}
         else:
             payload = GeminiClientContent.from_text(instruction, role="user").to_dict()
@@ -205,13 +208,16 @@ class GeminiLiveClient:
         )
 
     async def _send_setup(self, system_prompt: str) -> None:
-        # Request AUDIO response modality only when audio_output=True
+        # Use AUDIO modality when audio_output=True (native audio) or
+        # transcription_output=True (TTS path: get text transcript, discard Gemini audio).
+        # TEXT modality is not supported by current audio-only models (returns error 1011).
         gen_config = (
             GeminiGenerationConfig.for_audio_modality(
                 voice_name=self._voice_name or "Aoede",
                 language_code=self._language_code,
+                with_transcription=self._transcription_output,
             )
-            if self._audio_output
+            if (self._audio_output or self._transcription_output)
             else GeminiGenerationConfig.for_text_modality()
         )
         effective_model = self._model_id or settings.gemini_model_id
