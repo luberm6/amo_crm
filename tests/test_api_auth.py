@@ -12,7 +12,9 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from app.api.deps import get_call_engine
 from app.db.session import get_db
+from app.integrations.call_engine.stub import StubEngine
 from app.main import create_app
 
 
@@ -96,7 +98,17 @@ async def test_create_call_with_correct_api_key(session):
     async def override_get_db():
         yield session
 
+    async def override_get_call_engine():
+        from app.integrations.call_engine.router_engine import RoutingCallEngine
+        return RoutingCallEngine(
+            vapi_engine=None,
+            direct_engine=None,
+            browser_engine=None,
+            fallback_engine=StubEngine(),
+        )
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_call_engine] = override_get_call_engine
 
     with patch.object(cfg.settings, "api_key", "secret-key"):
         async with AsyncClient(

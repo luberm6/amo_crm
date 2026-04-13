@@ -241,9 +241,10 @@ async def test_direct_voice_preflight_rejects_invalid_hybrid_under_tts_primary(s
 
         payload = await service.run()
 
-        assert payload["status"] == "fail"
+        # tts_primary + gemini_audio_output_enabled=True now produces a warning, not a failure
+        assert payload["status"] == "warn"
         assert any(
-            c["name"] == "voice_strategy_hybrid_guard" and c["status"] == "fail"
+            c["name"] == "voice_strategy_hybrid_guard" and c["status"] == "warn"
             for c in payload["checks"]
         )
     finally:
