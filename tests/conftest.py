@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.db.base import Base
 from app.db.session import get_db
-from app.api.deps import get_call_engine
+from app.api.deps import get_call_engine, get_transfer_engine
 from app.integrations.call_engine.stub import StubEngine
 from app.integrations.direct.engine import DirectGeminiEngine
 from app.integrations.direct.session_manager import DirectSessionManager
@@ -160,8 +160,12 @@ def app(session: AsyncSession) -> FastAPI:
             fallback_engine=StubEngine(),
         )
 
+    def override_get_transfer_engine():
+        return StubTransferEngine()
+
     application.dependency_overrides[get_db] = override_get_db
     application.dependency_overrides[get_call_engine] = override_get_call_engine
+    application.dependency_overrides[get_transfer_engine] = override_get_transfer_engine
     return application
 
 
