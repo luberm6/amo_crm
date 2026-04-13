@@ -90,6 +90,6 @@ describe('knowledge base page smoke', () => {
       expect(screen.getByText(/Pricing sheet/i)).toBeInTheDocument()
     })
     expect(screen.getByText(/AMO Voice/i)).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: /Create document/i }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: /Создать документ/i }).length).toBeGreaterThan(0)
   })
 })

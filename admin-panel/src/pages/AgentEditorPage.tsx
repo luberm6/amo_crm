@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { ApiError, apiFetch } from '../lib/api'
 
-type AgentProfile = {
+type AgentCreateRead = {
   id: string
   name: string
   is_active: boolean
@@ -23,6 +23,70 @@ type AgentProfile = {
   assembled_prompt_preview: string
 }
 
+type TelephonyLine = {
+  id: string
+  provider: string
+  provider_resource_id: string
+  phone_number: string
+  display_name?: string | null
+  extension?: string | null
+  is_active: boolean
+  is_inbound_enabled: boolean
+  is_outbound_enabled: boolean
+  synced_at?: string | null
+}
+
+type TelephonyLineListResponse = {
+  items: TelephonyLine[]
+  total: number
+}
+
+type TelephonyLineSyncResponse = TelephonyLineListResponse & {
+  synced_count: number
+  deactivated_count: number
+  source: string
+  synced_at: string
+}
+
+type TelephonyExtension = {
+  provider_resource_id: string
+  extension: string
+  display_name?: string | null
+  line_provider_resource_id?: string | null
+  line_phone_number?: string | null
+}
+
+type TelephonyExtensionListResponse = {
+  items: TelephonyExtension[]
+  total: number
+  source: string
+}
+
+type AgentSettingsRead = {
+  agent_profile_id: string
+  name: string
+  is_active: boolean
+  system_prompt: string
+  tone_rules?: string | null
+  business_rules?: string | null
+  sales_objectives?: string | null
+  greeting_text?: string | null
+  transfer_rules?: string | null
+  prohibited_promises?: string | null
+  voice_strategy: string
+  voice_provider: 'elevenlabs' | 'gemini'
+  telephony_provider?: string | null
+  telephony_line_id?: string | null
+  telephony_extension?: string | null
+  telephony_line?: TelephonyLine | null
+  user_settings: Record<string, unknown>
+  knowledge_document_ids: string[]
+  version: number
+  created_at: string
+  updated_at: string
+  assembled_prompt_preview: string
+}
+
 type AgentFormState = {
   name: string
   is_active: boolean
@@ -33,8 +97,11 @@ type AgentFormState = {
   greeting_text: string
   transfer_rules: string
   prohibited_promises: string
-  voice_strategy: string
-  configText: string
+  voiceProvider: 'elevenlabs' | 'gemini'
+  telephonyLineId: string
+  telephonyExtension: string
+  userSettingsText: string
+  knowledgeDocumentIds: string[]
 }
 
 type KnowledgeDocumentListItem = {
@@ -51,30 +118,6 @@ type KnowledgeDocumentListResponse = {
   total: number
 }
 
-type AgentKnowledgeBindingRead = {
-  id: string
-  agent_profile_id: string
-  knowledge_document_id: string
-  role?: string | null
-  created_at: string
-  knowledge_document: {
-    id: string
-    title: string
-    category: string
-    content: string
-    is_active: boolean
-    notes?: string | null
-    metadata: Record<string, unknown>
-    created_at: string
-    updated_at: string
-  }
-}
-
-type AgentKnowledgeBindingListRead = {
-  items: AgentKnowledgeBindingRead[]
-  total: number
-}
-
 const EMPTY_FORM: AgentFormState = {
   name: '',
   is_active: true,
@@ -85,35 +128,45 @@ const EMPTY_FORM: AgentFormState = {
   greeting_text: '',
   transfer_rules: '',
   prohibited_promises: '',
-  voice_strategy: 'gemini_primary',
-  configText: '{\n  "locale": "ru-RU",\n  "gemini_voice_name": "Aoede"\n}',
+  voiceProvider: 'gemini',
+  telephonyLineId: '',
+  telephonyExtension: '',
+  userSettingsText: '{\n  "locale": "ru-RU",\n  "gemini_voice_name": "Aoede"\n}',
+  knowledgeDocumentIds: [],
 }
 
 const GEMINI_VOICES = [
-  { value: 'Aoede',   label: 'Aoede — женский, мягкий' },
-  { value: 'Puck',    label: 'Puck — мужской, живой' },
-  { value: 'Charon',  label: 'Charon — мужской, глубокий' },
-  { value: 'Kore',    label: 'Kore — женский, чёткий' },
-  { value: 'Fenrir',  label: 'Fenrir — мужской, уверенный' },
-  { value: 'Leda',    label: 'Leda — женский, спокойный' },
-  { value: 'Zephyr',  label: 'Zephyr — нейтральный, лёгкий' },
-  { value: 'Orus',    label: 'Orus — мужской, строгий' },
+  { value: 'Aoede', label: 'Aoede — женский, мягкий' },
+  { value: 'Puck', label: 'Puck — мужской, живой' },
+  { value: 'Charon', label: 'Charon — мужской, глубокий' },
+  { value: 'Kore', label: 'Kore — женский, чёткий' },
+  { value: 'Fenrir', label: 'Fenrir — мужской, уверенный' },
+  { value: 'Leda', label: 'Leda — женский, спокойный' },
+  { value: 'Zephyr', label: 'Zephyr — нейтральный, лёгкий' },
+  { value: 'Orus', label: 'Orus — мужской, строгий' },
 ]
 
-function toFormState(profile: AgentProfile): AgentFormState {
+function toFormState(settings: AgentSettingsRead): AgentFormState {
   return {
-    name: profile.name,
-    is_active: profile.is_active,
-    system_prompt: profile.system_prompt,
-    tone_rules: profile.tone_rules || '',
-    business_rules: profile.business_rules || '',
-    sales_objectives: profile.sales_objectives || '',
-    greeting_text: profile.greeting_text || '',
-    transfer_rules: profile.transfer_rules || '',
-    prohibited_promises: profile.prohibited_promises || '',
-    voice_strategy: profile.voice_strategy,
-    configText: JSON.stringify(profile.config || {}, null, 2),
+    name: settings.name,
+    is_active: settings.is_active,
+    system_prompt: settings.system_prompt,
+    tone_rules: settings.tone_rules || '',
+    business_rules: settings.business_rules || '',
+    sales_objectives: settings.sales_objectives || '',
+    greeting_text: settings.greeting_text || '',
+    transfer_rules: settings.transfer_rules || '',
+    prohibited_promises: settings.prohibited_promises || '',
+    voiceProvider: settings.voice_provider,
+    telephonyLineId: settings.telephony_line_id || '',
+    telephonyExtension: settings.telephony_extension || settings.telephony_line?.extension || '',
+    userSettingsText: JSON.stringify(settings.user_settings || {}, null, 2),
+    knowledgeDocumentIds: settings.knowledge_document_ids || [],
   }
+}
+
+function voiceStrategyFromProvider(provider: AgentFormState['voiceProvider']): 'gemini_primary' | 'tts_primary' {
+  return provider === 'gemini' ? 'gemini_primary' : 'tts_primary'
 }
 
 export default function AgentEditorPage() {
@@ -123,191 +176,258 @@ export default function AgentEditorPage() {
   const isCreateMode = agentId === 'new'
 
   const [form, setForm] = useState<AgentFormState>(EMPTY_FORM)
-  const [profile, setProfile] = useState<AgentProfile | null>(null)
+  const [settings, setSettings] = useState<AgentSettingsRead | null>(null)
   const [loading, setLoading] = useState(!isCreateMode)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const [knowledgeDocuments, setKnowledgeDocuments] = useState<KnowledgeDocumentListItem[]>([])
-  const [bindings, setBindings] = useState<AgentKnowledgeBindingRead[]>([])
   const [knowledgeLoading, setKnowledgeLoading] = useState(false)
   const [knowledgeError, setKnowledgeError] = useState<string | null>(null)
-  const [bindingBusyDocumentId, setBindingBusyDocumentId] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (isCreateMode || !token || !agentId) {
-      return
-    }
+  const [telephonyLines, setTelephonyLines] = useState<TelephonyLine[]>([])
+  const [telephonyExtensions, setTelephonyExtensions] = useState<TelephonyExtension[]>([])
+  const [telephonyLoading, setTelephonyLoading] = useState(false)
+  const [telephonyError, setTelephonyError] = useState<string | null>(null)
+  const [syncingTelephony, setSyncingTelephony] = useState(false)
+  const [telephonySuccess, setTelephonySuccess] = useState<string | null>(null)
 
-    let mounted = true
-    setLoading(true)
-    setError(null)
-    apiFetch<AgentProfile>(`/v1/agents/${agentId}`, {}, token)
-      .then((data) => {
-        if (!mounted) {
-          return
-        }
-        setProfile(data)
-        setForm(toFormState(data))
-      })
-      .catch((err) => {
-        if (mounted) {
-          setError(err instanceof ApiError ? err.message : 'Не удалось загрузить профиль агента.')
-        }
-      })
-      .finally(() => {
-        if (mounted) {
-          setLoading(false)
-        }
-      })
-
-    return () => {
-      mounted = false
-    }
-  }, [agentId, isCreateMode, token])
-
-  const loadKnowledgeState = useCallback(async () => {
-    if (isCreateMode || !token || !agentId) {
+  const loadKnowledgeDocuments = useCallback(async () => {
+    if (!token) {
       return
     }
     setKnowledgeLoading(true)
     setKnowledgeError(null)
     try {
-      const [documentsResponse, bindingsResponse] = await Promise.all([
-        apiFetch<KnowledgeDocumentListResponse>('/v1/knowledge-documents?active_only=true', {}, token),
-        apiFetch<AgentKnowledgeBindingListRead>(`/v1/agents/${agentId}/knowledge`, {}, token),
-      ])
-      setKnowledgeDocuments(documentsResponse.items)
-      setBindings(bindingsResponse.items)
+      const response = await apiFetch<KnowledgeDocumentListResponse>('/v1/knowledge-documents?active_only=true', {}, token)
+      setKnowledgeDocuments(response.items)
     } catch (err) {
-      setKnowledgeError(err instanceof ApiError ? err.message : 'Не удалось загрузить привязки знаний.')
+      setKnowledgeError(err instanceof ApiError ? err.message : 'Не удалось загрузить knowledge base.')
     } finally {
       setKnowledgeLoading(false)
+    }
+  }, [token])
+
+  const loadTelephonyState = useCallback(async () => {
+    if (!token) {
+      return
+    }
+    setTelephonyLoading(true)
+    setTelephonyError(null)
+    try {
+      const [linesResponse, extensionsResponse] = await Promise.all([
+        apiFetch<TelephonyLineListResponse>('/v1/telephony/mango/lines', {}, token),
+        apiFetch<TelephonyExtensionListResponse>('/v1/telephony/mango/extensions', {}, token).catch((err) => {
+          if (err instanceof ApiError) {
+            setTelephonyError(err.message)
+          }
+          return { items: [], total: 0, source: 'mango_api' } satisfies TelephonyExtensionListResponse
+        }),
+      ])
+      setTelephonyLines(linesResponse.items)
+      setTelephonyExtensions(extensionsResponse.items)
+    } catch (err) {
+      setTelephonyError(err instanceof ApiError ? err.message : 'Не удалось загрузить Mango inventory.')
+    } finally {
+      setTelephonyLoading(false)
+    }
+  }, [token])
+
+  const loadAgentSettings = useCallback(async () => {
+    if (isCreateMode || !token || !agentId) {
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const response = await apiFetch<AgentSettingsRead>(`/v1/agent-profiles/${agentId}/settings`, {}, token)
+      setSettings(response)
+      setForm(toFormState(response))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Не удалось загрузить настройки агента.')
+    } finally {
+      setLoading(false)
     }
   }, [agentId, isCreateMode, token])
 
   useEffect(() => {
-    void loadKnowledgeState()
-  }, [loadKnowledgeState])
+    void loadKnowledgeDocuments()
+    void loadTelephonyState()
+    void loadAgentSettings()
+  }, [loadAgentSettings, loadKnowledgeDocuments, loadTelephonyState])
 
   const previewText = useMemo(() => {
-    if (profile) {
-      return profile.assembled_prompt_preview
+    if (settings) {
+      return settings.assembled_prompt_preview
     }
-    return 'Preview появится после первого сохранения. Он собирается backend’ом из полей агента и будет использоваться runtime-слоем.'
-  }, [profile])
+    return 'Preview появится после первого сохранения. Backend собирает runtime prompt централизованно и отдельно подключает knowledge base.'
+  }, [settings])
 
-  const bindingByDocumentId = useMemo(() => {
-    const map = new Map<string, AgentKnowledgeBindingRead>()
-    bindings.forEach((binding) => {
-      map.set(binding.knowledge_document_id, binding)
-    })
-    return map
-  }, [bindings])
+  const selectedKnowledgeIds = useMemo(() => new Set(form.knowledgeDocumentIds), [form.knowledgeDocumentIds])
+  const selectedKnowledgeDocuments = useMemo(
+    () => knowledgeDocuments.filter((item) => selectedKnowledgeIds.has(item.id)),
+    [knowledgeDocuments, selectedKnowledgeIds],
+  )
 
-  // Read / write gemini_voice_name inside the config JSON
+  const selectedTelephonyLine = useMemo(
+    () => telephonyLines.find((line) => line.id === form.telephonyLineId) || null,
+    [form.telephonyLineId, telephonyLines],
+  )
+
+  const extensionOptions = useMemo(() => {
+    if (!selectedTelephonyLine) {
+      return telephonyExtensions
+    }
+    const matched = telephonyExtensions.filter((item) => (
+      item.line_provider_resource_id === selectedTelephonyLine.provider_resource_id
+      || item.line_phone_number === selectedTelephonyLine.phone_number
+    ))
+    return matched.length > 0 ? matched : telephonyExtensions
+  }, [selectedTelephonyLine, telephonyExtensions])
+
   const geminiVoiceName = useMemo<string>(() => {
     try {
-      const parsed = JSON.parse(form.configText || '{}') as Record<string, unknown>
+      const parsed = JSON.parse(form.userSettingsText || '{}') as Record<string, unknown>
       return typeof parsed.gemini_voice_name === 'string' ? parsed.gemini_voice_name : 'Aoede'
     } catch {
       return 'Aoede'
     }
-  }, [form.configText])
+  }, [form.userSettingsText])
 
   const setGeminiVoiceName = useCallback((name: string) => {
     setForm((current) => {
       let parsed: Record<string, unknown> = {}
-      try { parsed = JSON.parse(current.configText || '{}') as Record<string, unknown> } catch { /* ignore */ }
+      try {
+        parsed = JSON.parse(current.userSettingsText || '{}') as Record<string, unknown>
+      } catch {
+        parsed = {}
+      }
       parsed.gemini_voice_name = name
-      return { ...current, configText: JSON.stringify(parsed, null, 2) }
+      return { ...current, userSettingsText: JSON.stringify(parsed, null, 2) }
     })
   }, [])
+
+  function updateField<K extends keyof AgentFormState>(key: K, value: AgentFormState[K]) {
+    setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  function toggleKnowledgeDocument(documentId: string) {
+    setForm((current) => {
+      const selected = new Set(current.knowledgeDocumentIds)
+      if (selected.has(documentId)) {
+        selected.delete(documentId)
+      } else {
+        selected.add(documentId)
+      }
+      return { ...current, knowledgeDocumentIds: Array.from(selected) }
+    })
+  }
+
+  async function handleSyncNumbers() {
+    if (!token) {
+      return
+    }
+    setSyncingTelephony(true)
+    setTelephonyError(null)
+    setTelephonySuccess(null)
+    try {
+      const response = await apiFetch<TelephonyLineSyncResponse>(
+        '/v1/telephony/mango/sync-lines',
+        { method: 'POST' },
+        token,
+      )
+      setTelephonyLines(response.items)
+      setTelephonySuccess(`Mango sync завершён: ${response.synced_count} линий обновлено, ${response.deactivated_count} деактивировано.`)
+      try {
+        const extensions = await apiFetch<TelephonyExtensionListResponse>('/v1/telephony/mango/extensions', {}, token)
+        setTelephonyExtensions(extensions.items)
+      } catch (err) {
+        setTelephonyError(err instanceof ApiError ? err.message : 'Номера обновились, но extensions загрузить не удалось.')
+      }
+    } catch (err) {
+      setTelephonyError(err instanceof ApiError ? err.message : 'Не удалось синхронизировать номера из Mango.')
+    } finally {
+      setSyncingTelephony(false)
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!token) {
       return
     }
+
     setSaving(true)
     setError(null)
+    setKnowledgeError(null)
 
-    let parsedConfig: Record<string, unknown>
+    let parsedSettings: Record<string, unknown>
     try {
-      parsedConfig = JSON.parse(form.configText || '{}') as Record<string, unknown>
+      parsedSettings = JSON.parse(form.userSettingsText || '{}') as Record<string, unknown>
     } catch {
       setSaving(false)
-      setError('Конфигурация должна быть валидным JSON.')
+      setError('Пользовательские настройки должны быть валидным JSON.')
       return
     }
 
-    const payload = {
-      name: form.name,
-      is_active: form.is_active,
-      system_prompt: form.system_prompt,
-      tone_rules: form.tone_rules,
-      business_rules: form.business_rules,
-      sales_objectives: form.sales_objectives,
-      greeting_text: form.greeting_text,
-      transfer_rules: form.transfer_rules,
-      prohibited_promises: form.prohibited_promises,
-      voice_strategy: form.voice_strategy,
-      config: parsedConfig,
-    }
-
     try {
-      const response = await apiFetch<AgentProfile>(
-        isCreateMode ? '/v1/agents' : `/v1/agents/${agentId}`,
-        {
-          method: isCreateMode ? 'POST' : 'PATCH',
-          body: JSON.stringify(payload),
-        },
-        token,
-      )
-      setProfile(response)
-      setForm(toFormState(response))
       if (isCreateMode) {
-        navigate(`/agents/${response.id}`, { replace: true })
-        return
-      }
-      await loadKnowledgeState()
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Не удалось сохранить профиль агента.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleBindingToggle(documentId: string) {
-    if (!token || isCreateMode || !agentId) {
-      return
-    }
-    const existingBinding = bindingByDocumentId.get(documentId)
-    setBindingBusyDocumentId(documentId)
-    setKnowledgeError(null)
-    try {
-      if (existingBinding) {
-        await apiFetch<void>(`/v1/agents/${agentId}/knowledge/${existingBinding.id}`, { method: 'DELETE' }, token)
-      } else {
-        await apiFetch<AgentKnowledgeBindingRead>(
-          `/v1/agents/${agentId}/knowledge/bind`,
+        const response = await apiFetch<AgentCreateRead>(
+          '/v1/agents',
           {
             method: 'POST',
-            body: JSON.stringify({ knowledge_document_id: documentId }),
+            body: JSON.stringify({
+              name: form.name,
+              is_active: form.is_active,
+              system_prompt: form.system_prompt,
+              tone_rules: form.tone_rules,
+              business_rules: form.business_rules,
+              sales_objectives: form.sales_objectives,
+              greeting_text: form.greeting_text,
+              transfer_rules: form.transfer_rules,
+              prohibited_promises: form.prohibited_promises,
+              voice_strategy: voiceStrategyFromProvider(form.voiceProvider),
+              config: parsedSettings,
+            }),
           },
           token,
         )
+        navigate(`/agents/${response.id}`, { replace: true })
+        return
       }
-      await loadKnowledgeState()
-    } catch (err) {
-      setKnowledgeError(err instanceof ApiError ? err.message : 'Не удалось обновить привязку знаний.')
-    } finally {
-      setBindingBusyDocumentId(null)
-    }
-  }
 
-  function updateField<K extends keyof AgentFormState>(key: K, value: AgentFormState[K]) {
-    setForm((current) => ({ ...current, [key]: value }))
+      const response = await apiFetch<AgentSettingsRead>(
+        `/v1/agent-profiles/${agentId}/settings`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            name: form.name,
+            is_active: form.is_active,
+            system_prompt: form.system_prompt,
+            tone_rules: form.tone_rules,
+            business_rules: form.business_rules,
+            sales_objectives: form.sales_objectives,
+            greeting_text: form.greeting_text,
+            transfer_rules: form.transfer_rules,
+            prohibited_promises: form.prohibited_promises,
+            voice_provider: form.voiceProvider,
+            telephony_provider: form.telephonyLineId ? 'mango' : null,
+            telephony_line_id: form.telephonyLineId || null,
+            telephony_extension: form.telephonyExtension || null,
+            user_settings: parsedSettings,
+            knowledge_document_ids: form.knowledgeDocumentIds,
+          }),
+        },
+        token,
+      )
+      setSettings(response)
+      setForm(toFormState(response))
+      setTelephonySuccess('Настройки агента сохранены. Привязка Mango и voice/runtime поля обновлены.')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Не удалось сохранить настройки агента.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -317,8 +437,9 @@ export default function AgentEditorPage() {
           <p className="eyebrow">Редактор агента</p>
           <h3>{isCreateMode ? 'Создать агента' : form.name || 'Редактировать агента'}</h3>
           <p>
-            UI редактирует только данные профиля. Backend централизованно собирает runtime prompt preview, а KB
-            привязки живут отдельно и будут подключаться к runtime controlled context assembly.
+            Здесь собираются реальные настройки runtime: voice provider, prompt/rules, knowledge base и привязка к Mango
+            номеру. Browser sandbox остаётся отдельным путём и не ломается, а PSTN-binding сохраняется на уровне
+            конкретного агента.
           </p>
         </div>
         <div className="button-row">
@@ -330,9 +451,11 @@ export default function AgentEditorPage() {
 
       {error ? <div className="error-banner">{error}</div> : null}
       {knowledgeError ? <div className="error-banner">{knowledgeError}</div> : null}
+      {telephonyError ? <div className="error-banner">{telephonyError}</div> : null}
+      {telephonySuccess ? <div className="success-banner">{telephonySuccess}</div> : null}
 
       {loading ? (
-        <article className="panel-card empty-state">Загружаем профиль агента…</article>
+        <article className="panel-card empty-state">Загружаем настройки агента…</article>
       ) : (
         <div className="editor-grid">
           <form className="editor-form" onSubmit={handleSubmit}>
@@ -355,31 +478,116 @@ export default function AgentEditorPage() {
                 />
                 <span>Агент активен</span>
               </label>
+            </section>
+
+            <section className="panel-card form-section">
+              <div className="panel-header">
+                <div>
+                  <p className="eyebrow">Telephony / Mango</p>
+                  <h4>Привязка номера</h4>
+                </div>
+                <button type="button" className="ghost-link-button" onClick={() => void handleSyncNumbers()} disabled={syncingTelephony}>
+                  {syncingTelephony ? 'Синхронизация…' : 'Sync numbers from Mango'}
+                </button>
+              </div>
+
+              <div className="debug-list compact-debug">
+                <div className="debug-row">
+                  <span>provider</span>
+                  <strong>Mango</strong>
+                </div>
+                <div className="debug-row">
+                  <span>inventory</span>
+                  <strong>{telephonyLoading ? 'загрузка…' : `${telephonyLines.length} линий`}</strong>
+                </div>
+                <div className="debug-row">
+                  <span>extensions</span>
+                  <strong>{telephonyLoading ? 'загрузка…' : `${telephonyExtensions.length}`}</strong>
+                </div>
+                <div className="debug-row">
+                  <span>binding</span>
+                  <strong>{form.telephonyLineId ? 'linked' : 'not linked'}</strong>
+                </div>
+              </div>
+
+              <label>
+                Номер Mango
+                <select
+                  value={form.telephonyLineId}
+                  onChange={(event) => {
+                    const lineId = event.target.value
+                    const matched = telephonyLines.find((line) => line.id === lineId)
+                    updateField('telephonyLineId', lineId)
+                    if (matched && !form.telephonyExtension) {
+                      updateField('telephonyExtension', matched.extension || '')
+                    }
+                  }}
+                  disabled={isCreateMode || telephonyLoading}
+                >
+                  <option value="">Не привязывать номер</option>
+                  {telephonyLines.map((line) => (
+                    <option key={line.id} value={line.id} disabled={!line.is_active}>
+                      {line.phone_number} {line.display_name ? `— ${line.display_name}` : ''} {!line.is_active ? '(inactive)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Extension / сотрудник
+                <select
+                  value={form.telephonyExtension}
+                  onChange={(event) => updateField('telephonyExtension', event.target.value)}
+                  disabled={isCreateMode || telephonyLoading}
+                >
+                  <option value="">Не задан</option>
+                  {extensionOptions.map((item) => (
+                    <option key={`${item.provider_resource_id}-${item.extension}`} value={item.extension}>
+                      {item.extension} {item.display_name ? `— ${item.display_name}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {isCreateMode ? (
+                <div className="empty-state">
+                  Сначала сохраните агента. После этого номер Mango можно закрепить за конкретным профилем.
+                </div>
+              ) : null}
+            </section>
+
+            <section className="panel-card form-section">
+              <div className="panel-header">
+                <div>
+                  <p className="eyebrow">Voice</p>
+                  <h4>Voice provider</h4>
+                </div>
+              </div>
 
               <div className="voice-strategy-block">
-                <p className="field-label">Голос агента</p>
+                <p className="field-label">Путь голоса агента</p>
                 <div className="voice-toggle-group">
                   <button
                     type="button"
-                    className={`voice-toggle-btn${form.voice_strategy === 'gemini_primary' ? ' active' : ''}`}
-                    onClick={() => updateField('voice_strategy', 'gemini_primary')}
+                    className={`voice-toggle-btn${form.voiceProvider === 'gemini' ? ' active' : ''}`}
+                    onClick={() => updateField('voiceProvider', 'gemini')}
                   >
                     <span className="voice-toggle-icon">🤖</span>
-                    <span className="voice-toggle-title">Gemini голос</span>
-                    <span className="voice-toggle-desc">Нативный голос модели, низкая задержка</span>
+                    <span className="voice-toggle-title">Gemini voice</span>
+                    <span className="voice-toggle-desc">Gemini native audio / gemini_primary</span>
                   </button>
                   <button
                     type="button"
-                    className={`voice-toggle-btn${form.voice_strategy === 'tts_primary' ? ' active' : ''}`}
-                    onClick={() => updateField('voice_strategy', 'tts_primary')}
+                    className={`voice-toggle-btn${form.voiceProvider === 'elevenlabs' ? ' active' : ''}`}
+                    onClick={() => updateField('voiceProvider', 'elevenlabs')}
                   >
                     <span className="voice-toggle-icon">🎙️</span>
-                    <span className="voice-toggle-title">ElevenLabs голос</span>
-                    <span className="voice-toggle-desc">Студийное качество, настраиваемый голос</span>
+                    <span className="voice-toggle-title">ElevenLabs voice</span>
+                    <span className="voice-toggle-desc">Gemini text + ElevenLabs / tts_primary</span>
                   </button>
                 </div>
 
-                {form.voice_strategy === 'gemini_primary' && (
+                {form.voiceProvider === 'gemini' ? (
                   <div className="voice-sub-options">
                     <label className="field-label" htmlFor="gemini-voice-select">
                       Выбор голоса Gemini
@@ -389,16 +597,14 @@ export default function AgentEditorPage() {
                       value={geminiVoiceName}
                       onChange={(event) => setGeminiVoiceName(event.target.value)}
                     >
-                      {GEMINI_VOICES.map((v) => (
-                        <option key={v.value} value={v.value}>{v.label}</option>
+                      {GEMINI_VOICES.map((voice) => (
+                        <option key={voice.value} value={voice.value}>{voice.label}</option>
                       ))}
                     </select>
                   </div>
-                )}
-
-                {form.voice_strategy === 'tts_primary' && (
+                ) : (
                   <div className="voice-sub-options voice-sub-info">
-                    Используется глобальный ElevenLabs Voice ID из настроек провайдера (ELEVENLABS_VOICE_ID).
+                    Для ElevenLabs используется глобальный voice configuration из Providers. На агенте фиксируется сам voice path.
                   </div>
                 )}
               </div>
@@ -408,7 +614,7 @@ export default function AgentEditorPage() {
               <div className="panel-header">
                 <div>
                   <p className="eyebrow">Диалог</p>
-                  <h4>Основной промпт и приветствие</h4>
+                  <h4>Промпт и приветствие</h4>
                 </div>
               </div>
               <label>
@@ -482,69 +688,68 @@ export default function AgentEditorPage() {
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Конфигурация</p>
-                  <h4>Метаданные / конфигурация runtime</h4>
+                  <p className="eyebrow">User settings</p>
+                  <h4>JSON настройки runtime</h4>
                 </div>
               </div>
               <label>
-                Конфигурация JSON
+                Пользовательские настройки
                 <textarea
-                  value={form.configText}
-                  onChange={(event) => updateField('configText', event.target.value)}
+                  value={form.userSettingsText}
+                  onChange={(event) => updateField('userSettingsText', event.target.value)}
                   rows={8}
                   className="mono-textarea"
                 />
               </label>
-              <div className="button-row">
-                <button type="submit" className="primary-button" disabled={saving}>
-                  {saving ? 'Сохранение…' : 'Сохранить агента'}
-                </button>
-              </div>
             </section>
 
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Привязки знаний</p>
+                  <p className="eyebrow">Knowledge Base</p>
                   <h4>Контролируемый контекст агента</h4>
                 </div>
               </div>
 
-              {isCreateMode ? (
-                <div className="empty-state">
-                  Сначала сохраните агента. После этого можно привязать нужные knowledge documents без смешивания их с
-                  profile prompt.
-                </div>
-              ) : knowledgeLoading ? (
-                <div className="empty-state">Загружаем доступные документы и текущие привязки…</div>
+              {knowledgeLoading ? (
+                <div className="empty-state">Загружаем доступные документы…</div>
               ) : knowledgeDocuments.length === 0 ? (
-                <div className="empty-state">
-                  В knowledge base пока нет активных документов. Их можно создать в секции Knowledge Base.
-                </div>
+                <div className="empty-state">В knowledge base пока нет активных документов.</div>
               ) : (
                 <div className="knowledge-binding-list">
-                  {knowledgeDocuments.map((document) => {
-                    const binding = bindingByDocumentId.get(document.id)
-                    return (
-                      <label key={document.id} className="checkbox-card">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(binding)}
-                          disabled={bindingBusyDocumentId === document.id}
-                          onChange={() => void handleBindingToggle(document.id)}
-                        />
-                        <div>
-                          <div className="table-primary">{document.title}</div>
-                          <div className="inline-meta">
-                            <span>{document.category}</span>
-                            <span>{binding ? 'привязан' : 'не привязан'}</span>
-                          </div>
+                  {knowledgeDocuments.map((document) => (
+                    <label key={document.id} className="checkbox-card">
+                      <input
+                        type="checkbox"
+                        checked={selectedKnowledgeIds.has(document.id)}
+                        disabled={isCreateMode}
+                        onChange={() => toggleKnowledgeDocument(document.id)}
+                      />
+                      <div>
+                        <div className="table-primary">{document.title}</div>
+                        <div className="inline-meta">
+                          <span>{document.category}</span>
+                          <span>{selectedKnowledgeIds.has(document.id) ? 'привязан' : 'не привязан'}</span>
                         </div>
-                      </label>
-                    )
-                  })}
+                      </div>
+                    </label>
+                  ))}
                 </div>
               )}
+
+              {isCreateMode ? (
+                <div className="empty-state">
+                  Сначала сохраните агента. После этого выбранные документы можно будет записать в agent settings одним PATCH.
+                </div>
+              ) : null}
+            </section>
+
+            <section className="panel-card form-section">
+              <div className="button-row">
+                <button type="submit" className="primary-button" disabled={saving}>
+                  {saving ? 'Сохранение…' : isCreateMode ? 'Создать агента' : 'Сохранить настройки агента'}
+                </button>
+              </div>
             </section>
           </form>
 
@@ -566,21 +771,49 @@ export default function AgentEditorPage() {
                   <h4>Что подключено</h4>
                 </div>
               </div>
-              {bindings.length === 0 ? (
-                <div className="empty-state">
-                  Для этого агента пока не выбраны knowledge documents. Runtime не сломается и продолжит работать
-                  только на profile prompt.
-                </div>
+              {selectedKnowledgeDocuments.length === 0 ? (
+                <div className="empty-state">Для этого агента пока не выбраны knowledge documents.</div>
               ) : (
                 <div className="binding-summary-list">
-                  {bindings.map((binding) => (
-                    <div key={binding.id} className="binding-summary-item">
-                      <strong>{binding.knowledge_document.title}</strong>
-                      <span>{binding.knowledge_document.category}</span>
+                  {selectedKnowledgeDocuments.map((document) => (
+                    <div key={document.id} className="binding-summary-item">
+                      <strong>{document.title}</strong>
+                      <span>{document.category}</span>
                     </div>
                   ))}
                 </div>
               )}
+            </section>
+
+            <section className="panel-card form-section">
+              <div className="panel-header">
+                <div>
+                  <p className="eyebrow">Телефония</p>
+                  <h4>Текущая привязка</h4>
+                </div>
+              </div>
+              <div className="debug-list compact-debug">
+                <div className="debug-row">
+                  <span>provider</span>
+                  <strong>{form.telephonyLineId ? 'mango' : '—'}</strong>
+                </div>
+                <div className="debug-row">
+                  <span>номер</span>
+                  <strong>{selectedTelephonyLine?.phone_number || 'не привязан'}</strong>
+                </div>
+                <div className="debug-row">
+                  <span>extension</span>
+                  <strong>{form.telephonyExtension || '—'}</strong>
+                </div>
+                <div className="debug-row">
+                  <span>inbound</span>
+                  <strong>{selectedTelephonyLine ? (selectedTelephonyLine.is_inbound_enabled ? 'yes' : 'no') : '—'}</strong>
+                </div>
+                <div className="debug-row">
+                  <span>outbound</span>
+                  <strong>{selectedTelephonyLine ? (selectedTelephonyLine.is_outbound_enabled ? 'yes' : 'no') : '—'}</strong>
+                </div>
+              </div>
             </section>
 
             <section className="panel-card form-section">
@@ -593,23 +826,23 @@ export default function AgentEditorPage() {
               <div className="debug-list compact-debug">
                 <div className="debug-row">
                   <span>версия</span>
-                  <strong>{profile ? `v${profile.version}` : 'новый'}</strong>
+                  <strong>{settings ? `v${settings.version}` : 'новый'}</strong>
                 </div>
                 <div className="debug-row">
                   <span>обновлён</span>
-                  <strong>{profile ? new Date(profile.updated_at).toLocaleString() : '—'}</strong>
+                  <strong>{settings ? new Date(settings.updated_at).toLocaleString() : '—'}</strong>
                 </div>
                 <div className="debug-row">
-                  <span>активен</span>
-                  <strong>{form.is_active ? 'да' : 'нет'}</strong>
+                  <span>voice path</span>
+                  <strong>{voiceStrategyFromProvider(form.voiceProvider)}</strong>
                 </div>
                 <div className="debug-row">
-                  <span>голос агента</span>
-                  <strong>{form.voice_strategy}</strong>
+                  <span>voice provider</span>
+                  <strong>{form.voiceProvider}</strong>
                 </div>
                 <div className="debug-row">
                   <span>документы знаний</span>
-                  <strong>{bindings.length}</strong>
+                  <strong>{form.knowledgeDocumentIds.length}</strong>
                 </div>
               </div>
             </section>

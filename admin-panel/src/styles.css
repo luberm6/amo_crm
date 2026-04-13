@@ -148,6 +148,13 @@ textarea {
   border-radius: 14px;
   padding: 0.85rem 1rem;
 }
+.success-banner {
+  border: 1px solid #b6d9bb;
+  background: #edf8ef;
+  color: #24592c;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+}
 
 .admin-shell {
   min-height: 100vh;

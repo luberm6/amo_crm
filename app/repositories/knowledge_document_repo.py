@@ -37,3 +37,13 @@ class KnowledgeDocumentRepository(BaseRepository[KnowledgeDocument]):
             .where(KnowledgeDocument.is_active.is_(True))
         )
         return result.scalar_one_or_none()
+
+    async def get_many_active(self, document_ids: list[uuid.UUID]) -> list[KnowledgeDocument]:
+        if not document_ids:
+            return []
+        result = await self.session.execute(
+            select(KnowledgeDocument)
+            .where(KnowledgeDocument.id.in_(document_ids))
+            .where(KnowledgeDocument.is_active.is_(True))
+        )
+        return list(result.scalars().all())

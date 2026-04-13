@@ -39,7 +39,7 @@ describe('admin panel smoke', () => {
 
     renderWithProviders('/login')
     expect(screen.getByRole('heading', { name: /AMO CRM Voice Admin/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Login/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Войти/i })).toBeInTheDocument()
   })
 
   it('redirects protected route to login without token', async () => {
@@ -81,13 +81,13 @@ describe('admin panel smoke', () => {
     renderWithProviders('/login')
 
     await user.type(screen.getByLabelText(/Email/i), 'admin@example.com')
-    await user.type(screen.getByLabelText(/Password/i), 'password123')
-    await user.click(screen.getByRole('button', { name: /Login/i }))
+    await user.type(screen.getByLabelText(/Пароль/i), 'password123')
+    await user.click(screen.getByRole('button', { name: /Войти/i }))
 
     await waitFor(() => {
       expect(screen.getByText(/Dashboard content/i)).toBeInTheDocument()
     })
-    expect(screen.getByRole('navigation', { name: /Admin navigation/i })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: /Навигация администратора/i })).toBeInTheDocument()
     expect(screen.getByText(/admin@example.com/i)).toBeInTheDocument()
   })
 })

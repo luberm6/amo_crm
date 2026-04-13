@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     # Mango VPBX API credentials (https://app.mango-office.ru/vpbx/)
     mango_api_key: str = ""
     mango_api_salt: str = ""
+    mango_api_base_url: str = "https://app.mango-office.ru/vpbx"
     # Extension number for Click-to-Call origination (Direct mode)
     mango_from_ext: str = ""
     # Optional HMAC secret for Mango webhook signature verification.

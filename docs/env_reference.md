@@ -72,6 +72,7 @@ Legend for `Required`:
 
 | Variable | Required | Default | Used by | Purpose | Blocks what if missing |
 |---|---|---|---|---|---|
+| `MANGO_API_BASE_URL` | No | `https://app.mango-office.ru/vpbx` | Mango provider, admin telephony sync | Mango API base URL for line sync/originate/webhooks | Only custom Mango endpoint override |
 | `MANGO_API_KEY` | Contextual | empty | Mango provider, preflight | Mango API credential | Real Mango telephony |
 | `MANGO_API_SALT` | Contextual | empty | Mango provider, preflight | Mango API signing salt | Real Mango telephony |
 | `MANGO_FROM_EXT` | Contextual | empty | Mango telephony | Click-to-call source extension/line | Real Mango originate/callback source |

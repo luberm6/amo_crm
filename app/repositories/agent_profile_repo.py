@@ -4,6 +4,7 @@ from typing import Optional
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.models.agent_profile import AgentProfile
 from app.repositories.base import BaseRepository
@@ -28,5 +29,29 @@ class AgentProfileRepository(BaseRepository[AgentProfile]):
             select(AgentProfile)
             .where(AgentProfile.id == agent_id)
             .where(AgentProfile.is_active.is_(True))
+        )
+        return result.scalar_one_or_none()
+
+    async def get_with_related(self, agent_id: uuid.UUID) -> Optional[AgentProfile]:
+        result = await self.session.execute(
+            select(AgentProfile)
+            .where(AgentProfile.id == agent_id)
+            .options(
+                selectinload(AgentProfile.telephony_line),
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_active_by_telephony_line(
+        self,
+        *,
+        telephony_provider: str,
+        telephony_line_id: uuid.UUID,
+    ) -> Optional[AgentProfile]:
+        result = await self.session.execute(
+            select(AgentProfile)
+            .where(AgentProfile.is_active.is_(True))
+            .where(AgentProfile.telephony_provider == telephony_provider)
+            .where(AgentProfile.telephony_line_id == telephony_line_id)
         )
         return result.scalar_one_or_none()

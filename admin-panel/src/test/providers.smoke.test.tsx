@@ -109,10 +109,10 @@ describe('providers page smoke', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: /Save settings/i }).length).toBeGreaterThan(0)
+      expect(screen.getAllByRole('button', { name: /Сохранить настройки/i }).length).toBeGreaterThan(0)
     })
-    expect(screen.getAllByRole('button', { name: /Check connection/i }).length).toBeGreaterThan(0)
-    expect(screen.getByText(/No auto-routing/i)).toBeInTheDocument()
-    expect(screen.getByText(/Stored: ma\*\*\*ey/i)).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /Проверить подключение/i }).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Без авторутинга/i)).toBeInTheDocument()
+    expect(screen.getByText(/ma\*\*\*ey/i)).toBeInTheDocument()
   })
 })

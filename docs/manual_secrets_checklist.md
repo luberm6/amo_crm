@@ -41,6 +41,7 @@ These are **not** required for localhost admin or browser sandbox UI.
 
 | Variable | File | Required | Unlocks | Where to get |
 |---|---|---:|---|---|
+| `MANGO_API_BASE_URL` | `.env` | Optional | Mango API sync against a tenant-specific endpoint | Use the official default `https://app.mango-office.ru/vpbx` unless Mango support gave you a different API base URL |
 | `MANGO_API_KEY` | `.env` | Optional | Real Mango telephony | [Mango VPBX](https://app.mango-office.ru/vpbx/) → Settings → API |
 | `MANGO_API_SALT` | `.env` | Optional | Real Mango telephony | Same location as `MANGO_API_KEY` (shown together) |
 | `MANGO_FROM_EXT` | `.env` | Optional | Mango originate/callback source | Mango VPBX → Extensions → your extension number |

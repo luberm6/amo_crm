@@ -49,7 +49,7 @@ class TelephonyError(EngineError):
 
 
 class MangoTelephonyAdapter(AbstractTelephonyAdapter):
-    _BASE_URL = "https://app.mango-office.ru/vpbx"
+    _DEFAULT_BASE_URL = "https://app.mango-office.ru/vpbx"
 
     def __init__(
         self,
@@ -60,7 +60,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         self._api_salt = settings.mango_api_salt
         self._from_ext = settings.mango_from_ext
         self._http = httpx.AsyncClient(
-            base_url=self._BASE_URL,
+            base_url=(settings.mango_api_base_url or self._DEFAULT_BASE_URL).rstrip("/"),
             timeout=15.0,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
@@ -361,7 +361,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
 
     def _sign(self, params: dict) -> dict:
         json_str = json.dumps(params, ensure_ascii=False, separators=(",", ":"))
-        sign_str = self._api_key + self._api_salt + json_str
+        sign_str = self._api_key + json_str + self._api_salt
         sign = hashlib.sha256(sign_str.encode("utf-8")).hexdigest()
         return {"vpbx_api_key": self._api_key, "sign": sign, "json": json_str}
 

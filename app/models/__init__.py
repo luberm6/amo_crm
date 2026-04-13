@@ -9,6 +9,7 @@ from app.models.knowledge_document import KnowledgeDocument
 from app.models.manager import Manager
 from app.models.provider_setting import ProviderSetting
 from app.models.steering import SteeringInstruction
+from app.models.telephony_line import TelephonyLine
 from app.models.transcript import TranscriptEntry, TranscriptRole
 from app.models.transfer import TransferRecord, TransferStatus
 from app.models.vapi_event import VapiEventLog
@@ -25,6 +26,7 @@ __all__ = [
     "Manager",
     "ProviderSetting",
     "SteeringInstruction",
+    "TelephonyLine",
     "AuditEvent",
     "TranscriptEntry",
     "TranscriptRole",

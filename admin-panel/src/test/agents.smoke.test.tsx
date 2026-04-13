@@ -62,6 +62,6 @@ describe('agents page smoke', () => {
       expect(screen.getByText(/Sales Alpha/i)).toBeInTheDocument()
     })
     expect(screen.getByText(/tts_primary/i)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Create agent/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Создать агента/i })).toBeInTheDocument()
   })
 })

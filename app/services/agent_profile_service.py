@@ -19,6 +19,10 @@ class AgentRuntimeConfiguration:
     system_prompt: str
     greeting_text: Optional[str]
     voice_strategy: Optional[str]
+    voice_provider: Optional[str]
+    telephony_provider: Optional[str]
+    telephony_line_id: Optional[uuid.UUID]
+    telephony_extension: Optional[str]
     config: dict[str, Any]
     version: Optional[int]
     company_profile: Optional[dict[str, Any]]
@@ -90,6 +94,10 @@ def build_agent_runtime_configuration(
             system_prompt=knowledge_prompt,
             greeting_text=None,
             voice_strategy=None,
+            voice_provider=None,
+            telephony_provider=None,
+            telephony_line_id=None,
+            telephony_extension=None,
             config={},
             version=None,
             company_profile=knowledge_context.company_profile if knowledge_context else None,
@@ -105,6 +113,10 @@ def build_agent_runtime_configuration(
         system_prompt=full_prompt,
         greeting_text=(agent.greeting_text or "").strip() or None,
         voice_strategy=(agent.voice_strategy or "").strip() or None,
+        voice_provider=(agent.voice_provider or "").strip() or None,
+        telephony_provider=(agent.telephony_provider or "").strip() or None,
+        telephony_line_id=agent.telephony_line_id,
+        telephony_extension=(agent.telephony_extension or "").strip() or None,
         config=dict(agent.config or {}),
         version=agent.version,
         company_profile=knowledge_context.company_profile if knowledge_context else None,
@@ -158,6 +170,7 @@ class AgentProfileService:
             transfer_rules=_clean_optional_text(transfer_rules),
             prohibited_promises=_clean_optional_text(prohibited_promises),
             voice_strategy=voice_strategy.strip(),
+            voice_provider=_voice_provider_from_strategy(voice_strategy),
             config=dict(config or {}),
             version=1,
         )
@@ -201,6 +214,7 @@ class AgentProfileService:
             profile.prohibited_promises = _clean_optional_text(prohibited_promises)
         if voice_strategy is not None:
             profile.voice_strategy = voice_strategy.strip()
+            profile.voice_provider = _voice_provider_from_strategy(voice_strategy)
         if config is not None:
             profile.config = dict(config)
 
@@ -229,3 +243,10 @@ def _clean_optional_text(value: Optional[str]) -> Optional[str]:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+def _voice_provider_from_strategy(strategy: str) -> str:
+    cleaned = (strategy or "").strip()
+    if cleaned == "gemini_primary":
+        return "gemini"
+    return "elevenlabs"
