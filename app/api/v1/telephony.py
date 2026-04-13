@@ -7,8 +7,16 @@ from app.api.admin_auth import require_admin_auth
 from app.api.deps import get_db
 from app.core.exceptions import AppError
 from app.core.config import settings
+from app.models.agent_profile import AgentProfile
+from app.models.telephony_line import TelephonyLine
+from app.repositories.agent_profile_repo import AgentProfileRepository
+from app.repositories.telephony_line_repo import TelephonyLineRepository
 from app.schemas.telephony import (
     MangoReadinessRead,
+    MangoResolveInboundRequest,
+    MangoResolveInboundResult,
+    MangoRoutingMapItem,
+    MangoRoutingMapRead,
     TelephonyExtensionListRead,
     TelephonyExtensionRead,
     TelephonyLineListRead,
@@ -16,6 +24,7 @@ from app.schemas.telephony import (
     TelephonyLineSyncRead,
 )
 from app.services.mango_telephony_service import MangoTelephonyService
+from app.services.telephony_routing_service import TelephonyRoutingService
 
 router = APIRouter(
     prefix="/telephony",
@@ -106,4 +115,61 @@ async def list_mango_extensions(
             for item in items
         ],
         total=len(items),
+    )
+
+
+@router.get("/mango/routing-map", response_model=MangoRoutingMapRead)
+async def mango_routing_map(
+    db: AsyncSession = Depends(get_db),
+) -> MangoRoutingMapRead:
+    """Return all Mango telephony lines with their bound agents (if any)."""
+    line_repo = TelephonyLineRepository(TelephonyLine, db)
+    agent_repo = AgentProfileRepository(AgentProfile, db)
+
+    lines = await line_repo.list_lines(provider="mango")
+
+    # Build a map of line_id → first active agent for that line
+    items: list[MangoRoutingMapItem] = []
+    for line in lines:
+        candidates = await agent_repo.get_all_active_by_telephony_line(
+            telephony_provider="mango",
+            telephony_line_id=line.id,
+        )
+        agent = candidates[0] if candidates else None
+        items.append(
+            MangoRoutingMapItem(
+                line_id=line.id,
+                provider_resource_id=line.provider_resource_id,
+                phone_number=line.phone_number,
+                display_name=line.display_name,
+                is_active=line.is_active,
+                is_inbound_enabled=line.is_inbound_enabled,
+                agent_id=agent.id if agent else None,
+                agent_name=agent.name if agent else None,
+                agent_is_active=agent.is_active if agent else None,
+            )
+        )
+
+    return MangoRoutingMapRead(items=items, total=len(items))
+
+
+@router.post("/mango/debug/resolve-inbound", response_model=MangoResolveInboundResult)
+async def mango_debug_resolve_inbound(
+    body: MangoResolveInboundRequest,
+    db: AsyncSession = Depends(get_db),
+) -> MangoResolveInboundResult:
+    """Dry-run: resolve an inbound phone number to the agent that would handle it."""
+    svc = TelephonyRoutingService(db)
+    result = await svc.resolve_inbound(provider="mango", phone_number=body.phone_number)
+    return MangoResolveInboundResult(
+        phone_number_input=body.phone_number,
+        phone_number_normalized=result.phone_number_normalized,
+        line_found=result.telephony_line is not None,
+        line_id=result.telephony_line.id if result.telephony_line else None,
+        line_display_name=result.telephony_line.display_name if result.telephony_line else None,
+        agent_found=result.agent is not None,
+        agent_id=result.agent.id if result.agent else None,
+        agent_name=result.agent.name if result.agent else None,
+        ambiguous=result.ambiguous,
+        candidate_count=result.candidate_count,
     )

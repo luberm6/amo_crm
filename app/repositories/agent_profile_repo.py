@@ -55,3 +55,18 @@ class AgentProfileRepository(BaseRepository[AgentProfile]):
             .where(AgentProfile.telephony_line_id == telephony_line_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_all_active_by_telephony_line(
+        self,
+        *,
+        telephony_provider: str,
+        telephony_line_id: uuid.UUID,
+    ) -> list[AgentProfile]:
+        result = await self.session.execute(
+            select(AgentProfile)
+            .where(AgentProfile.is_active.is_(True))
+            .where(AgentProfile.telephony_provider == telephony_provider)
+            .where(AgentProfile.telephony_line_id == telephony_line_id)
+            .order_by(AgentProfile.created_at.asc())
+        )
+        return list(result.scalars().all())

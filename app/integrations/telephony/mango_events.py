@@ -62,6 +62,8 @@ class MangoNormalizedEvent:
     role: Optional[str]
     bridge_status: Optional[str] = None
     whisper_status: Optional[str] = None
+    from_number: Optional[str] = None
+    to_number: Optional[str] = None
     raw_payload: Optional[dict] = None
 
 
@@ -206,6 +208,7 @@ class MangoEventProcessor:
 
         bridge_status = _extract_bridge_status(provider_type, payload)
         whisper_status = _extract_whisper_status(provider_type, payload)
+        from_number, to_number = _extract_call_parties(payload)
 
         return MangoNormalizedEvent(
             provider_event_id=provider_id,
@@ -217,6 +220,8 @@ class MangoEventProcessor:
             role=role,
             bridge_status=bridge_status,
             whisper_status=whisper_status,
+            from_number=from_number,
+            to_number=to_number,
             raw_payload=payload,
         )
 
@@ -417,3 +422,48 @@ def _str_or(payload: dict[str, Any], *keys: str) -> Optional[str]:
         if isinstance(val, str) and val.strip():
             return val.strip()
     return None
+
+
+def _extract_call_parties(payload: dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+    """
+    Extract (from_number, to_number) from a Mango webhook payload.
+
+    Mango sends call-party info in several shapes depending on event type:
+      - Flat:    {"from_number": "...", "to_number": "..."}
+      - Nested:  {"entry": {"from": {"number": "..."}, "to": {"number": "..."}}}
+      - Nested:  {"call": {"from": "...", "to": "..."}}
+      - Flat alt: {"caller": "...", "callee": "..."}
+    """
+    # Flat top-level keys
+    from_n = _str_or(payload, "from_number", "caller_number", "caller", "calling", "from")
+    to_n = _str_or(payload, "to_number", "callee_number", "callee", "called", "to")
+
+    # Nested under "entry" (Mango call_appeared format)
+    entry = payload.get("entry")
+    if isinstance(entry, dict):
+        from_entry = entry.get("from")
+        to_entry = entry.get("to")
+        if isinstance(from_entry, dict):
+            from_n = from_n or _str_or(from_entry, "number", "phone", "extension")
+        elif isinstance(from_entry, str) and from_entry.strip():
+            from_n = from_n or from_entry.strip()
+        if isinstance(to_entry, dict):
+            to_n = to_n or _str_or(to_entry, "number", "phone", "extension")
+        elif isinstance(to_entry, str) and to_entry.strip():
+            to_n = to_n or to_entry.strip()
+
+    # Nested under "call"
+    call = payload.get("call")
+    if isinstance(call, dict):
+        from_call = call.get("from")
+        to_call = call.get("to")
+        if isinstance(from_call, dict):
+            from_n = from_n or _str_or(from_call, "number", "phone")
+        elif isinstance(from_call, str) and from_call.strip():
+            from_n = from_n or from_call.strip()
+        if isinstance(to_call, dict):
+            to_n = to_n or _str_or(to_call, "number", "phone")
+        elif isinstance(to_call, str) and to_call.strip():
+            to_n = to_n or to_call.strip()
+
+    return from_n or None, to_n or None

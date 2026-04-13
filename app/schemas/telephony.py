@@ -61,6 +61,41 @@ class MangoReadinessRead(BaseModel):
     warnings: list[str]
 
 
+class MangoRoutingMapItem(BaseModel):
+    """One Mango line with its bound agent (if any)."""
+    line_id: uuid.UUID
+    provider_resource_id: str
+    phone_number: str
+    display_name: Optional[str] = None
+    is_active: bool
+    is_inbound_enabled: bool
+    agent_id: Optional[uuid.UUID] = None
+    agent_name: Optional[str] = None
+    agent_is_active: Optional[bool] = None
+
+
+class MangoRoutingMapRead(BaseModel):
+    items: list[MangoRoutingMapItem]
+    total: int
+
+
+class MangoResolveInboundRequest(BaseModel):
+    phone_number: str = Field(..., description="The incoming phone number to resolve (e.g. '+79300350609' or '79300350609')")
+
+
+class MangoResolveInboundResult(BaseModel):
+    phone_number_input: str
+    phone_number_normalized: str
+    line_found: bool
+    line_id: Optional[uuid.UUID] = None
+    line_display_name: Optional[str] = None
+    agent_found: bool
+    agent_id: Optional[uuid.UUID] = None
+    agent_name: Optional[str] = None
+    ambiguous: bool = False
+    candidate_count: int = 0
+
+
 class AgentProfileSettingsRead(BaseModel):
     agent_profile_id: uuid.UUID
     name: str
