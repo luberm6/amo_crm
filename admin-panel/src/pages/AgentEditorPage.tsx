@@ -62,6 +62,13 @@ type TelephonyExtensionListResponse = {
   source: string
 }
 
+type MangoReadiness = {
+  api_configured: boolean
+  webhook_secret_configured: boolean
+  from_ext_configured: boolean
+  warnings: string[]
+}
+
 type AgentSettingsRead = {
   agent_profile_id: string
   name: string
@@ -191,6 +198,7 @@ export default function AgentEditorPage() {
   const [telephonyError, setTelephonyError] = useState<string | null>(null)
   const [syncingTelephony, setSyncingTelephony] = useState(false)
   const [telephonySuccess, setTelephonySuccess] = useState<string | null>(null)
+  const [mangoReadiness, setMangoReadiness] = useState<MangoReadiness | null>(null)
 
   const loadKnowledgeDocuments = useCallback(async () => {
     if (!token) {
@@ -215,7 +223,7 @@ export default function AgentEditorPage() {
     setTelephonyLoading(true)
     setTelephonyError(null)
     try {
-      const [linesResponse, extensionsResponse] = await Promise.all([
+      const [linesResponse, extensionsResponse, readinessResponse] = await Promise.all([
         apiFetch<TelephonyLineListResponse>('/v1/telephony/mango/lines', {}, token),
         apiFetch<TelephonyExtensionListResponse>('/v1/telephony/mango/extensions', {}, token).catch((err) => {
           if (err instanceof ApiError) {
@@ -223,9 +231,11 @@ export default function AgentEditorPage() {
           }
           return { items: [], total: 0, source: 'mango_api' } satisfies TelephonyExtensionListResponse
         }),
+        apiFetch<MangoReadiness>('/v1/telephony/mango/readiness', {}, token).catch(() => null),
       ])
       setTelephonyLines(linesResponse.items)
       setTelephonyExtensions(extensionsResponse.items)
+      setMangoReadiness(readinessResponse)
     } catch (err) {
       setTelephonyError(err instanceof ApiError ? err.message : 'Не удалось загрузить Mango inventory.')
     } finally {
@@ -284,6 +294,16 @@ export default function AgentEditorPage() {
     ))
     return matched.length > 0 ? matched : telephonyExtensions
   }, [selectedTelephonyLine, telephonyExtensions])
+
+  const suggestedLineId = useMemo(() => {
+    if (form.telephonyLineId || telephonyLines.length === 0) {
+      return null
+    }
+    const aiLine = telephonyLines.find(
+      (line) => line.is_active && /ИИ|AI|искусст/i.test(line.display_name || ''),
+    )
+    return aiLine?.id ?? null
+  }, [form.telephonyLineId, telephonyLines])
 
   const geminiVoiceName = useMemo<string>(() => {
     try {
@@ -527,11 +547,32 @@ export default function AgentEditorPage() {
                   <option value="">Не привязывать номер</option>
                   {telephonyLines.map((line) => (
                     <option key={line.id} value={line.id} disabled={!line.is_active}>
-                      {line.phone_number} {line.display_name ? `— ${line.display_name}` : ''} {!line.is_active ? '(inactive)' : ''}
+                      {line.display_name || line.phone_number}
+                      {line.display_name ? ` (${line.phone_number})` : ''}
+                      {!line.is_active ? ' — неактивна' : ''}
                     </option>
                   ))}
                 </select>
               </label>
+
+              {suggestedLineId ? (
+                <div className="info-banner">
+                  Рекомендуемая линия для ИИ-агента найдена.{' '}
+                  <button
+                    type="button"
+                    className="ghost-link-button"
+                    onClick={() => updateField('telephonyLineId', suggestedLineId)}
+                  >
+                    Выбрать
+                  </button>
+                </div>
+              ) : null}
+
+              {mangoReadiness?.warnings.map((warning) => (
+                <div key={warning} className="warning-banner">
+                  {warning}
+                </div>
+              ))}
 
               <label>
                 Extension / сотрудник

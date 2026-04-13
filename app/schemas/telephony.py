@@ -54,6 +54,13 @@ class TelephonyExtensionListRead(BaseModel):
     source: str = "mango_api"
 
 
+class MangoReadinessRead(BaseModel):
+    api_configured: bool
+    webhook_secret_configured: bool
+    from_ext_configured: bool
+    warnings: list[str]
+
+
 class AgentProfileSettingsRead(BaseModel):
     agent_profile_id: uuid.UUID
     name: str

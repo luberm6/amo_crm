@@ -6,7 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.admin_auth import require_admin_auth
 from app.api.deps import get_db
 from app.core.exceptions import AppError
+from app.core.config import settings
 from app.schemas.telephony import (
+    MangoReadinessRead,
     TelephonyExtensionListRead,
     TelephonyExtensionRead,
     TelephonyLineListRead,
@@ -24,6 +26,28 @@ router = APIRouter(
 
 def _handle_app_error(exc: AppError) -> None:
     raise HTTPException(status_code=exc.status_code, detail=exc.to_dict())
+
+
+@router.get("/mango/readiness", response_model=MangoReadinessRead)
+async def mango_readiness() -> MangoReadinessRead:
+    api_configured = bool(settings.mango_api_key and settings.mango_api_salt)
+    webhook_secret_configured = bool(settings.mango_webhook_secret or settings.mango_webhook_shared_secret)
+    from_ext_configured = bool(settings.mango_from_ext)
+
+    warnings: list[str] = []
+    if not api_configured:
+        warnings.append("Mango API credentials (MANGO_API_KEY / MANGO_API_SALT) are not configured.")
+    if not webhook_secret_configured:
+        warnings.append("Inbound webhook verification is not configured (MANGO_WEBHOOK_SECRET is empty).")
+    if not from_ext_configured:
+        warnings.append("Outbound calling is not configured (MANGO_FROM_EXT is empty).")
+
+    return MangoReadinessRead(
+        api_configured=api_configured,
+        webhook_secret_configured=webhook_secret_configured,
+        from_ext_configured=from_ext_configured,
+        warnings=warnings,
+    )
 
 
 @router.get("/mango/lines", response_model=TelephonyLineListRead)

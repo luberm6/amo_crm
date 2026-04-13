@@ -119,10 +119,11 @@ class MangoClient:
             )
             if not phone_number:
                 continue
+            normalized_phone = normalize_mango_phone(phone_number)
             lines.append(
                 MangoLinePayload(
-                    provider_resource_id=provider_resource_id or phone_number,
-                    phone_number=phone_number,
+                    provider_resource_id=provider_resource_id or normalized_phone,
+                    phone_number=normalized_phone,
                     display_name=_first_non_empty(
                         record,
                         "display_name",
@@ -362,3 +363,32 @@ def _deduplicate_extensions(items: list[MangoExtensionPayload]) -> list[MangoExt
     for item in items:
         deduped[(item.provider_resource_id, item.extension)] = item
     return list(deduped.values())
+
+
+def normalize_mango_phone(number: Optional[str]) -> str:
+    """
+    Normalize a Mango phone number to E.164 +7... format.
+
+    Mango API returns Russian numbers without the leading '+':
+      "79300350609" → "+79300350609"
+      "9300350609"  → "+79300350609"  (10-digit RU mobile, prepend +7)
+      "+79300350609" → "+79300350609" (already canonical, unchanged)
+      "74951234567" → "+74951234567"  (landline, 11 digits starting with 7)
+
+    Non-RU or unrecognized formats are returned as-is.
+    """
+    if not number:
+        return number or ""
+    cleaned = number.strip()
+    # Already E.164
+    if cleaned.startswith("+"):
+        return cleaned
+    # Strip any non-digit characters (spaces, dashes, parens)
+    digits_only = "".join(ch for ch in cleaned if ch.isdigit())
+    if len(digits_only) == 11 and digits_only.startswith("7"):
+        return f"+{digits_only}"
+    if len(digits_only) == 10:
+        # 10-digit RU number without country code — prepend +7
+        return f"+7{digits_only}"
+    # Return original if we can't determine format
+    return cleaned

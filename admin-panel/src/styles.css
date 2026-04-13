@@ -156,6 +156,21 @@ textarea {
   padding: 0.85rem 1rem;
 }
 
+.warning-banner {
+  border: 1px solid #e8d5a0;
+  background: #fdf8ec;
+  color: #6b4c10;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+}
+.info-banner {
+  border: 1px solid #a8c8e8;
+  background: #edf4fb;
+  color: #1a4a6e;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+}
+
 .admin-shell {
   min-height: 100vh;
   display: grid;

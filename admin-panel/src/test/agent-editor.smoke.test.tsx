@@ -74,6 +74,21 @@ describe('agent editor telephony smoke', () => {
         })
       }
 
+      if (path.includes('/v1/telephony/mango/readiness')) {
+        return new Response(JSON.stringify({
+          api_configured: true,
+          webhook_secret_configured: false,
+          from_ext_configured: false,
+          warnings: [
+            'Inbound webhook verification is not configured (MANGO_WEBHOOK_SECRET is empty).',
+            'Outbound calling is not configured (MANGO_FROM_EXT is empty).',
+          ],
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
       if (path.includes('/v1/telephony/mango/lines')) {
         return new Response(JSON.stringify({
           items: [

@@ -26,6 +26,11 @@ from app.models.telephony_line import TelephonyLine
 from app.repositories.agent_profile_repo import AgentProfileRepository
 from app.repositories.knowledge_document_repo import KnowledgeDocumentRepository
 from app.services.mango_telephony_service import MangoTelephonyService
+from app.services.telephony_routing import (
+    resolve_agent_to_mango_line,
+    resolve_inbound_number_to_agent,
+)
+from app.integrations.telephony.mango_client import normalize_mango_phone
 
 
 @pytest.fixture
@@ -296,3 +301,148 @@ async def test_mango_lines_endpoint_lists_cached_inventory(
     payload = response.json()
     assert payload["total"] >= 1
     assert any(item["phone_number"] == "+74957770000" for item in payload["items"])
+
+
+@pytest.mark.anyio
+async def test_normalize_mango_phone_variants() -> None:
+    assert normalize_mango_phone("79300350609") == "+79300350609"
+    assert normalize_mango_phone("+79300350609") == "+79300350609"
+    assert normalize_mango_phone("9300350609") == "+79300350609"
+    assert normalize_mango_phone("74951234567") == "+74951234567"
+    assert normalize_mango_phone("") == ""
+    assert normalize_mango_phone(None) == ""
+    # Non-RU — returned as-is (stripped)
+    assert normalize_mango_phone("+12125551234") == "+12125551234"
+
+
+@pytest.mark.anyio
+async def test_mango_line_sync_stores_normalized_phone(session: AsyncSession) -> None:
+    """
+    MangoClient.list_lines() normalizes phones before returning MangoLinePayload.
+    The sync service stores whatever the client provides.
+    This test verifies that a normalized phone from the client is persisted as-is.
+    """
+    client = _FakeMangoClient(
+        config=MangoApiConfig(
+            base_url="https://app.mango-office.ru/vpbx",
+            api_key="api-key",
+            api_salt="api-salt",
+        ),
+        lines=[
+            MangoLinePayload(
+                provider_resource_id="line-norm2",
+                phone_number=normalize_mango_phone("79585382099"),  # pre-normalized as real client does
+                display_name="Test normalization",
+                extension=None,
+                is_active=True,
+                is_inbound_enabled=True,
+                is_outbound_enabled=False,
+                raw_payload={"number": "79585382099"},
+            )
+        ],
+        extensions=[],
+    )
+    service = MangoTelephonyService(session, client=client)
+    result = await service.sync_lines()
+
+    assert any(item.phone_number == "+79585382099" for item in result.items)
+
+
+@pytest.mark.anyio
+async def test_resolve_inbound_number_to_agent(session: AsyncSession) -> None:
+    line = await session.merge(
+        TelephonyLine(
+            provider="mango",
+            provider_resource_id="line-route",
+            phone_number="+79300350609",
+            display_name="AI Line",
+            extension=None,
+            is_active=True,
+            is_inbound_enabled=True,
+            is_outbound_enabled=False,
+            raw_payload={},
+            synced_at=datetime.now(timezone.utc),
+        )
+    )
+    await session.flush()
+
+    agent = await AgentProfileRepository(AgentProfile, session).save(
+        AgentProfile(
+            name="Route Agent",
+            is_active=True,
+            system_prompt="Prompt",
+            voice_strategy="tts_primary",
+            voice_provider="elevenlabs",
+            config={},
+            version=1,
+            telephony_provider="mango",
+            telephony_line_id=line.id,
+        )
+    )
+    await session.flush()
+
+    # Lookup with normalized form
+    found = await resolve_inbound_number_to_agent(session, "79300350609")
+    assert found is not None
+    assert found.id == agent.id
+
+    # Lookup with already-normalized form
+    found2 = await resolve_inbound_number_to_agent(session, "+79300350609")
+    assert found2 is not None
+    assert found2.id == agent.id
+
+    # Unknown number → None
+    assert await resolve_inbound_number_to_agent(session, "+70000000000") is None
+
+
+@pytest.mark.anyio
+async def test_resolve_agent_to_mango_line(session: AsyncSession) -> None:
+    line = await session.merge(
+        TelephonyLine(
+            provider="mango",
+            provider_resource_id="line-rev",
+            phone_number="+79000000001",
+            display_name="Rev line",
+            extension=None,
+            is_active=True,
+            is_inbound_enabled=True,
+            is_outbound_enabled=False,
+            raw_payload={},
+            synced_at=datetime.now(timezone.utc),
+        )
+    )
+    await session.flush()
+
+    agent = await AgentProfileRepository(AgentProfile, session).save(
+        AgentProfile(
+            name="Rev Agent",
+            is_active=True,
+            system_prompt="Prompt",
+            voice_strategy="tts_primary",
+            voice_provider="elevenlabs",
+            config={},
+            version=1,
+            telephony_provider="mango",
+            telephony_line_id=line.id,
+        )
+    )
+    await session.flush()
+
+    resolved = await resolve_agent_to_mango_line(session, agent.id)
+    assert resolved is not None
+    assert resolved.id == line.id
+    assert resolved.phone_number == "+79000000001"
+
+    # Agent without binding → None
+    unbound = await AgentProfileRepository(AgentProfile, session).save(
+        AgentProfile(
+            name="Unbound Agent",
+            is_active=True,
+            system_prompt="Prompt",
+            voice_strategy="tts_primary",
+            voice_provider="elevenlabs",
+            config={},
+            version=1,
+        )
+    )
+    assert await resolve_agent_to_mango_line(session, unbound.id) is None
