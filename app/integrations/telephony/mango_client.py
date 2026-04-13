@@ -130,6 +130,7 @@ class MangoClient:
                         "title",
                         "label",
                         "line_name",
+                        "schema_name",  # Mango: human-readable routing schema name (e.g. "ДЛЯ ИИ менеджера")
                     ),
                     extension=_first_non_empty(
                         record,
