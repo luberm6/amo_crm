@@ -104,11 +104,26 @@ def _build_browser_read(call, session, bridge, transcript_entries) -> BrowserCal
             tts_first_chunk_sent_ms_last=(
                 metrics.tts_first_chunk_sent_ms_last if metrics is not None else None
             ),
+            tts_provider_first_non_silent_chunk_ms_last=(
+                metrics.tts_provider_first_non_silent_chunk_ms_last if metrics is not None else None
+            ),
+            tts_first_non_silent_chunk_sent_ms_last=(
+                metrics.tts_first_non_silent_chunk_sent_ms_last if metrics is not None else None
+            ),
+            tts_first_non_silent_chunk_played_ms_last=(
+                metrics.tts_first_non_silent_chunk_played_ms_last if metrics is not None else None
+            ),
             tts_last_chunk_received_ms_last=(
                 metrics.tts_last_chunk_received_ms_last if metrics is not None else None
             ),
             tts_audio_duration_ms_last=(
                 metrics.tts_audio_duration_ms_last if metrics is not None else None
+            ),
+            tts_provider_leading_silence_ms_last=(
+                metrics.tts_provider_leading_silence_ms_last if metrics is not None else None
+            ),
+            tts_backend_leading_silence_ms_last=(
+                metrics.tts_backend_leading_silence_ms_last if metrics is not None else None
             ),
             tts_leading_silence_trimmed_ms_last=(
                 metrics.tts_leading_silence_trimmed_ms_last if metrics is not None else None

@@ -4,8 +4,11 @@ from app.core.audio_utils import (
     PCM16_ANALYSIS_FRAME_BYTES,
     Pcm16ChunkAligner,
     Pcm16RealtimeOptimizer,
+    Pcm16VoicedFirstGate,
+    analyze_pcm16_audibility,
     pcm16_duration_ms_for_bytes,
     pcm16le_stats,
+    trim_pcm16_to_first_voiced,
 )
 
 
@@ -97,3 +100,59 @@ def test_pcm16_realtime_optimizer_coalesces_overfragmented_chunks() -> None:
     assert telemetry.chunks_out == 2
     assert [len(chunk) for chunk in emitted] == [640, 1920]
     assert telemetry.bytes_out == 2560
+
+
+def test_analyze_pcm16_audibility_classifies_silent_near_silent_and_voiced() -> None:
+    silent = analyze_pcm16_audibility(_pcm_frame(0))
+    near_silent = analyze_pcm16_audibility(_pcm_frame(300))
+    voiced = analyze_pcm16_audibility(_pcm_frame(9000))
+
+    assert silent.silence_class == "silent"
+    assert silent.first_voiced_sample_index is None
+    assert near_silent.silence_class == "near_silent"
+    assert near_silent.first_voiced_sample_index is None
+    assert voiced.silence_class == "voiced"
+    assert voiced.first_voiced_sample_index == 0
+
+
+def test_trim_pcm16_to_first_voiced_preserves_voice_and_reports_trimmed_ms() -> None:
+    leading_samples = 160  # 10 ms at 16 kHz
+    pcm = (_pcm_sample(0) * leading_samples) + (_pcm_sample(9000) * 160)
+
+    trimmed, trimmed_ms, analysis = trim_pcm16_to_first_voiced(pcm, preserve_ms=2.0, fade_in_ms=2.0)
+
+    assert analysis.first_voiced_sample_index == leading_samples
+    assert 7.0 <= trimmed_ms <= 9.0
+    assert len(trimmed) < len(pcm)
+    assert trimmed[-2:] == _pcm_sample(9000)
+
+
+def test_pcm16_voiced_first_gate_drops_leading_silence_and_preserves_first_voiced_audio() -> None:
+    gate = Pcm16VoicedFirstGate()
+
+    first, first_event = gate.push(_pcm_frame(0))
+    second, second_event = gate.push(_pcm_frame(300))
+    third, third_event = gate.push((_pcm_sample(0) * 160) + (_pcm_sample(9000) * 160))
+
+    assert first == []
+    assert first_event is None
+    assert second == []
+    assert second_event is None
+    assert third_event is not None
+    assert len(third) == 1
+    assert third_event.dropped_chunks == 2
+    assert third_event.total_leading_trimmed_ms >= 40
+    assert len(third[0]) < len((_pcm_sample(0) * 160) + (_pcm_sample(9000) * 160))
+    assert third[0][-2:] == _pcm_sample(9000)
+
+
+def test_pcm16_voiced_first_gate_preserves_mid_utterance_silence_after_start() -> None:
+    gate = Pcm16VoicedFirstGate()
+
+    emitted, event = gate.push(_pcm_frame(9000))
+    trailing_silence, trailing_event = gate.push(_pcm_frame(0))
+
+    assert event is not None
+    assert emitted == [_pcm_frame(9000)]
+    assert trailing_event is None
+    assert trailing_silence == [_pcm_frame(0)]

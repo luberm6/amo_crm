@@ -7,12 +7,15 @@ from unittest.mock import patch
 import pytest
 
 from app.core.config import settings
+from app.core.audio_utils import analyze_pcm16_audibility, pcm16_duration_ms_for_bytes
 from app.core.exceptions import EngineError
 from app.integrations.direct.session_manager import (
     DirectSession,
+    DirectSessionCapabilities,
     DirectSessionManager,
     _resample_pcm16,
 )
+from app.integrations.direct.voice_strategy import make_session_voice_state_for_strategy
 from app.integrations.telephony.audio_bridge import AbstractAudioBridge
 from app.integrations.telephony.base import (
     AbstractTelephonyAdapter,
@@ -83,6 +86,17 @@ class _FailingVoiceProvider(AbstractVoiceProvider):
         yield b""
 
 
+class _LeadingSilenceVoiceProvider(AbstractVoiceProvider):
+    async def synthesize(self, text: str, voice_id=None) -> bytes:
+        return b""
+
+    async def synthesize_streaming(self, text: str, voice_id=None):
+        yield b"\x00" * 640
+        yield (int(300).to_bytes(2, "little", signed=True)) * 320
+        yield (b"\x00\x00" * 160) + (int(9000).to_bytes(2, "little", signed=True) * 160)
+        yield b"\x00" * 640
+
+
 async def _get_call_status(session_factory, call_id):
     async with session_factory() as session:
         call = await session.get(Call, call_id)
@@ -113,6 +127,47 @@ def test_session_manager_audio_out_alignment_preserves_pcm16_stream() -> None:
     assert second == b"\x01\x02"
     assert third == b"\x03\x04\x05\x06"
     assert tail == b""
+
+
+@pytest.mark.anyio
+async def test_tts_voiced_first_gate_trims_leading_silence_but_preserves_mid_utterance_silence() -> None:
+    sm = DirectSessionManager()
+    bridge = _AudioBridge()
+    session = DirectSession(
+        session_id="leading-silence-direct",
+        call_id=uuid.uuid4(),
+        phone="+79990001003",
+        audio_bridge=bridge,
+        voice_provider=_LeadingSilenceVoiceProvider(),
+        capabilities=DirectSessionCapabilities(
+            mode="audio_out_only",
+            text_only=False,
+            audio_out=True,
+            real_audio_out=True,
+        ),
+        voice_state=make_session_voice_state_for_strategy("tts_primary"),
+    )
+
+    await sm._synthesize_to_audio_queue(session, session.voice_provider, "test")
+    await sm._drain_audio_out_queue(session)
+
+    assert bridge.played
+    first_chunk = bridge.played[0]
+    first_chunk_analysis = analyze_pcm16_audibility(first_chunk)
+    assert first_chunk_analysis.first_voiced_offset_ms is not None
+    assert first_chunk_analysis.first_voiced_offset_ms <= 2.5
+    assert session.metrics.tts_provider_leading_silence_ms_last is not None
+    assert session.metrics.tts_provider_leading_silence_ms_last >= 40
+    assert session.metrics.tts_backend_leading_silence_ms_last is not None
+    assert session.metrics.tts_backend_leading_silence_ms_last >= 8
+    assert session.metrics.tts_leading_silence_trimmed_ms_last is not None
+    assert session.metrics.tts_leading_silence_trimmed_ms_last >= 40
+    assert session.metrics.tts_first_non_silent_chunk_sent_ms_last is not None
+    assert session.metrics.tts_first_non_silent_chunk_played_ms_last is not None
+    assert any(
+        pcm16_duration_ms_for_bytes(len(chunk)) >= 20 and chunk == b"\x00" * len(chunk)
+        for chunk in bridge.played[1:]
+    )
 
 
 class BridgeTelephonyAdapter(AbstractTelephonyAdapter):

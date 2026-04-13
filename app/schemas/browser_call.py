@@ -46,8 +46,13 @@ class BrowserCallDebugRead(BaseModel):
     tts_latency_ms_last: Optional[float] = None
     outbound_playback_latency_ms_last: Optional[float] = None
     tts_first_chunk_sent_ms_last: Optional[float] = None
+    tts_provider_first_non_silent_chunk_ms_last: Optional[float] = None
+    tts_first_non_silent_chunk_sent_ms_last: Optional[float] = None
+    tts_first_non_silent_chunk_played_ms_last: Optional[float] = None
     tts_last_chunk_received_ms_last: Optional[float] = None
     tts_audio_duration_ms_last: Optional[float] = None
+    tts_provider_leading_silence_ms_last: Optional[float] = None
+    tts_backend_leading_silence_ms_last: Optional[float] = None
     tts_leading_silence_trimmed_ms_last: Optional[float] = None
     tts_trailing_silence_trimmed_ms_last: Optional[float] = None
     tts_chunks_in_last: int = 0

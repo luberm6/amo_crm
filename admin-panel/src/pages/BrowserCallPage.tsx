@@ -49,8 +49,13 @@ type BrowserCallRead = {
     tts_latency_ms_last?: number | null
     outbound_playback_latency_ms_last?: number | null
     tts_first_chunk_sent_ms_last?: number | null
+    tts_provider_first_non_silent_chunk_ms_last?: number | null
+    tts_first_non_silent_chunk_sent_ms_last?: number | null
+    tts_first_non_silent_chunk_played_ms_last?: number | null
     tts_last_chunk_received_ms_last?: number | null
     tts_audio_duration_ms_last?: number | null
+    tts_provider_leading_silence_ms_last?: number | null
+    tts_backend_leading_silence_ms_last?: number | null
     tts_leading_silence_trimmed_ms_last?: number | null
     tts_trailing_silence_trimmed_ms_last?: number | null
     tts_chunks_in_last?: number
@@ -125,7 +130,10 @@ type LocalAudioDebug = {
   queuedPlaybackBufferMs: number
   scheduledPlaybackBacklogMs: number
   firstChunkLatencyMs: number | null
+  firstNonSilentChunkLatencyMs: number | null
+  firstNonSilentSampleScheduledMs: number | null
   firstAudibleLatencyMs: number | null
+  leadingSilenceBufferedMs: number
   drainLatencyMs: number | null
   lastTurnId: string | null
   currentOutputDeviceId: string | null
@@ -161,7 +169,10 @@ const INITIAL_LOCAL_AUDIO_DEBUG: LocalAudioDebug = {
   queuedPlaybackBufferMs: 0,
   scheduledPlaybackBacklogMs: 0,
   firstChunkLatencyMs: null,
+  firstNonSilentChunkLatencyMs: null,
+  firstNonSilentSampleScheduledMs: null,
   firstAudibleLatencyMs: null,
+  leadingSilenceBufferedMs: 0,
   drainLatencyMs: null,
   lastTurnId: null,
   currentOutputDeviceId: null,
@@ -197,6 +208,22 @@ const STEADY_PLAYBACK_FLUSH_DELAY_MS = 70
 const MAX_SCHEDULED_BACKLOG_MS = 240
 const RESUME_SCHEDULED_BACKLOG_MS = 140
 const AUDIO_TOO_QUIET_RMS_THRESHOLD = 0.01
+const PCM16_SILENT_RMS_THRESHOLD = 0.0015
+const PCM16_SILENT_PEAK_THRESHOLD = 0.01
+const PCM16_NEAR_SILENT_RMS_THRESHOLD = 0.008
+const PCM16_NEAR_SILENT_PEAK_THRESHOLD = 0.05
+const PCM16_VOICED_SAMPLE_THRESHOLD = 800
+const PCM16_STARTUP_PRESERVE_MS = 2
+const PCM16_STARTUP_FADE_IN_MS = 2
+
+type Pcm16AudibilityAnalysis = {
+  silenceClass: 'silent' | 'near_silent' | 'voiced'
+  firstVoicedSampleIndex: number | null
+  firstVoicedOffsetMs: number | null
+  rms: number
+  peak: number
+  sampleCount: number
+}
 
 function downsampleBuffer(buffer: Float32Array<ArrayBufferLike>, inputSampleRate: number, outputSampleRate: number) {
   if (outputSampleRate === inputSampleRate) {
@@ -344,6 +371,103 @@ function computeAudioStats(buffer: Float32Array<ArrayBufferLike>) {
   }
 }
 
+function analyzePcm16Audibility(buffer: ArrayBuffer): Pcm16AudibilityAnalysis {
+  const samples = new Int16Array(buffer)
+  if (samples.length === 0) {
+    return {
+      silenceClass: 'silent',
+      firstVoicedSampleIndex: null,
+      firstVoicedOffsetMs: null,
+      rms: 0,
+      peak: 0,
+      sampleCount: 0,
+    }
+  }
+  let sumSquares = 0
+  let peak = 0
+  let firstVoicedSampleIndex: number | null = null
+  for (let index = 0; index < samples.length; index += 1) {
+    const rawValue = samples[index] ?? 0
+    const absoluteValue = Math.abs(rawValue)
+    const normalized = absoluteValue / 0x7fff
+    sumSquares += normalized * normalized
+    if (normalized > peak) {
+      peak = normalized
+    }
+    if (firstVoicedSampleIndex == null && absoluteValue >= PCM16_VOICED_SAMPLE_THRESHOLD) {
+      firstVoicedSampleIndex = index
+    }
+  }
+  const rms = Math.sqrt(sumSquares / samples.length)
+  let silenceClass: 'silent' | 'near_silent' | 'voiced'
+  if (firstVoicedSampleIndex == null) {
+    silenceClass = rms <= PCM16_SILENT_RMS_THRESHOLD && peak <= PCM16_SILENT_PEAK_THRESHOLD
+      ? 'silent'
+      : 'near_silent'
+  } else if (rms <= PCM16_NEAR_SILENT_RMS_THRESHOLD && peak <= PCM16_NEAR_SILENT_PEAK_THRESHOLD) {
+    silenceClass = 'near_silent'
+  } else {
+    silenceClass = 'voiced'
+  }
+  return {
+    silenceClass,
+    firstVoicedSampleIndex,
+    firstVoicedOffsetMs: firstVoicedSampleIndex == null
+      ? null
+      : Number(((firstVoicedSampleIndex / TARGET_PCM_SAMPLE_RATE) * 1000).toFixed(2)),
+    rms,
+    peak,
+    sampleCount: samples.length,
+  }
+}
+
+function applyPcm16FadeIn(samples: Int16Array, fadeSamples: number) {
+  const effectiveFadeSamples = Math.min(samples.length, Math.max(1, fadeSamples))
+  if (effectiveFadeSamples <= 1) {
+    return
+  }
+  for (let index = 0; index < effectiveFadeSamples; index += 1) {
+    const scale = index / Math.max(1, effectiveFadeSamples - 1)
+    samples[index] = Math.round((samples[index] ?? 0) * scale)
+  }
+}
+
+function trimPcm16ToFirstVoiced(
+  buffer: ArrayBuffer,
+  preserveMs = PCM16_STARTUP_PRESERVE_MS,
+  fadeInMs = PCM16_STARTUP_FADE_IN_MS,
+) {
+  const analysis = analyzePcm16Audibility(buffer)
+  if (analysis.firstVoicedSampleIndex == null) {
+    return {
+      trimmedBuffer: null,
+      trimmedMs: pcm16DurationMs(buffer.byteLength),
+      analysis,
+    }
+  }
+  const preserveSamples = Math.max(0, Math.round((preserveMs / 1000) * TARGET_PCM_SAMPLE_RATE))
+  const trimSamples = Math.max(0, analysis.firstVoicedSampleIndex - preserveSamples)
+  if (trimSamples <= 0) {
+    return {
+      trimmedBuffer: buffer.slice(0),
+      trimmedMs: 0,
+      analysis,
+    }
+  }
+  const input = new Int16Array(buffer)
+  const trimmedSamples = input.slice(trimSamples)
+  const fadeSamples = Math.round((fadeInMs / 1000) * TARGET_PCM_SAMPLE_RATE)
+  applyPcm16FadeIn(trimmedSamples, fadeSamples)
+  return {
+    trimmedBuffer: trimmedSamples.buffer.slice(
+      trimmedSamples.byteOffset,
+      trimmedSamples.byteOffset + trimmedSamples.byteLength,
+    ),
+    trimmedMs: Number(((trimSamples / TARGET_PCM_SAMPLE_RATE) * 1000).toFixed(2)),
+    analysis,
+  }
+}
+
 function normalizePcm16Chunk(
   chunk: ArrayBuffer,
   carry: Uint8Array | null,
@@ -387,8 +511,8 @@ function pcm16DurationMs(byteLength: number) {
   return Number(((byteLength / (TARGET_PCM_SAMPLE_RATE * TARGET_PCM_CHANNELS * 2)) * 1000).toFixed(2))
 }
 
-function getPlaybackPolicy(playbackStarts: number) {
-  if (playbackStarts <= 0) {
+function getPlaybackPolicy(isTurnStartup: boolean) {
+  if (isTurnStartup) {
     return {
       minimumBytes: STARTUP_PLAYBACK_BUFFER_BYTES,
       flushDelayMs: STARTUP_PLAYBACK_FLUSH_DELAY_MS,
@@ -474,9 +598,15 @@ export default function BrowserCallPage() {
   const currentTurnRef = useRef<{
     turnId: string
     backendFirstChunkSentMs: number | null
+    backendFirstNonSilentChunkSentMs: number | null
+    backendProviderLeadingSilenceMs: number | null
+    backendLeadingSilenceMs: number | null
     frontendFirstChunkReceivedAt: number | null
+    frontendFirstNonSilentChunkReceivedAt: number | null
     frontendLastChunkReceivedAt: number | null
     frontendPlaybackStartedAt: number | null
+    frontendFirstNonSilentSampleScheduledAt: number | null
+    frontendLeadingSilenceBufferedMs: number
     backendCompleted: boolean
     backendAudioDurationMs: number | null
   } | null>(null)
@@ -881,24 +1011,38 @@ export default function BrowserCallPage() {
       if (
         source === 'browser_inbound'
         && currentTurnRef.current
-        && currentTurnRef.current.frontendFirstChunkReceivedAt != null
-        && currentTurnRef.current.frontendPlaybackStartedAt == null
+        && currentTurnRef.current.frontendFirstNonSilentChunkReceivedAt != null
+        && currentTurnRef.current.frontendFirstNonSilentSampleScheduledAt == null
       ) {
         const now = performance.now()
-        const frontendQueueStartMs = now - currentTurnRef.current.frontendFirstChunkReceivedAt
-        const estimatedFirstAudibleMs = (currentTurnRef.current.backendFirstChunkSentMs || 0) + frontendQueueStartMs
+        const frontendQueueStartMs = now - currentTurnRef.current.frontendFirstNonSilentChunkReceivedAt
+        const estimatedFirstAudibleMs = (
+          (currentTurnRef.current.backendFirstNonSilentChunkSentMs
+            ?? currentTurnRef.current.backendFirstChunkSentMs
+            ?? 0)
+          + frontendQueueStartMs
+        )
         currentTurnRef.current = {
           ...currentTurnRef.current,
           frontendPlaybackStartedAt: now,
+          frontendFirstNonSilentSampleScheduledAt: now,
         }
         updateLocalAudioDebug({
           firstChunkLatencyMs: currentTurnRef.current.backendFirstChunkSentMs,
+          firstNonSilentChunkLatencyMs: (
+            currentTurnRef.current.backendFirstNonSilentChunkSentMs
+            ?? currentTurnRef.current.backendFirstChunkSentMs
+          ),
+          firstNonSilentSampleScheduledMs: Number(estimatedFirstAudibleMs.toFixed(2)),
           firstAudibleLatencyMs: Number(estimatedFirstAudibleMs.toFixed(2)),
+          leadingSilenceBufferedMs: Number(currentTurnRef.current.frontendLeadingSilenceBufferedMs.toFixed(2)),
         })
-        logBrowserEvent('browser_playback.playback_queue_started', {
+        logBrowserEvent('browser_playback.first_voiced_start', {
           turn_id: currentTurnRef.current.turnId,
           frontend_queue_start_ms: Number(frontendQueueStartMs.toFixed(2)),
-          estimated_total_first_audible_ms: Number(estimatedFirstAudibleMs.toFixed(2)),
+          first_non_silent_chunk_sent_ms: currentTurnRef.current.backendFirstNonSilentChunkSentMs,
+          audible_start_estimate_ms: Number(estimatedFirstAudibleMs.toFixed(2)),
+          frontend_leading_silence_buffered_ms: Number(currentTurnRef.current.frontendLeadingSilenceBufferedMs.toFixed(2)),
         }, frontendQueueStartMs > 120 ? 'warn' : 'info')
       }
       updateLocalAudioDebug({
@@ -969,7 +1113,11 @@ export default function BrowserCallPage() {
     pendingPlaybackChunksRef.current = []
     pendingPlaybackBytesRef.current = 0
     inboundOddByteCarryRef.current = null
-    const policy = getPlaybackPolicy(localAudioDebugRef.current.playbackStarts)
+    const policy = getPlaybackPolicy(Boolean(
+      currentTurnRef.current
+      ? currentTurnRef.current.frontendPlaybackStartedAt == null
+      : localAudioDebugRef.current.playbackStarts <= 0
+    ))
     logBrowserEvent('playback_buffer_flushed', {
       reason,
       merged_bytes: mergedBytes,
@@ -985,7 +1133,11 @@ export default function BrowserCallPage() {
   const enqueuePlaybackChunk = useCallback((arrayBuffer: ArrayBuffer) => {
     pendingPlaybackChunksRef.current.push(arrayBuffer.slice(0))
     pendingPlaybackBytesRef.current += arrayBuffer.byteLength
-    const policy = getPlaybackPolicy(localAudioDebugRef.current.playbackStarts)
+    const policy = getPlaybackPolicy(Boolean(
+      currentTurnRef.current
+      ? currentTurnRef.current.frontendPlaybackStartedAt == null
+      : localAudioDebugRef.current.playbackStarts <= 0
+    ))
     updateLocalAudioDebug({
       queuedPlaybackBufferMs: pcm16DurationMs(pendingPlaybackBytesRef.current),
     })
@@ -1000,6 +1152,112 @@ export default function BrowserCallPage() {
       void flushPlaybackQueue('timer')
     }, policy.flushDelayMs)
   }, [flushPlaybackQueue, updateLocalAudioDebug])
+
+  const handleInboundPlaybackPayload = useCallback((
+    payload: ArrayBuffer,
+    transport: 'websocket_blob' | 'websocket_arraybuffer',
+  ) => {
+    bumpLocalAudioCounter('inboundAudioChunkCount')
+    const normalized = normalizePcm16Chunk(payload, inboundOddByteCarryRef.current)
+    inboundOddByteCarryRef.current = normalized.nextCarry
+
+    let playbackBuffer = normalized.alignedBuffer
+    let analysis = playbackBuffer ? analyzePcm16Audibility(playbackBuffer) : null
+    let leadingTrimmedMs = 0
+    const turn = currentTurnRef.current
+
+    if (turn) {
+      const now = performance.now()
+      if (turn.frontendFirstChunkReceivedAt == null) {
+        turn.frontendFirstChunkReceivedAt = now
+        logBrowserEvent('browser_playback.frontend_first_chunk_received', {
+          turn_id: turn.turnId,
+          backend_first_chunk_sent_ms: turn.backendFirstChunkSentMs,
+        })
+      }
+      turn.frontendLastChunkReceivedAt = now
+
+      if (playbackBuffer && turn.frontendFirstNonSilentChunkReceivedAt == null) {
+        const startupPrepared = trimPcm16ToFirstVoiced(playbackBuffer)
+        analysis = startupPrepared.analysis
+        if (startupPrepared.trimmedBuffer == null) {
+          turn.frontendLeadingSilenceBufferedMs = Number(
+            (turn.frontendLeadingSilenceBufferedMs + startupPrepared.trimmedMs).toFixed(2),
+          )
+          updateLocalAudioDebug({
+            leadingSilenceBufferedMs: turn.frontendLeadingSilenceBufferedMs,
+          })
+          logBrowserEvent('tts.leading_silence_detected', {
+            turn_id: turn.turnId,
+            stage: 'frontend_buffer',
+            silence_class: analysis.silenceClass,
+            rms: Number(analysis.rms.toFixed(6)),
+            peak: Number(analysis.peak.toFixed(6)),
+            byte_length: normalized.alignedByteLength,
+            leading_silence_ms: turn.frontendLeadingSilenceBufferedMs,
+            first_bytes_preview_hex: normalized.firstBytesHex,
+          }, 'info')
+          playbackBuffer = null
+        } else {
+          playbackBuffer = startupPrepared.trimmedBuffer
+          leadingTrimmedMs = startupPrepared.trimmedMs
+          turn.frontendLeadingSilenceBufferedMs = Number(
+            (turn.frontendLeadingSilenceBufferedMs + leadingTrimmedMs).toFixed(2),
+          )
+          turn.frontendFirstNonSilentChunkReceivedAt = now
+          updateLocalAudioDebug({
+            firstChunkLatencyMs: turn.backendFirstChunkSentMs,
+            firstNonSilentChunkLatencyMs: turn.backendFirstNonSilentChunkSentMs ?? turn.backendFirstChunkSentMs,
+            leadingSilenceBufferedMs: turn.frontendLeadingSilenceBufferedMs,
+          })
+          if (leadingTrimmedMs > 0) {
+            logBrowserEvent('tts.leading_silence_trimmed', {
+              turn_id: turn.turnId,
+              stage: 'frontend_playback',
+              leading_trimmed_ms: leadingTrimmedMs,
+              total_leading_trimmed_ms: turn.frontendLeadingSilenceBufferedMs,
+              first_voiced_offset_ms: analysis.firstVoicedOffsetMs,
+            })
+          }
+          logBrowserEvent('browser_playback.first_voiced_chunk_received', {
+            turn_id: turn.turnId,
+            backend_first_non_silent_chunk_sent_ms: turn.backendFirstNonSilentChunkSentMs,
+            provider_leading_silence_ms: turn.backendProviderLeadingSilenceMs,
+            backend_leading_silence_ms: turn.backendLeadingSilenceMs,
+            frontend_leading_silence_ms: turn.frontendLeadingSilenceBufferedMs,
+            byte_length: playbackBuffer.byteLength,
+            silence_class: analysis.silenceClass,
+            rms: Number(analysis.rms.toFixed(6)),
+            peak: Number(analysis.peak.toFixed(6)),
+            first_voiced_offset_ms: analysis.firstVoicedOffsetMs,
+          })
+        }
+      }
+    }
+
+    logBrowserEvent('browser_call.audio_chunk_received', {
+      transport,
+      format: 'pcm_s16le',
+      sample_rate: TARGET_PCM_SAMPLE_RATE,
+      channels: TARGET_PCM_CHANNELS,
+      sample_width_bits: TARGET_PCM_BIT_DEPTH,
+      container: 'raw',
+      endian: 'little',
+      raw_byte_length: normalized.rawByteLength,
+      aligned_byte_length: normalized.alignedByteLength,
+      had_odd_boundary: normalized.hadOddBoundary,
+      first_bytes_preview_hex: normalized.firstBytesHex,
+      silence_class: analysis?.silenceClass ?? null,
+      rms: analysis ? Number(analysis.rms.toFixed(6)) : null,
+      peak: analysis ? Number(analysis.peak.toFixed(6)) : null,
+      first_voiced_offset_ms: analysis?.firstVoicedOffsetMs ?? null,
+      leading_trimmed_ms: leadingTrimmedMs,
+    }, normalized.hadOddBoundary ? 'warn' : 'info')
+
+    if (playbackBuffer) {
+      enqueuePlaybackChunk(playbackBuffer)
+    }
+  }, [bumpLocalAudioCounter, enqueuePlaybackChunk, logBrowserEvent, updateLocalAudioDebug])
 
   const playHardcodedAudio = useCallback(async () => {
     setHardcodedPlaybackRunning(true)
@@ -1616,6 +1874,11 @@ export default function BrowserCallPage() {
                 phase?: 'started' | 'completed'
                 turn_id?: string
                 tts_first_chunk_sent_to_bridge_ms?: number
+                tts_first_non_silent_chunk_sent_ms?: number
+                tts_first_non_silent_chunk_played_ms?: number
+                tts_provider_first_non_silent_chunk_ms?: number
+                tts_provider_leading_silence_ms?: number
+                tts_backend_leading_silence_ms?: number
                 emitted_audio_duration_ms?: number
                 leading_silence_trimmed_ms?: number
                 trailing_silence_trimmed_ms?: number
@@ -1627,16 +1890,33 @@ export default function BrowserCallPage() {
                   currentTurnRef.current = {
                     turnId: typed.turn_id,
                     backendFirstChunkSentMs: typed.tts_first_chunk_sent_to_bridge_ms ?? null,
+                    backendFirstNonSilentChunkSentMs: (
+                      typed.tts_first_non_silent_chunk_sent_ms
+                      ?? typed.tts_first_chunk_sent_to_bridge_ms
+                      ?? null
+                    ),
+                    backendProviderLeadingSilenceMs: typed.tts_provider_leading_silence_ms ?? null,
+                    backendLeadingSilenceMs: typed.tts_backend_leading_silence_ms ?? null,
                     frontendFirstChunkReceivedAt: null,
+                    frontendFirstNonSilentChunkReceivedAt: null,
                     frontendLastChunkReceivedAt: null,
                     frontendPlaybackStartedAt: null,
+                    frontendFirstNonSilentSampleScheduledAt: null,
+                    frontendLeadingSilenceBufferedMs: 0,
                     backendCompleted: false,
                     backendAudioDurationMs: null,
                   }
                   updateLocalAudioDebug({
                     lastTurnId: typed.turn_id,
                     firstChunkLatencyMs: typed.tts_first_chunk_sent_to_bridge_ms ?? null,
+                    firstNonSilentChunkLatencyMs: (
+                      typed.tts_first_non_silent_chunk_sent_ms
+                      ?? typed.tts_first_chunk_sent_to_bridge_ms
+                      ?? null
+                    ),
+                    firstNonSilentSampleScheduledMs: null,
                     firstAudibleLatencyMs: null,
+                    leadingSilenceBufferedMs: 0,
                     drainLatencyMs: null,
                   })
                 }
@@ -1651,6 +1931,11 @@ export default function BrowserCallPage() {
                     raw_chunks_in: typed.raw_chunks_in,
                     optimized_chunks_out: typed.optimized_chunks_out,
                     emitted_audio_duration_ms: typed.emitted_audio_duration_ms,
+                    provider_first_non_silent_chunk_ms: typed.tts_provider_first_non_silent_chunk_ms,
+                    first_non_silent_chunk_sent_ms: typed.tts_first_non_silent_chunk_sent_ms,
+                    first_non_silent_chunk_played_ms: typed.tts_first_non_silent_chunk_played_ms,
+                    provider_leading_silence_ms: typed.tts_provider_leading_silence_ms,
+                    backend_leading_silence_ms: typed.tts_backend_leading_silence_ms,
                     leading_silence_trimmed_ms: typed.leading_silence_trimmed_ms,
                     trailing_silence_trimmed_ms: typed.trailing_silence_trimmed_ms,
                   })
@@ -1677,70 +1962,12 @@ export default function BrowserCallPage() {
           return
         }
         if (event.data instanceof Blob) {
-          bumpLocalAudioCounter('inboundAudioChunkCount')
           void event.data.arrayBuffer().then((payload) => {
-            const normalized = normalizePcm16Chunk(payload, inboundOddByteCarryRef.current)
-            inboundOddByteCarryRef.current = normalized.nextCarry
-            if (currentTurnRef.current) {
-              const now = performance.now()
-              if (currentTurnRef.current.frontendFirstChunkReceivedAt == null) {
-                currentTurnRef.current.frontendFirstChunkReceivedAt = now
-                logBrowserEvent('browser_playback.frontend_first_chunk_received', {
-                  turn_id: currentTurnRef.current.turnId,
-                  backend_first_chunk_sent_ms: currentTurnRef.current.backendFirstChunkSentMs,
-                })
-              }
-              currentTurnRef.current.frontendLastChunkReceivedAt = now
-            }
-            logBrowserEvent('browser_call.audio_chunk_received', {
-              transport: 'websocket_blob',
-              format: 'pcm_s16le',
-              sample_rate: TARGET_PCM_SAMPLE_RATE,
-              channels: TARGET_PCM_CHANNELS,
-              sample_width_bits: TARGET_PCM_BIT_DEPTH,
-              container: 'raw',
-              endian: 'little',
-              raw_byte_length: normalized.rawByteLength,
-              aligned_byte_length: normalized.alignedByteLength,
-              had_odd_boundary: normalized.hadOddBoundary,
-              first_bytes_preview_hex: normalized.firstBytesHex,
-            }, normalized.hadOddBoundary ? 'warn' : 'info')
-            if (normalized.alignedBuffer) {
-              enqueuePlaybackChunk(normalized.alignedBuffer)
-            }
+            handleInboundPlaybackPayload(payload, 'websocket_blob')
           })
           return
         }
-        bumpLocalAudioCounter('inboundAudioChunkCount')
-        const normalized = normalizePcm16Chunk(event.data, inboundOddByteCarryRef.current)
-        inboundOddByteCarryRef.current = normalized.nextCarry
-        if (currentTurnRef.current) {
-          const now = performance.now()
-          if (currentTurnRef.current.frontendFirstChunkReceivedAt == null) {
-            currentTurnRef.current.frontendFirstChunkReceivedAt = now
-            logBrowserEvent('browser_playback.frontend_first_chunk_received', {
-              turn_id: currentTurnRef.current.turnId,
-              backend_first_chunk_sent_ms: currentTurnRef.current.backendFirstChunkSentMs,
-            })
-          }
-          currentTurnRef.current.frontendLastChunkReceivedAt = now
-        }
-        logBrowserEvent('browser_call.audio_chunk_received', {
-          transport: 'websocket_arraybuffer',
-          format: 'pcm_s16le',
-          sample_rate: TARGET_PCM_SAMPLE_RATE,
-          channels: TARGET_PCM_CHANNELS,
-          sample_width_bits: TARGET_PCM_BIT_DEPTH,
-          container: 'raw',
-          endian: 'little',
-          raw_byte_length: normalized.rawByteLength,
-          aligned_byte_length: normalized.alignedByteLength,
-          had_odd_boundary: normalized.hadOddBoundary,
-          first_bytes_preview_hex: normalized.firstBytesHex,
-        }, normalized.hadOddBoundary ? 'warn' : 'info')
-        if (normalized.alignedBuffer) {
-          enqueuePlaybackChunk(normalized.alignedBuffer)
-        }
+        handleInboundPlaybackPayload(event.data, 'websocket_arraybuffer')
       }
       socket.onerror = () => {
         const message = 'Ошибка транспорта WebSocket браузерного звонка.'
@@ -1794,11 +2021,10 @@ export default function BrowserCallPage() {
       setStarting(false)
     }
   }, [
-    bumpLocalAudioCounter,
     fetchStatus,
+    handleInboundPlaybackPayload,
     label,
     logBrowserEvent,
-    enqueuePlaybackChunk,
     prepareAudioRuntime,
     selectedAgentId,
     stopAudioInput,
@@ -1880,6 +2106,8 @@ export default function BrowserCallPage() {
           ['тихо', localAudioDebug.audioTooQuiet ? 'yes' : 'no'],
           ['queue ms', `${Math.round(localAudioDebug.queuedPlaybackBufferMs)} ms`],
           ['backlog ms', `${Math.round(localAudioDebug.scheduledPlaybackBacklogMs)} ms`],
+          ['lead frontend', formatMetric(localAudioDebug.leadingSilenceBufferedMs)],
+          ['first non-silent', formatMetric(localAudioDebug.firstNonSilentSampleScheduledMs)],
           ['first audible', formatMetric(localAudioDebug.firstAudibleLatencyMs)],
           ['drain', formatMetric(localAudioDebug.drainLatencyMs)],
           ['устройство', localAudioDebug.currentOutputDeviceId || 'default'],
@@ -1904,11 +2132,17 @@ export default function BrowserCallPage() {
           ['модель', formatMetric(debug?.model_response_latency_ms_last)],
           ['tts', formatMetric(debug?.tts_latency_ms_last)],
           ['tts -> bridge', formatMetric(debug?.tts_first_chunk_sent_ms_last)],
+          ['prov first voiced', formatMetric(debug?.tts_provider_first_non_silent_chunk_ms_last)],
+          ['bridge first voiced', formatMetric(debug?.tts_first_non_silent_chunk_sent_ms_last)],
+          ['played first voiced', formatMetric(debug?.tts_first_non_silent_chunk_played_ms_last)],
           ['tts tail', formatMetric(debug?.tts_last_chunk_received_ms_last)],
           ['tts audio', formatMetric(debug?.tts_audio_duration_ms_last)],
+          ['prov lead', formatMetric(debug?.tts_provider_leading_silence_ms_last)],
+          ['backend lead', formatMetric(debug?.tts_backend_leading_silence_ms_last)],
           ['trim lead', formatMetric(debug?.tts_leading_silence_trimmed_ms_last)],
           ['trim tail', formatMetric(debug?.tts_trailing_silence_trimmed_ms_last)],
           ['frontend first chunk', formatMetric(localAudioDebug.firstChunkLatencyMs)],
+          ['frontend first voiced', formatMetric(localAudioDebug.firstNonSilentChunkLatencyMs)],
           ['playback', formatMetric(debug?.outbound_playback_latency_ms_last)],
           ['turn id', localAudioDebug.lastTurnId || debug?.tts_turn_id_last || '—'],
         ],

@@ -453,6 +453,62 @@ describe('browser call page smoke', () => {
     })
   })
 
+  it('starts playback from the first voiced chunk and ignores startup silence frames', async () => {
+    const user = userEvent.setup()
+    setupCommonFetch()
+
+    renderBrowserCallPage()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i }))
+    await waitFor(() => {
+      expect(FakeWebSocket.instances).toHaveLength(1)
+    })
+    const socket = FakeWebSocket.instances[0]
+    await act(async () => {
+      socket.open()
+    })
+
+    await waitFor(() => {
+      expect(FakeAudioContext.instances).toHaveLength(1)
+    })
+    const context = FakeAudioContext.instances[0]
+
+    await act(async () => {
+      socket.onmessage?.({
+        data: JSON.stringify({
+          type: 'tts_turn_metrics',
+          phase: 'started',
+          turn_id: 'turn-1',
+          tts_first_chunk_sent_to_bridge_ms: 180,
+          tts_first_non_silent_chunk_sent_ms: 220,
+          tts_provider_leading_silence_ms: 60,
+          tts_backend_leading_silence_ms: 60,
+        }),
+      } as MessageEvent)
+    })
+
+    await act(async () => {
+      socket.receiveBytes(new Int16Array(320).buffer)
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 70))
+    })
+    expect(context.bufferSourceStarts).toHaveLength(0)
+
+    const voiced = new Int16Array(320)
+    voiced.fill(9000)
+    await act(async () => {
+      socket.receiveBytes(voiced.buffer)
+    })
+    await waitFor(() => {
+      expect(context.bufferSourceStarts.length).toBeGreaterThan(0)
+    })
+  })
+
   it('does not create a backend session when microphone permission is denied', async () => {
     const user = userEvent.setup()
     const fetchSpy = setupCommonFetch()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import time
 import wave
+from array import array
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -19,6 +20,11 @@ PCM16_BYTES_PER_SAMPLE = 2
 PCM16_BYTES_PER_SECOND = PCM16_SAMPLE_RATE * PCM16_CHANNELS * PCM16_BYTES_PER_SAMPLE
 PCM16_ANALYSIS_FRAME_MS = 20
 PCM16_ANALYSIS_FRAME_BYTES = int(PCM16_BYTES_PER_SECOND * (PCM16_ANALYSIS_FRAME_MS / 1000))
+PCM16_SILENT_RMS_THRESHOLD = 0.0015
+PCM16_SILENT_PEAK_THRESHOLD = 0.01
+PCM16_NEAR_SILENT_RMS_THRESHOLD = 0.008
+PCM16_NEAR_SILENT_PEAK_THRESHOLD = 0.05
+PCM16_VOICED_SAMPLE_THRESHOLD = 800
 
 
 @dataclass
@@ -71,6 +77,243 @@ class Pcm16ChunkingTelemetry:
     trailing_silence_frames_dropped: int
     trailing_silence_frames_kept: int
     silence_chunk_ratio: float
+
+
+@dataclass(frozen=True)
+class Pcm16AudibilityAnalysis:
+    silence_class: str
+    first_voiced_sample_index: Optional[int]
+    first_voiced_offset_ms: Optional[float]
+    rms: float
+    peak: float
+    silence_ratio: float
+    sample_count: int
+
+
+@dataclass(frozen=True)
+class Pcm16VoicedFirstEvent:
+    chunk_index: int
+    silence_class: str
+    first_voiced_offset_ms: Optional[float]
+    leading_trimmed_ms: float
+    total_leading_trimmed_ms: float
+    emitted_bytes: int
+    dropped_chunks: int
+    silent_chunks_dropped: int
+    near_silent_chunks_dropped: int
+
+
+@dataclass(frozen=True)
+class Pcm16VoicedFirstTelemetry:
+    leading_silence_trimmed_ms: float
+    dropped_chunks: int
+    silent_chunks_dropped: int
+    near_silent_chunks_dropped: int
+    first_voiced_offset_ms: Optional[float]
+    first_voiced_chunk_index: Optional[int]
+
+
+def analyze_pcm16_audibility(
+    pcm: bytes,
+    *,
+    sample_rate: int = PCM16_SAMPLE_RATE,
+    silent_rms_threshold: float = PCM16_SILENT_RMS_THRESHOLD,
+    silent_peak_threshold: float = PCM16_SILENT_PEAK_THRESHOLD,
+    near_silent_rms_threshold: float = PCM16_NEAR_SILENT_RMS_THRESHOLD,
+    near_silent_peak_threshold: float = PCM16_NEAR_SILENT_PEAK_THRESHOLD,
+    sample_amplitude_threshold: int = PCM16_VOICED_SAMPLE_THRESHOLD,
+) -> Pcm16AudibilityAnalysis:
+    usable = pcm if len(pcm) % PCM16_BYTES_PER_SAMPLE == 0 else pcm[:-1]
+    stats = pcm16le_stats(usable)
+    first_voiced_sample_index: Optional[int] = None
+
+    for index in range(0, len(usable), PCM16_BYTES_PER_SAMPLE):
+        sample = int.from_bytes(
+            usable[index:index + PCM16_BYTES_PER_SAMPLE],
+            byteorder=PCM16_ENDIAN,
+            signed=True,
+        )
+        if abs(sample) >= sample_amplitude_threshold:
+            first_voiced_sample_index = index // PCM16_BYTES_PER_SAMPLE
+            break
+
+    if first_voiced_sample_index is None:
+        if stats["rms"] <= silent_rms_threshold and stats["peak"] <= silent_peak_threshold:
+            silence_class = "silent"
+        else:
+            silence_class = "near_silent"
+    elif stats["rms"] <= near_silent_rms_threshold and stats["peak"] <= near_silent_peak_threshold:
+        silence_class = "near_silent"
+    else:
+        silence_class = "voiced"
+
+    first_voiced_offset_ms = (
+        round((first_voiced_sample_index / sample_rate) * 1000.0, 2)
+        if first_voiced_sample_index is not None
+        else None
+    )
+    return Pcm16AudibilityAnalysis(
+        silence_class=silence_class,
+        first_voiced_sample_index=first_voiced_sample_index,
+        first_voiced_offset_ms=first_voiced_offset_ms,
+        rms=stats["rms"],
+        peak=stats["peak"],
+        silence_ratio=stats["silence_ratio"],
+        sample_count=stats["sample_count"],
+    )
+
+
+def trim_pcm16_to_first_voiced(
+    pcm: bytes,
+    *,
+    sample_rate: int = PCM16_SAMPLE_RATE,
+    preserve_ms: float = 2.0,
+    fade_in_ms: float = 2.0,
+    sample_amplitude_threshold: int = PCM16_VOICED_SAMPLE_THRESHOLD,
+) -> tuple[bytes, float, Pcm16AudibilityAnalysis]:
+    usable = pcm if len(pcm) % PCM16_BYTES_PER_SAMPLE == 0 else pcm[:-1]
+    analysis = analyze_pcm16_audibility(
+        usable,
+        sample_rate=sample_rate,
+        sample_amplitude_threshold=sample_amplitude_threshold,
+    )
+    if analysis.first_voiced_sample_index is None:
+        return b"", pcm16_duration_ms_for_bytes(len(usable)), analysis
+
+    preserve_samples = max(0, int(round((preserve_ms / 1000.0) * sample_rate)))
+    trim_samples = max(0, analysis.first_voiced_sample_index - preserve_samples)
+    if trim_samples == 0:
+        return usable, 0.0, analysis
+
+    trimmed = usable[trim_samples * PCM16_BYTES_PER_SAMPLE:]
+    trimmed_ms = round((trim_samples / sample_rate) * 1000.0, 2)
+    if fade_in_ms > 0 and trimmed:
+        trimmed = apply_pcm16_fade_in(
+            trimmed,
+            sample_rate=sample_rate,
+            fade_in_ms=fade_in_ms,
+        )
+    return trimmed, trimmed_ms, analysis
+
+
+def apply_pcm16_fade_in(
+    pcm: bytes,
+    *,
+    sample_rate: int = PCM16_SAMPLE_RATE,
+    fade_in_ms: float = 2.0,
+) -> bytes:
+    usable = pcm if len(pcm) % PCM16_BYTES_PER_SAMPLE == 0 else pcm[:-1]
+    if not usable or fade_in_ms <= 0:
+        return usable
+    fade_samples = max(1, int(round((fade_in_ms / 1000.0) * sample_rate)))
+    samples = array("h")
+    samples.frombytes(usable)
+    fade_samples = min(fade_samples, len(samples))
+    if fade_samples <= 1:
+        return usable
+    for index in range(fade_samples):
+        scale = index / max(1, fade_samples - 1)
+        samples[index] = int(samples[index] * scale)
+    return samples.tobytes()
+
+
+class Pcm16VoicedFirstGate:
+    """
+    Startup gate for perceptual latency:
+    - drops clearly silent / near-silent startup chunks
+    - trims startup silence inside the first voiced chunk
+    - applies a tiny fade-in after trimming to avoid clicks
+    """
+
+    def __init__(
+        self,
+        *,
+        max_leading_silence_ms: float = 320.0,
+        preserve_ms: float = 2.0,
+        fade_in_ms: float = 2.0,
+        sample_amplitude_threshold: int = PCM16_VOICED_SAMPLE_THRESHOLD,
+    ) -> None:
+        self._max_leading_silence_ms = max_leading_silence_ms
+        self._preserve_ms = preserve_ms
+        self._fade_in_ms = fade_in_ms
+        self._sample_amplitude_threshold = sample_amplitude_threshold
+        self._started = False
+        self._chunk_index = 0
+        self._leading_silence_trimmed_ms = 0.0
+        self._dropped_chunks = 0
+        self._silent_chunks_dropped = 0
+        self._near_silent_chunks_dropped = 0
+        self._first_voiced_offset_ms: Optional[float] = None
+        self._first_voiced_chunk_index: Optional[int] = None
+
+    def push(self, chunk: bytes) -> tuple[list[bytes], Optional[Pcm16VoicedFirstEvent]]:
+        if not chunk:
+            return [], None
+        self._chunk_index += 1
+        if self._started:
+            return [chunk], None
+
+        analysis = analyze_pcm16_audibility(
+            chunk,
+            sample_amplitude_threshold=self._sample_amplitude_threshold,
+        )
+        chunk_duration_ms = pcm16_duration_ms_for_bytes(len(chunk))
+
+        if (
+            analysis.first_voiced_sample_index is None
+            and self._leading_silence_trimmed_ms + chunk_duration_ms <= self._max_leading_silence_ms
+        ):
+            self._leading_silence_trimmed_ms = round(
+                self._leading_silence_trimmed_ms + chunk_duration_ms,
+                2,
+            )
+            self._dropped_chunks += 1
+            if analysis.silence_class == "silent":
+                self._silent_chunks_dropped += 1
+            else:
+                self._near_silent_chunks_dropped += 1
+            return [], None
+
+        trimmed_chunk = chunk
+        leading_trimmed_ms = 0.0
+        if analysis.first_voiced_sample_index is not None:
+            trimmed_chunk, leading_trimmed_ms, analysis = trim_pcm16_to_first_voiced(
+                chunk,
+                preserve_ms=self._preserve_ms,
+                fade_in_ms=self._fade_in_ms,
+                sample_amplitude_threshold=self._sample_amplitude_threshold,
+            )
+            self._first_voiced_offset_ms = analysis.first_voiced_offset_ms
+            self._first_voiced_chunk_index = self._chunk_index
+
+        self._started = True
+        self._leading_silence_trimmed_ms = round(
+            self._leading_silence_trimmed_ms + leading_trimmed_ms,
+            2,
+        )
+        emitted = trimmed_chunk if trimmed_chunk else chunk
+        event = Pcm16VoicedFirstEvent(
+            chunk_index=self._chunk_index,
+            silence_class=analysis.silence_class,
+            first_voiced_offset_ms=analysis.first_voiced_offset_ms,
+            leading_trimmed_ms=leading_trimmed_ms,
+            total_leading_trimmed_ms=self._leading_silence_trimmed_ms,
+            emitted_bytes=len(emitted),
+            dropped_chunks=self._dropped_chunks,
+            silent_chunks_dropped=self._silent_chunks_dropped,
+            near_silent_chunks_dropped=self._near_silent_chunks_dropped,
+        )
+        return [emitted], event
+
+    def snapshot(self) -> Pcm16VoicedFirstTelemetry:
+        return Pcm16VoicedFirstTelemetry(
+            leading_silence_trimmed_ms=self._leading_silence_trimmed_ms,
+            dropped_chunks=self._dropped_chunks,
+            silent_chunks_dropped=self._silent_chunks_dropped,
+            near_silent_chunks_dropped=self._near_silent_chunks_dropped,
+            first_voiced_offset_ms=self._first_voiced_offset_ms,
+            first_voiced_chunk_index=self._first_voiced_chunk_index,
+        )
 
 
 class Pcm16RealtimeOptimizer:
