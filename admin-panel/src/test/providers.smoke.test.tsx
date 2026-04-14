@@ -98,9 +98,20 @@ describe('providers page smoke', () => {
           webhook_secret_configured: false,
           from_ext_configured: false,
           from_ext_auto_discoverable: true,
+          telephony_runtime_provider: 'mango',
+          telephony_runtime_real: true,
+          backend_url: 'http://127.0.0.1:8000',
+          webhook_url: 'http://127.0.0.1:8000/v1/webhooks/mango',
+          webhook_url_public: false,
+          inbound_webhook_smoke_ready: false,
+          outbound_originate_smoke_ready: true,
+          inbound_ai_runtime_ready: false,
+          missing_requirements: ['mango_webhook_secret_missing', 'backend_url_not_public', 'media_gateway_disabled'],
           warnings: [
             'Inbound webhook verification is not configured (MANGO_WEBHOOK_SECRET is empty).',
+            'BACKEND_URL is not publicly reachable. Mango cannot deliver a live webhook to this backend yet.',
             'Outbound calling will use an auto-discovered Mango extension because MANGO_FROM_EXT is empty.',
+            'Inbound AI runtime is blocked because MEDIA_GATEWAY_ENABLED=false.',
           ],
         }), {
           status: 200,
@@ -216,6 +227,7 @@ describe('providers page smoke', () => {
     expect(screen.getAllByText(/Bound agent:/i).length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('Sales Alpha')).toBeInTheDocument()
     expect(screen.getByText(/Outbound source extension будет auto-discovered/i)).toBeInTheDocument()
+    expect(screen.getByText(/BACKEND_URL не является публичным/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Go to Agent settings to bind a number/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Open bound agent/i })).toHaveAttribute('href', '/agents/agent-1?mango_line=405622036&from=providers')
     expect(screen.getByText(/Last sync status/i)).toBeInTheDocument()
@@ -223,6 +235,9 @@ describe('providers page smoke', () => {
     expect(screen.getByText(/Честный статус Mango routing/i)).toBeInTheDocument()
     expect(screen.getByText(/ready for webhook rollout/i)).toBeInTheDocument()
     expect(screen.getByText(/ready for originate smoke/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/^blocked$/i).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText(/local\/private/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/^mango$/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText(/^active$/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText(/^inactive$/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText(/^bound$/i).length).toBeGreaterThanOrEqual(1)

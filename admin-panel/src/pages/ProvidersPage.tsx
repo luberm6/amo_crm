@@ -76,6 +76,15 @@ type MangoReadiness = {
   webhook_secret_configured: boolean
   from_ext_configured: boolean
   from_ext_auto_discoverable?: boolean
+  telephony_runtime_provider: string
+  telephony_runtime_real: boolean
+  backend_url: string
+  webhook_url: string
+  webhook_url_public: boolean
+  inbound_webhook_smoke_ready: boolean
+  outbound_originate_smoke_ready: boolean
+  inbound_ai_runtime_ready: boolean
+  missing_requirements: string[]
   warnings: string[]
 }
 
@@ -202,11 +211,26 @@ function mapMangoReadinessWarning(warning: string) {
   if (warning.includes('MANGO_WEBHOOK_SECRET')) {
     return 'Inbound webhook verification not configured. Входящий webhook-path ещё не защищён.'
   }
+  if (warning.includes('BACKEND_URL')) {
+    return 'BACKEND_URL не является публичным. Mango не сможет доставить live webhook в этот backend, пока URL не станет внешне доступным.'
+  }
   if (warning.includes('auto-discovered Mango extension')) {
     return 'Outbound source extension будет auto-discovered. Для фиксированного originate лучше явно задать MANGO_FROM_EXT.'
   }
   if (warning.includes('MANGO_FROM_EXT')) {
     return 'Outbound calling not ready: не задан MANGO_FROM_EXT и нет auto-discovery fallback.'
+  }
+  if (warning.includes('telephony provider')) {
+    return 'Direct runtime сейчас не смотрит в реальный telephony route. PSTN originate smoke пока упрётся не в Mango, а в non-real provider.'
+  }
+  if (warning.includes('MEDIA_GATEWAY_ENABLED=false')) {
+    return 'Inbound AI runtime заблокирован: MEDIA_GATEWAY_ENABLED=false.'
+  }
+  if (warning.includes('MEDIA_GATEWAY_PROVIDER=freeswitch')) {
+    return 'Inbound AI runtime ожидает MEDIA_GATEWAY_PROVIDER=freeswitch.'
+  }
+  if (warning.includes('MEDIA_GATEWAY_MODE=mock or esl_rtp')) {
+    return 'Inbound AI runtime ожидает MEDIA_GATEWAY_MODE=mock или esl_rtp.'
   }
   if (warning.includes('MANGO_API_KEY') || warning.includes('MANGO_API_SALT')) {
     return 'Mango API credentials missing. Inventory sync и live routing недоступны.'
@@ -286,10 +310,22 @@ export default function ProvidersPage() {
     mangoReadiness?.api_configured && mangoLines.length > 0 && boundLineCount > 0,
   )
 
+  const inboundWebhookSmokeReady = Boolean(
+    mangoReadiness?.inbound_webhook_smoke_ready && mangoLines.length > 0 && boundLineCount > 0,
+  )
+
   const controlPlaneOutboundReady = Boolean(
     mangoReadiness?.api_configured
       && mangoLines.length > 0
       && (mangoReadiness?.from_ext_configured || mangoReadiness?.from_ext_auto_discoverable),
+  )
+
+  const outboundOriginateSmokeReady = Boolean(
+    mangoReadiness?.outbound_originate_smoke_ready && mangoLines.length > 0,
+  )
+
+  const inboundAiRuntimeReady = Boolean(
+    mangoReadiness?.inbound_ai_runtime_ready && boundLineCount > 0,
   )
 
   const unboundRemoteLineIds = useMemo(() => {
@@ -741,6 +777,10 @@ export default function ProvidersPage() {
                       <strong>{mangoReadiness?.webhook_secret_configured ? 'configured' : 'missing secret'}</strong>
                     </div>
                     <div className="debug-row">
+                      <span>webhook smoke path</span>
+                      <strong>{inboundWebhookSmokeReady ? 'ready' : 'blocked'}</strong>
+                    </div>
+                    <div className="debug-row">
                       <span>outbound control-plane</span>
                       <strong>{controlPlaneOutboundReady ? 'ready for originate smoke' : 'not ready'}</strong>
                     </div>
@@ -755,12 +795,32 @@ export default function ProvidersPage() {
                       </strong>
                     </div>
                     <div className="debug-row">
+                      <span>telephony runtime</span>
+                      <strong>
+                        {mangoReadiness
+                          ? `${mangoReadiness.telephony_runtime_provider}${mangoReadiness.telephony_runtime_real ? '' : ' (non-real)'}`
+                          : 'unknown'}
+                      </strong>
+                    </div>
+                    <div className="debug-row">
+                      <span>originate smoke path</span>
+                      <strong>{outboundOriginateSmokeReady ? 'ready' : 'blocked'}</strong>
+                    </div>
+                    <div className="debug-row">
+                      <span>inbound AI runtime</span>
+                      <strong>{inboundAiRuntimeReady ? 'ready' : 'blocked'}</strong>
+                    </div>
+                    <div className="debug-row">
+                      <span>webhook URL</span>
+                      <strong>{mangoReadiness?.webhook_url_public ? 'public' : 'local/private'}</strong>
+                    </div>
+                    <div className="debug-row">
                       <span>live PSTN proof</span>
                       <strong>not verified</strong>
                     </div>
                   </div>
                   <div className="warning-banner">
-                    Этот блок не объявляет PSTN готовым. Он показывает только control-plane readiness для следующего live inbound/outbound smoke шага.
+                    Этот блок не объявляет PSTN готовым. Он разделяет control-plane, smoke-path и inbound AI runtime, чтобы было видно, где именно ещё остаётся блокер.
                   </div>
                 </section>
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+from ipaddress import ip_address, ip_network
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,31 +43,117 @@ def _handle_app_error(exc: AppError) -> None:
     raise HTTPException(status_code=exc.status_code, detail=exc.to_dict())
 
 
+def _is_public_backend_url(url: str) -> bool:
+    parsed = urlparse((url or "").strip())
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return False
+    if host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".local"):
+        return False
+    try:
+        ip = ip_address(host)
+    except ValueError:
+        return True
+    private_ranges = (
+        ip_network("127.0.0.0/8"),
+        ip_network("10.0.0.0/8"),
+        ip_network("172.16.0.0/12"),
+        ip_network("192.168.0.0/16"),
+        ip_network("169.254.0.0/16"),
+        ip_network("::1/128"),
+        ip_network("fc00::/7"),
+        ip_network("fe80::/10"),
+    )
+    return not any(ip in net for net in private_ranges)
+
+
+def _resolve_direct_runtime_provider() -> tuple[str, bool]:
+    preferred = (settings.telephony_provider or "auto").strip().lower() or "auto"
+    if (
+        preferred == "stub"
+        and settings.mango_configured
+        and settings.gemini_configured
+        and not settings.is_testing
+    ):
+        return "mango", True
+    if preferred in {"mango", "stub"}:
+        return preferred, preferred != "stub"
+    if preferred == "auto":
+        return ("mango", True) if settings.mango_configured else ("stub", False)
+    return preferred, preferred not in {"stub", ""}
+
+
 @router.get("/mango/readiness", response_model=MangoReadinessRead)
 async def mango_readiness() -> MangoReadinessRead:
     api_configured = bool(settings.mango_api_key and settings.mango_api_salt)
     webhook_secret_configured = bool(settings.mango_webhook_secret or settings.mango_webhook_shared_secret)
     from_ext_configured = bool(settings.mango_from_ext)
+    direct_runtime_provider, telephony_runtime_real = _resolve_direct_runtime_provider()
+    backend_url = (settings.backend_url or "").rstrip("/")
+    webhook_url = f"{backend_url}/v1/webhooks/mango" if backend_url else "/v1/webhooks/mango"
+    webhook_url_public = _is_public_backend_url(backend_url)
     from_ext_auto_discoverable = False
     if api_configured and not from_ext_configured:
         resolved = await resolve_mango_from_ext()
         from_ext_auto_discoverable = bool(resolved.value)
 
     warnings: list[str] = []
+    missing_requirements: list[str] = []
     if not api_configured:
         warnings.append("Mango API credentials (MANGO_API_KEY / MANGO_API_SALT) are not configured.")
+        missing_requirements.append("mango_api_credentials_missing")
     if not webhook_secret_configured:
         warnings.append("Inbound webhook verification is not configured (MANGO_WEBHOOK_SECRET is empty).")
+        missing_requirements.append("mango_webhook_secret_missing")
+    if not webhook_url_public:
+        warnings.append("BACKEND_URL is not publicly reachable. Mango cannot deliver a live webhook to this backend yet.")
+        missing_requirements.append("backend_url_not_public")
     if not from_ext_configured and not from_ext_auto_discoverable:
         warnings.append("Outbound calling is not configured (MANGO_FROM_EXT is empty).")
+        missing_requirements.append("mango_from_ext_missing")
     elif not from_ext_configured and from_ext_auto_discoverable:
         warnings.append("Outbound calling will use an auto-discovered Mango extension because MANGO_FROM_EXT is empty.")
+    if not telephony_runtime_real:
+        warnings.append("Direct runtime is not wired to a real telephony provider. PSTN originate smoke would not use Mango.")
+        missing_requirements.append("telephony_runtime_not_real")
+    if not settings.media_gateway_enabled:
+        warnings.append("Inbound AI runtime is blocked because MEDIA_GATEWAY_ENABLED=false.")
+        missing_requirements.append("media_gateway_disabled")
+    if settings.media_gateway_provider != "freeswitch":
+        warnings.append("Inbound AI runtime currently expects MEDIA_GATEWAY_PROVIDER=freeswitch.")
+        missing_requirements.append("media_gateway_provider_not_freeswitch")
+    if settings.media_gateway_mode not in {"mock", "esl_rtp"}:
+        warnings.append("Inbound AI runtime currently expects MEDIA_GATEWAY_MODE=mock or esl_rtp.")
+        missing_requirements.append("media_gateway_mode_not_supported")
+
+    inbound_webhook_smoke_ready = bool(api_configured and webhook_secret_configured and webhook_url_public)
+    outbound_originate_smoke_ready = bool(
+        api_configured
+        and telephony_runtime_real
+        and (from_ext_configured or from_ext_auto_discoverable)
+    )
+    inbound_ai_runtime_ready = bool(
+        inbound_webhook_smoke_ready
+        and settings.gemini_configured
+        and settings.media_gateway_enabled
+        and settings.media_gateway_provider == "freeswitch"
+        and settings.media_gateway_mode in {"mock", "esl_rtp"}
+    )
 
     return MangoReadinessRead(
         api_configured=api_configured,
         webhook_secret_configured=webhook_secret_configured,
         from_ext_configured=from_ext_configured,
         from_ext_auto_discoverable=from_ext_auto_discoverable,
+        telephony_runtime_provider=direct_runtime_provider,
+        telephony_runtime_real=telephony_runtime_real,
+        backend_url=backend_url,
+        webhook_url=webhook_url,
+        webhook_url_public=webhook_url_public,
+        inbound_webhook_smoke_ready=inbound_webhook_smoke_ready,
+        outbound_originate_smoke_ready=outbound_originate_smoke_ready,
+        inbound_ai_runtime_ready=inbound_ai_runtime_ready,
+        missing_requirements=missing_requirements,
         warnings=warnings,
     )
 

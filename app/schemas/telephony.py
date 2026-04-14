@@ -62,6 +62,15 @@ class MangoReadinessRead(BaseModel):
     webhook_secret_configured: bool
     from_ext_configured: bool
     from_ext_auto_discoverable: bool = False
+    telephony_runtime_provider: str
+    telephony_runtime_real: bool
+    backend_url: str
+    webhook_url: str
+    webhook_url_public: bool
+    inbound_webhook_smoke_ready: bool
+    outbound_originate_smoke_ready: bool
+    inbound_ai_runtime_ready: bool
+    missing_requirements: list[str] = Field(default_factory=list)
     warnings: list[str]
 
 
