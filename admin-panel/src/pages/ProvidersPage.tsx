@@ -99,6 +99,8 @@ type MangoRoutingMapResponse = {
   total: number
 }
 
+type InventoryFilter = 'all' | 'recommended_only' | 'unbound_only'
+
 type ProviderField = {
   key: string
   label: string
@@ -229,6 +231,7 @@ export default function ProvidersPage() {
   const [mangoInventoryError, setMangoInventoryError] = useState<string | null>(null)
   const [mangoSyncing, setMangoSyncing] = useState(false)
   const [mangoSyncMessage, setMangoSyncMessage] = useState<string | null>(null)
+  const [inventoryFilter, setInventoryFilter] = useState<InventoryFilter>('all')
 
   const providerCards = useMemo(
     () => PROVIDER_DEFINITIONS.map((definition) => ({ definition, setting: settingsByProvider[definition.provider] })),
@@ -252,6 +255,33 @@ export default function ProvidersPage() {
     const match = mangoLines.find((line) => (line.schema_name || '').trim() === 'ДЛЯ ИИ менеджера')
     return match?.remote_line_id || null
   }, [mangoLines])
+
+  const unboundRemoteLineIds = useMemo(() => {
+    const boundIds = new Set(
+      mangoRoutingMap.filter((item) => item.agent_id).map((item) => item.remote_line_id),
+    )
+    return new Set(mangoLines.filter((line) => !boundIds.has(line.remote_line_id)).map((line) => line.remote_line_id))
+  }, [mangoLines, mangoRoutingMap])
+
+  const filteredMangoLines = useMemo(() => {
+    if (inventoryFilter === 'recommended_only') {
+      return mangoLines.filter((line) => line.remote_line_id === recommendedMangoRemoteLineId)
+    }
+    if (inventoryFilter === 'unbound_only') {
+      return mangoLines.filter((line) => unboundRemoteLineIds.has(line.remote_line_id))
+    }
+    return mangoLines
+  }, [inventoryFilter, mangoLines, recommendedMangoRemoteLineId, unboundRemoteLineIds])
+
+  const filteredRoutingMap = useMemo(() => {
+    if (inventoryFilter === 'recommended_only') {
+      return mangoRoutingMap.filter((item) => item.remote_line_id === recommendedMangoRemoteLineId)
+    }
+    if (inventoryFilter === 'unbound_only') {
+      return mangoRoutingMap.filter((item) => !item.agent_id)
+    }
+    return mangoRoutingMap
+  }, [inventoryFilter, mangoRoutingMap, recommendedMangoRemoteLineId])
 
   const loadProviders = useCallback(async () => {
     if (!token) {
@@ -542,6 +572,30 @@ export default function ProvidersPage() {
                   </button>
                 </div>
 
+                <div className="button-row">
+                  <button
+                    type="button"
+                    className={`ghost-button${inventoryFilter === 'all' ? ' active-filter' : ''}`}
+                    onClick={() => setInventoryFilter('all')}
+                  >
+                    All lines
+                  </button>
+                  <button
+                    type="button"
+                    className={`ghost-button${inventoryFilter === 'recommended_only' ? ' active-filter' : ''}`}
+                    onClick={() => setInventoryFilter('recommended_only')}
+                  >
+                    AI recommended
+                  </button>
+                  <button
+                    type="button"
+                    className={`ghost-button${inventoryFilter === 'unbound_only' ? ' active-filter' : ''}`}
+                    onClick={() => setInventoryFilter('unbound_only')}
+                  >
+                    Unbound only
+                  </button>
+                </div>
+
                 <div className="debug-list compact-debug">
                   <div className="debug-row">
                     <span>readiness</span>
@@ -561,6 +615,17 @@ export default function ProvidersPage() {
                   </div>
                 </div>
 
+                <div className="provider-note">
+                  <strong>Last sync status</strong>
+                  <div className="table-secondary">
+                    {mangoSyncMessage
+                      ? mangoSyncMessage
+                      : latestMangoSyncAt
+                        ? `Inventory already synced. Latest known sync: ${formatTimestamp(latestMangoSyncAt)}.`
+                        : 'Sync has not been run from this page yet.'}
+                  </div>
+                </div>
+
                 {mangoInventoryError ? <div className="error-banner">{mangoInventoryError}</div> : null}
                 {mangoSyncMessage ? <div className="success-banner">{mangoSyncMessage}</div> : null}
                 {mangoWarningMessages.map((warning) => (
@@ -574,11 +639,11 @@ export default function ProvidersPage() {
                       <h4>Синхронизированные линии</h4>
                     </div>
                   </div>
-                  {mangoLines.length === 0 ? (
+                  {filteredMangoLines.length === 0 ? (
                     <div className="info-banner">No numbers synced yet. Run “Sync numbers from Mango” to pull the current tenant inventory.</div>
                   ) : (
                     <div className="inventory-list">
-                      {mangoLines.map((line) => (
+                      {filteredMangoLines.map((line) => (
                         <article key={line.remote_line_id} className="inventory-item">
                           <div className="inventory-item-main">
                             <strong>{formatMangoLineLabel(line)}</strong>
@@ -603,11 +668,11 @@ export default function ProvidersPage() {
                       <h4>Какая линия привязана к какому агенту</h4>
                     </div>
                   </div>
-                  {mangoRoutingMap.length === 0 ? (
+                  {filteredRoutingMap.length === 0 ? (
                     <div className="info-banner">Routing map is empty. Sync inventory first, then assign a line in Agent settings.</div>
                   ) : (
                     <div className="inventory-list">
-                      {mangoRoutingMap.map((item) => (
+                      {filteredRoutingMap.map((item) => (
                         <article key={item.remote_line_id} className="inventory-item">
                           <div className="inventory-item-main">
                             <strong>{formatMangoLineLabel(item)}</strong>
@@ -617,6 +682,9 @@ export default function ProvidersPage() {
                             {item.agent_id ? (
                               <>
                                 <strong>Bound agent:</strong> {item.agent_name || item.agent_id}
+                                <div>
+                                  <Link to={`/agents/${item.agent_id}`} className="inline-link">Open bound agent</Link>
+                                </div>
                               </>
                             ) : (
                               <>Bound agent: not linked</>

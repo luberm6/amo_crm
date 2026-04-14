@@ -723,6 +723,12 @@ a.info-card:hover {
   font-weight: 600;
 }
 
+.ghost-button.active-filter {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
 @media (max-width: 1080px) {
   .admin-shell,
   .browser-call-hero,

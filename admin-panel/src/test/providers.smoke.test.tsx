@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { vi } from 'vitest'
 
@@ -124,8 +125,23 @@ describe('providers page smoke', () => {
               is_outbound_enabled: false,
               synced_at: '2030-01-02T00:00:00Z',
             },
+            {
+              id: 'line-free',
+              provider: 'mango',
+              provider_resource_id: '405519147',
+              remote_line_id: '405519147',
+              phone_number: '+79585382099',
+              schema_name: 'По умолчанию',
+              display_name: 'По умолчанию',
+              label: 'По умолчанию',
+              extension: null,
+              is_active: true,
+              is_inbound_enabled: true,
+              is_outbound_enabled: false,
+              synced_at: '2030-01-02T00:00:00Z',
+            },
           ],
-          total: 1,
+          total: 2,
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -148,8 +164,22 @@ describe('providers page smoke', () => {
               agent_name: 'Sales Alpha',
               agent_is_active: true,
             },
+            {
+              line_id: 'line-free',
+              provider_resource_id: '405519147',
+              remote_line_id: '405519147',
+              phone_number: '+79585382099',
+              schema_name: 'По умолчанию',
+              display_name: 'По умолчанию',
+              label: 'По умолчанию',
+              is_active: true,
+              is_inbound_enabled: true,
+              agent_id: null,
+              agent_name: null,
+              agent_is_active: null,
+            },
           ],
-          total: 1,
+          total: 2,
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -175,16 +205,26 @@ describe('providers page smoke', () => {
     await waitFor(() => {
       expect(screen.getAllByRole('button', { name: /Сохранить настройки/i }).length).toBeGreaterThan(0)
     })
+    const user = userEvent.setup()
     expect(screen.getAllByRole('button', { name: /Проверить подключение/i }).length).toBeGreaterThan(0)
     expect(screen.getByText(/Без авторутинга/i)).toBeInTheDocument()
     expect(screen.getByText(/ma\*\*\*ey/i)).toBeInTheDocument()
     expect(screen.getByText(/This page stores credentials and shows Mango inventory/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Sync numbers from Mango/i })).toBeInTheDocument()
     expect(screen.getAllByText(/ДЛЯ ИИ менеджера \(\+79300350609\)/i).length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText(/AI recommended/i)).toBeInTheDocument()
-    expect(screen.getByText(/Bound agent:/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/AI recommended/i).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText(/Bound agent:/i).length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('Sales Alpha')).toBeInTheDocument()
     expect(screen.getByText(/Outbound source extension будет auto-discovered/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Go to Agent settings to bind a number/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Open bound agent/i })).toHaveAttribute('href', '/agents/agent-1')
+    expect(screen.getByText(/Last sync status/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Unbound only/i }))
+    expect(screen.getAllByText(/По умолчанию \(\+79585382099\)/i).length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText('Sales Alpha')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /AI recommended/i }))
+    expect(screen.getAllByText(/ДЛЯ ИИ менеджера \(\+79300350609\)/i).length).toBeGreaterThanOrEqual(2)
   })
 })
