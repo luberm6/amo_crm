@@ -678,6 +678,51 @@ a.info-card:hover {
   border-color: #c7ddd3;
 }
 
+.provider-telephony-overview {
+  display: grid;
+  gap: 1rem;
+}
+
+.provider-subpanel {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 1rem;
+  background: rgba(255, 253, 247, 0.72);
+}
+
+.inventory-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.inventory-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  background: rgba(255, 250, 242, 0.88);
+}
+
+.inventory-item-main {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.inventory-binding-copy {
+  color: var(--muted);
+  text-align: right;
+}
+
+.inline-link {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 @media (max-width: 1080px) {
   .admin-shell,
   .browser-call-hero,

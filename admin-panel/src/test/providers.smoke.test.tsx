@@ -13,7 +13,7 @@ describe('providers page smoke', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders provider cards and action buttons', async () => {
+  it('renders provider cards, Mango inventory, and routing hints', async () => {
     vi.spyOn(window, 'fetch').mockImplementation(async (input) => {
       const path = typeof input === 'string' ? input : input.toString()
       if (path.includes('/v1/admin/auth/me')) {
@@ -91,6 +91,70 @@ describe('providers page smoke', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       }
+      if (path.includes('/v1/telephony/mango/readiness')) {
+        return new Response(JSON.stringify({
+          api_configured: true,
+          webhook_secret_configured: false,
+          from_ext_configured: false,
+          from_ext_auto_discoverable: true,
+          warnings: [
+            'Inbound webhook verification is not configured (MANGO_WEBHOOK_SECRET is empty).',
+            'Outbound calling will use an auto-discovered Mango extension because MANGO_FROM_EXT is empty.',
+          ],
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (path.includes('/v1/telephony/mango/lines')) {
+        return new Response(JSON.stringify({
+          items: [
+            {
+              id: 'line-ai',
+              provider: 'mango',
+              provider_resource_id: '405622036',
+              remote_line_id: '405622036',
+              phone_number: '+79300350609',
+              schema_name: 'ДЛЯ ИИ менеджера',
+              display_name: 'ДЛЯ ИИ менеджера',
+              label: 'ДЛЯ ИИ менеджера',
+              extension: null,
+              is_active: true,
+              is_inbound_enabled: true,
+              is_outbound_enabled: false,
+              synced_at: '2030-01-02T00:00:00Z',
+            },
+          ],
+          total: 1,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (path.includes('/v1/telephony/mango/routing-map')) {
+        return new Response(JSON.stringify({
+          items: [
+            {
+              line_id: 'line-ai',
+              provider_resource_id: '405622036',
+              remote_line_id: '405622036',
+              phone_number: '+79300350609',
+              schema_name: 'ДЛЯ ИИ менеджера',
+              display_name: 'ДЛЯ ИИ менеджера',
+              label: 'ДЛЯ ИИ менеджера',
+              is_active: true,
+              is_inbound_enabled: true,
+              agent_id: 'agent-1',
+              agent_name: 'Sales Alpha',
+              agent_is_active: true,
+            },
+          ],
+          total: 1,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
       throw new Error(`Unexpected fetch path: ${path}`)
     })
 
@@ -114,5 +178,13 @@ describe('providers page smoke', () => {
     expect(screen.getAllByRole('button', { name: /Проверить подключение/i }).length).toBeGreaterThan(0)
     expect(screen.getByText(/Без авторутинга/i)).toBeInTheDocument()
     expect(screen.getByText(/ma\*\*\*ey/i)).toBeInTheDocument()
+    expect(screen.getByText(/This page stores credentials and shows Mango inventory/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Sync numbers from Mango/i })).toBeInTheDocument()
+    expect(screen.getAllByText(/ДЛЯ ИИ менеджера \(\+79300350609\)/i).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText(/AI recommended/i)).toBeInTheDocument()
+    expect(screen.getByText(/Bound agent:/i)).toBeInTheDocument()
+    expect(screen.getByText('Sales Alpha')).toBeInTheDocument()
+    expect(screen.getByText(/Outbound source extension будет auto-discovered/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Go to Agent settings to bind a number/i })).toBeInTheDocument()
   })
 })

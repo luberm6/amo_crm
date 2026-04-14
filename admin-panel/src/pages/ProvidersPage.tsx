@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { ApiError, apiFetch } from '../lib/api'
@@ -40,6 +41,62 @@ type ProviderFormState = {
   is_enabled: boolean
   config: Record<string, unknown>
   secrets: Record<string, string>
+}
+
+type TelephonyLine = {
+  id: string
+  provider: string
+  provider_resource_id: string
+  remote_line_id: string
+  phone_number: string
+  schema_name?: string | null
+  display_name?: string | null
+  label: string
+  extension?: string | null
+  is_active: boolean
+  is_inbound_enabled: boolean
+  is_outbound_enabled: boolean
+  synced_at?: string | null
+}
+
+type TelephonyLineListResponse = {
+  items: TelephonyLine[]
+  total: number
+}
+
+type TelephonyLineSyncResponse = TelephonyLineListResponse & {
+  synced_count: number
+  deactivated_count: number
+  source: string
+  synced_at: string
+}
+
+type MangoReadiness = {
+  api_configured: boolean
+  webhook_secret_configured: boolean
+  from_ext_configured: boolean
+  from_ext_auto_discoverable?: boolean
+  warnings: string[]
+}
+
+type MangoRoutingMapItem = {
+  line_id: string
+  provider_resource_id: string
+  remote_line_id: string
+  phone_number: string
+  schema_name?: string | null
+  display_name?: string | null
+  label: string
+  is_active: boolean
+  is_inbound_enabled: boolean
+  agent_id?: string | null
+  agent_name?: string | null
+  agent_is_active?: boolean | null
+}
+
+type MangoRoutingMapResponse = {
+  items: MangoRoutingMapItem[]
+  total: number
 }
 
 type ProviderField = {
@@ -134,6 +191,27 @@ function formatTimestamp(value?: string | null) {
   return new Date(value).toLocaleString()
 }
 
+function formatMangoLineLabel(line: Pick<TelephonyLine, 'schema_name' | 'label' | 'display_name' | 'phone_number'>) {
+  const primary = line.schema_name || line.label || line.display_name || line.phone_number
+  return primary === line.phone_number ? line.phone_number : `${primary} (${line.phone_number})`
+}
+
+function mapMangoReadinessWarning(warning: string) {
+  if (warning.includes('MANGO_WEBHOOK_SECRET')) {
+    return 'Inbound webhook verification not configured. Входящий webhook-path ещё не защищён.'
+  }
+  if (warning.includes('auto-discovered Mango extension')) {
+    return 'Outbound source extension будет auto-discovered. Для фиксированного originate лучше явно задать MANGO_FROM_EXT.'
+  }
+  if (warning.includes('MANGO_FROM_EXT')) {
+    return 'Outbound calling not ready: не задан MANGO_FROM_EXT и нет auto-discovery fallback.'
+  }
+  if (warning.includes('MANGO_API_KEY') || warning.includes('MANGO_API_SALT')) {
+    return 'Mango API credentials missing. Inventory sync и live routing недоступны.'
+  }
+  return warning
+}
+
 export default function ProvidersPage() {
   const { token } = useAuth()
   const [settingsByProvider, setSettingsByProvider] = useState<Record<string, ProviderSetting>>({})
@@ -144,11 +222,36 @@ export default function ProvidersPage() {
   const [validatingProvider, setValidatingProvider] = useState<string | null>(null)
   const [providerMessages, setProviderMessages] = useState<Record<string, string | null>>({})
   const [providerErrors, setProviderErrors] = useState<Record<string, string | null>>({})
+  const [mangoLines, setMangoLines] = useState<TelephonyLine[]>([])
+  const [mangoRoutingMap, setMangoRoutingMap] = useState<MangoRoutingMapItem[]>([])
+  const [mangoReadiness, setMangoReadiness] = useState<MangoReadiness | null>(null)
+  const [mangoInventoryLoading, setMangoInventoryLoading] = useState(false)
+  const [mangoInventoryError, setMangoInventoryError] = useState<string | null>(null)
+  const [mangoSyncing, setMangoSyncing] = useState(false)
+  const [mangoSyncMessage, setMangoSyncMessage] = useState<string | null>(null)
 
   const providerCards = useMemo(
     () => PROVIDER_DEFINITIONS.map((definition) => ({ definition, setting: settingsByProvider[definition.provider] })),
     [settingsByProvider],
   )
+
+  const mangoWarningMessages = useMemo(
+    () => (mangoReadiness?.warnings || []).map(mapMangoReadinessWarning),
+    [mangoReadiness],
+  )
+
+  const latestMangoSyncAt = useMemo(() => {
+    const values = mangoLines
+      .map((line) => line.synced_at || null)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+    return values.length ? values[values.length - 1] : null
+  }, [mangoLines])
+
+  const recommendedMangoRemoteLineId = useMemo(() => {
+    const match = mangoLines.find((line) => (line.schema_name || '').trim() === 'ДЛЯ ИИ менеджера')
+    return match?.remote_line_id || null
+  }, [mangoLines])
 
   const loadProviders = useCallback(async () => {
     if (!token) {
@@ -175,9 +278,32 @@ export default function ProvidersPage() {
     }
   }, [token])
 
+  const loadMangoOverview = useCallback(async () => {
+    if (!token) {
+      return
+    }
+    setMangoInventoryLoading(true)
+    setMangoInventoryError(null)
+    try {
+      const [linesResponse, readinessResponse, routingResponse] = await Promise.all([
+        apiFetch<TelephonyLineListResponse>('/v1/telephony/mango/lines', {}, token),
+        apiFetch<MangoReadiness>('/v1/telephony/mango/readiness', {}, token).catch(() => null),
+        apiFetch<MangoRoutingMapResponse>('/v1/telephony/mango/routing-map', {}, token).catch(() => ({ items: [], total: 0 })),
+      ])
+      setMangoLines(linesResponse.items)
+      setMangoReadiness(readinessResponse)
+      setMangoRoutingMap(routingResponse.items)
+    } catch (err) {
+      setMangoInventoryError(err instanceof ApiError ? err.message : 'Не удалось загрузить Mango inventory.')
+    } finally {
+      setMangoInventoryLoading(false)
+    }
+  }, [token])
+
   useEffect(() => {
     void loadProviders()
-  }, [loadProviders])
+    void loadMangoOverview()
+  }, [loadMangoOverview, loadProviders])
 
   function updateConfig(provider: ProviderName, key: string, value: unknown) {
     setFormsByProvider((current) => ({
@@ -294,6 +420,9 @@ export default function ProvidersPage() {
         token,
       )
       await loadProviders()
+      if (provider === 'mango') {
+        await loadMangoOverview()
+      }
       setProviderMessages((current) => ({
         ...current,
         [provider]: `${validation.message}${validation.remote_checked ? '' : ' Удалённое подключение намеренно не проверялось.'}`,
@@ -306,6 +435,29 @@ export default function ProvidersPage() {
       await loadProviders()
     } finally {
       setValidatingProvider(null)
+    }
+  }
+
+  async function handleSyncMangoInventory() {
+    if (!token) {
+      return
+    }
+    setMangoSyncing(true)
+    setMangoInventoryError(null)
+    setMangoSyncMessage(null)
+    try {
+      const response = await apiFetch<TelephonyLineSyncResponse>(
+        '/v1/telephony/mango/sync-lines',
+        { method: 'POST' },
+        token,
+      )
+      setMangoLines(response.items)
+      setMangoSyncMessage(`Sync completed: ${response.synced_count} lines updated, ${response.deactivated_count} deactivated.`)
+      await loadMangoOverview()
+    } catch (err) {
+      setMangoInventoryError(err instanceof ApiError ? err.message : 'Не удалось синхронизировать Mango inventory.')
+    } finally {
+      setMangoSyncing(false)
     }
   }
 
@@ -362,6 +514,121 @@ export default function ProvidersPage() {
             ) : null}
             {providerMessages[definition.provider] ? <div className="status-banner">{providerMessages[definition.provider]}</div> : null}
             {providerErrors[definition.provider] ? <div className="error-banner">{providerErrors[definition.provider]}</div> : null}
+
+            {definition.provider === 'mango' ? (
+              <section className="provider-telephony-overview">
+                <div className="provider-note">
+                  <strong>This page stores credentials and shows Mango inventory.</strong> Line binding is saved in the agent editor.
+                  {' '}
+                  <Link to="/agents" className="inline-link">Go to Agent settings to bind a number</Link>
+                </div>
+
+                <div className="button-row">
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => void handleSyncMangoInventory()}
+                    disabled={mangoSyncing}
+                  >
+                    {mangoSyncing ? 'Syncing…' : 'Sync numbers from Mango'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => void loadMangoOverview()}
+                    disabled={mangoInventoryLoading}
+                  >
+                    {mangoInventoryLoading ? 'Refreshing…' : 'Refresh inventory'}
+                  </button>
+                </div>
+
+                <div className="debug-list compact-debug">
+                  <div className="debug-row">
+                    <span>readiness</span>
+                    <strong>{mangoReadiness?.api_configured ? 'configured' : 'not configured'}</strong>
+                  </div>
+                  <div className="debug-row">
+                    <span>numbers found</span>
+                    <strong>{mangoInventoryLoading ? 'loading…' : mangoLines.length}</strong>
+                  </div>
+                  <div className="debug-row">
+                    <span>bound lines</span>
+                    <strong>{mangoRoutingMap.filter((item) => item.agent_id).length}</strong>
+                  </div>
+                  <div className="debug-row">
+                    <span>last sync</span>
+                    <strong>{latestMangoSyncAt ? formatTimestamp(latestMangoSyncAt) : 'not synced yet'}</strong>
+                  </div>
+                </div>
+
+                {mangoInventoryError ? <div className="error-banner">{mangoInventoryError}</div> : null}
+                {mangoSyncMessage ? <div className="success-banner">{mangoSyncMessage}</div> : null}
+                {mangoWarningMessages.map((warning) => (
+                  <div key={warning} className="warning-banner">{warning}</div>
+                ))}
+
+                <section className="provider-subpanel">
+                  <div className="panel-header">
+                    <div>
+                      <p className="eyebrow">Mango inventory</p>
+                      <h4>Синхронизированные линии</h4>
+                    </div>
+                  </div>
+                  {mangoLines.length === 0 ? (
+                    <div className="info-banner">No numbers synced yet. Run “Sync numbers from Mango” to pull the current tenant inventory.</div>
+                  ) : (
+                    <div className="inventory-list">
+                      {mangoLines.map((line) => (
+                        <article key={line.remote_line_id} className="inventory-item">
+                          <div className="inventory-item-main">
+                            <strong>{formatMangoLineLabel(line)}</strong>
+                            <div className="table-secondary">line_id: {line.remote_line_id}</div>
+                          </div>
+                          <div className="status-strip">
+                            <span className={`status-pill${line.is_active ? ' live' : ' error'}`}>{line.is_active ? 'active' : 'inactive'}</span>
+                            {recommendedMangoRemoteLineId === line.remote_line_id ? (
+                              <span className="status-pill live">AI recommended</span>
+                            ) : null}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="provider-subpanel">
+                  <div className="panel-header">
+                    <div>
+                      <p className="eyebrow">Routing map</p>
+                      <h4>Какая линия привязана к какому агенту</h4>
+                    </div>
+                  </div>
+                  {mangoRoutingMap.length === 0 ? (
+                    <div className="info-banner">Routing map is empty. Sync inventory first, then assign a line in Agent settings.</div>
+                  ) : (
+                    <div className="inventory-list">
+                      {mangoRoutingMap.map((item) => (
+                        <article key={item.remote_line_id} className="inventory-item">
+                          <div className="inventory-item-main">
+                            <strong>{formatMangoLineLabel(item)}</strong>
+                            <div className="table-secondary">remote_line_id: {item.remote_line_id}</div>
+                          </div>
+                          <div className="inventory-binding-copy">
+                            {item.agent_id ? (
+                              <>
+                                <strong>Bound agent:</strong> {item.agent_name || item.agent_id}
+                              </>
+                            ) : (
+                              <>Bound agent: not linked</>
+                            )}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </section>
+            ) : null}
 
             <form className="provider-form" onSubmit={(event) => void handleSave(event, definition.provider)}>
               <section className="form-section">
