@@ -82,7 +82,7 @@ def _headers(raw_body: bytes) -> dict[str, str]:
 
 
 async def main(to_number: str, caller_number: str) -> int:
-    backend_url = (settings.backend_url or "").rstrip("/")
+    backend_url = settings.effective_backend_url
     if not backend_url:
         print("BLOCKED: BACKEND_URL is empty.")
         return 2

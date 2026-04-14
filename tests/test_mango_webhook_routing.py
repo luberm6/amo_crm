@@ -692,3 +692,33 @@ async def test_mango_readiness_reports_direct_override_to_mango(
     assert body["outbound_originate_smoke_ready"] is True
     assert body["inbound_webhook_smoke_ready"] is True
     assert body["inbound_ai_runtime_ready"] is True
+
+
+@pytest.mark.anyio
+async def test_mango_readiness_uses_render_external_url_when_backend_url_is_local(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    app = _make_app(session)
+    with (
+        patch.object(cfg.settings, "mango_api_key", "api-key"),
+        patch.object(cfg.settings, "mango_api_salt", "api-salt"),
+        patch.object(cfg.settings, "backend_url", "http://127.0.0.1:8000"),
+        patch.object(cfg.settings, "render_external_url", "https://amo-crm-api.onrender.com"),
+        patch.object(cfg.settings, "mango_webhook_secret", "whsec"),
+        patch.object(cfg.settings, "mango_from_ext", "101"),
+        patch.object(cfg.settings, "media_gateway_enabled", False),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            token = await _admin_login(ac)
+            resp = await ac.get(
+                "/v1/telephony/mango/readiness",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["backend_url"] == "https://amo-crm-api.onrender.com"
+    assert body["webhook_url"] == "https://amo-crm-api.onrender.com/v1/webhooks/mango"
+    assert body["webhook_url_public"] is True
+    assert "backend_url_not_public" not in body["missing_requirements"]

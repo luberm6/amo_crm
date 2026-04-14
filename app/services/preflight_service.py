@@ -111,7 +111,8 @@ class DirectVoicePreflightService:
                 details={"environment": settings.environment},
             )
 
-        if settings.backend_url.startswith("https://"):
+        effective_backend_url = settings.effective_backend_url
+        if effective_backend_url.startswith("https://"):
             self._add_check(checks, "backend_url", "pass", "Backend URL uses HTTPS.")
         else:
             self._add_check(
@@ -119,7 +120,7 @@ class DirectVoicePreflightService:
                 "backend_url",
                 "warn",
                 "Backend URL is not HTTPS. Webhook delivery may fail in production.",
-                details={"backend_url": settings.backend_url},
+                details={"backend_url": effective_backend_url},
             )
 
     async def _check_direct_config(self, checks: list[dict[str, Any]]) -> None:

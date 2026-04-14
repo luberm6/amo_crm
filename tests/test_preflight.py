@@ -26,6 +26,7 @@ def _set_direct_voice_settings() -> dict[str, object]:
     old = {
         "environment": settings.environment,
         "backend_url": settings.backend_url,
+        "render_external_url": settings.render_external_url,
         "telephony_provider": settings.telephony_provider,
         "gemini_api_key": settings.gemini_api_key,
         "mango_api_key": settings.mango_api_key,
@@ -45,6 +46,7 @@ def _set_direct_voice_settings() -> dict[str, object]:
     }
     settings.environment = "production"
     settings.backend_url = "https://voice.example.com"
+    settings.render_external_url = ""
     settings.telephony_provider = "mango"
     settings.gemini_api_key = "gemini-key"
     settings.mango_api_key = "mango-key"
@@ -150,6 +152,18 @@ async def test_direct_voice_preflight_fails_without_outbound_voice_path(session,
         )
     finally:
         _restore_settings(old)
+
+
+def test_effective_backend_url_prefers_render_public_url_when_local_backend_url():
+    old_backend_url = settings.backend_url
+    old_render_external_url = settings.render_external_url
+    try:
+        settings.backend_url = "http://127.0.0.1:8000"
+        settings.render_external_url = "https://amo-crm-api.onrender.com"
+        assert settings.effective_backend_url == "https://amo-crm-api.onrender.com"
+    finally:
+        settings.backend_url = old_backend_url
+        settings.render_external_url = old_render_external_url
 
 
 @pytest.mark.anyio

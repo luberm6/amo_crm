@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,6 +16,19 @@ def _normalize_database_url(database_url: str) -> str:
     if value.startswith("postgresql://") and "+asyncpg" not in value:
         return "postgresql+asyncpg://" + value[len("postgresql://"):]
     return value
+
+
+def _is_public_http_url(url: str) -> bool:
+    value = (url or "").strip()
+    if not value:
+        return False
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return False
+    if host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".local"):
+        return False
+    return True
 
 
 class Settings(BaseSettings):
@@ -35,6 +49,10 @@ class Settings(BaseSettings):
 
     # ── Backend URL (used by bot to call the API) ─────────────────────────────
     backend_url: str = "http://127.0.0.1:8000"
+    # Render public service URL. When BACKEND_URL is left local/unset in a Render
+    # environment, runtime can safely fall back to this value for readiness,
+    # callbacks and webhook diagnostics.
+    render_external_url: str = ""
     # Comma-separated CORS origins for the admin panel or other browser clients.
     # Example:
     #   https://amo-crm-admin.onrender.com,https://staging-admin.example.com
@@ -326,6 +344,16 @@ class Settings(BaseSettings):
     @property
     def admin_cors_origins_list(self) -> list[str]:
         return [item.strip() for item in self.admin_cors_origins.split(",") if item.strip()]
+
+    @property
+    def effective_backend_url(self) -> str:
+        configured = (self.backend_url or "").strip().rstrip("/")
+        render_url = (self.render_external_url or "").strip().rstrip("/")
+        if _is_public_http_url(configured):
+            return configured
+        if _is_public_http_url(render_url):
+            return render_url
+        return configured or render_url
 
     @model_validator(mode="after")
     def normalize_render_urls(self) -> "Settings":

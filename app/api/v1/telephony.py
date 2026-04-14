@@ -89,7 +89,7 @@ async def mango_readiness() -> MangoReadinessRead:
     webhook_secret_configured = bool(settings.mango_webhook_secret or settings.mango_webhook_shared_secret)
     from_ext_configured = bool(settings.mango_from_ext)
     direct_runtime_provider, telephony_runtime_real = _resolve_direct_runtime_provider()
-    backend_url = (settings.backend_url or "").rstrip("/")
+    backend_url = settings.effective_backend_url
     webhook_url = f"{backend_url}/v1/webhooks/mango" if backend_url else "/v1/webhooks/mango"
     webhook_url_public = _is_public_backend_url(backend_url)
     from_ext_auto_discoverable = False
