@@ -72,6 +72,16 @@ type MangoReadiness = {
   warnings: string[]
 }
 
+type ApiErrorPayload = {
+  detail?: {
+    error?: string
+    message?: string
+    detail?: {
+      http_status?: number
+    }
+  }
+}
+
 type AgentSettingsRead = {
   agent_profile_id: string
   name: string
@@ -195,6 +205,47 @@ function mapMangoWarning(warning: string): string {
   return warning
 }
 
+function getApiErrorCode(err: ApiError): string | null {
+  const payload = err.details as ApiErrorPayload | null
+  return payload?.detail?.error || null
+}
+
+function getNestedHttpStatus(err: ApiError): number | null {
+  const payload = err.details as ApiErrorPayload | null
+  return payload?.detail?.detail?.http_status ?? null
+}
+
+function mapTelephonyApiError(err: unknown, fallback: string): string {
+  if (!(err instanceof ApiError)) {
+    return fallback
+  }
+
+  const code = getApiErrorCode(err)
+  if (code === 'mango_not_configured') {
+    return 'Mango не настроен. Задайте MANGO_API_KEY и MANGO_API_SALT в backend environment.'
+  }
+  if (code === 'mango_api_unavailable') {
+    if (getNestedHttpStatus(err) === 429) {
+      return 'Mango временно ограничил extensions API по rate limit. Привязка линии остаётся доступной, повторите попытку позже.'
+    }
+    return 'Mango API временно недоступен. Проверьте доступность tenant и попробуйте ещё раз.'
+  }
+  if (code === 'mango_sync_failed') {
+    return 'Не удалось синхронизировать линии Mango. Проверьте live API ответ и повторите sync.'
+  }
+  if (code === 'telephony_line_not_found') {
+    return 'Выбранная линия Mango не найдена. Сначала обновите inventory и выберите существующую линию.'
+  }
+  if (code === 'telephony_line_inactive') {
+    return 'Выбранная линия Mango неактивна. Сохранение заблокировано, пока вы не выберете активную линию.'
+  }
+  if (code === 'invalid_voice_provider') {
+    return 'Выбран неподдерживаемый voice provider. Используйте Gemini или ElevenLabs.'
+  }
+
+  return err.message || fallback
+}
+
 export default function AgentEditorPage() {
   const { token } = useAuth()
   const { agentId } = useParams()
@@ -215,6 +266,7 @@ export default function AgentEditorPage() {
   const [telephonyExtensions, setTelephonyExtensions] = useState<TelephonyExtension[]>([])
   const [telephonyLoading, setTelephonyLoading] = useState(false)
   const [telephonyError, setTelephonyError] = useState<string | null>(null)
+  const [telephonyNotice, setTelephonyNotice] = useState<string | null>(null)
   const [syncingTelephony, setSyncingTelephony] = useState(false)
   const [telephonySuccess, setTelephonySuccess] = useState<string | null>(null)
   const [mangoReadiness, setMangoReadiness] = useState<MangoReadiness | null>(null)
@@ -241,12 +293,16 @@ export default function AgentEditorPage() {
     }
     setTelephonyLoading(true)
     setTelephonyError(null)
+    setTelephonyNotice(null)
     try {
       const [linesResponse, extensionsResponse, readinessResponse] = await Promise.all([
         apiFetch<TelephonyLineListResponse>('/v1/telephony/mango/lines', {}, token),
         apiFetch<TelephonyExtensionListResponse>('/v1/telephony/mango/extensions', {}, token).catch((err) => {
           if (err instanceof ApiError) {
-            setTelephonyError(err.message)
+            setTelephonyNotice(mapTelephonyApiError(
+              err,
+              'Mango extensions временно недоступны. Привязка линии остаётся доступной.',
+            ))
           }
           return { items: [], total: 0, source: 'mango_api' } satisfies TelephonyExtensionListResponse
         }),
@@ -256,7 +312,7 @@ export default function AgentEditorPage() {
       setTelephonyExtensions(extensionsResponse.items)
       setMangoReadiness(readinessResponse)
     } catch (err) {
-      setTelephonyError(err instanceof ApiError ? err.message : 'Не удалось загрузить Mango inventory.')
+      setTelephonyError(mapTelephonyApiError(err, 'Не удалось загрузить Mango inventory.'))
     } finally {
       setTelephonyLoading(false)
     }
@@ -389,6 +445,7 @@ export default function AgentEditorPage() {
     }
     setSyncingTelephony(true)
     setTelephonyError(null)
+    setTelephonyNotice(null)
     setTelephonySuccess(null)
     try {
       const response = await apiFetch<TelephonyLineSyncResponse>(
@@ -402,10 +459,13 @@ export default function AgentEditorPage() {
         const extensions = await apiFetch<TelephonyExtensionListResponse>('/v1/telephony/mango/extensions', {}, token)
         setTelephonyExtensions(extensions.items)
       } catch (err) {
-        setTelephonyError(err instanceof ApiError ? err.message : 'Номера обновились, но extensions загрузить не удалось.')
+        setTelephonyNotice(mapTelephonyApiError(
+          err,
+          'Номера обновились, но extensions загрузить не удалось.',
+        ))
       }
     } catch (err) {
-      setTelephonyError(err instanceof ApiError ? err.message : 'Не удалось синхронизировать номера из Mango.')
+      setTelephonyError(mapTelephonyApiError(err, 'Не удалось синхронизировать номера из Mango.'))
     } finally {
       setSyncingTelephony(false)
     }
@@ -484,7 +544,7 @@ export default function AgentEditorPage() {
       setForm(toFormState(response))
       setTelephonySuccess('Настройки агента сохранены. Привязка Mango и voice/runtime поля обновлены.')
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Не удалось сохранить настройки агента.')
+      setError(mapTelephonyApiError(err, 'Не удалось сохранить настройки агента.'))
     } finally {
       setSaving(false)
     }
@@ -512,6 +572,7 @@ export default function AgentEditorPage() {
       {error ? <div className="error-banner">{error}</div> : null}
       {knowledgeError ? <div className="error-banner">{knowledgeError}</div> : null}
       {telephonyError ? <div className="error-banner">{telephonyError}</div> : null}
+      {telephonyNotice ? <div className="warning-banner">{telephonyNotice}</div> : null}
       {telephonySuccess ? <div className="success-banner">{telephonySuccess}</div> : null}
 
       {loading ? (

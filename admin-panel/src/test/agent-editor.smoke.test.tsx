@@ -360,4 +360,243 @@ describe('agent editor telephony smoke', () => {
     expect(screen.getByText(/Mango extensions not configured in this tenant/i)).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\) — suggested/i })).toBeInTheDocument()
   })
+
+  it('shows non-blocking rate-limit warning when Mango extensions endpoint is temporarily unavailable', async () => {
+    vi.spyOn(window, 'fetch').mockImplementation(async (input) => {
+      const path = typeof input === 'string' ? input : input.toString()
+
+      if (path.includes('/v1/admin/auth/me')) {
+        return new Response(JSON.stringify({ email: 'admin@example.com', role: 'admin' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/knowledge-documents?active_only=true')) {
+        return new Response(JSON.stringify({ items: [], total: 0 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/readiness')) {
+        return new Response(JSON.stringify({
+          api_configured: true,
+          webhook_secret_configured: false,
+          from_ext_configured: false,
+          warnings: [],
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/lines')) {
+        return new Response(JSON.stringify({
+          items: [
+            {
+              id: 'line-local-ai',
+              provider: 'mango',
+              provider_resource_id: '405622036',
+              remote_line_id: '405622036',
+              phone_number: '+79300350609',
+              schema_name: 'ДЛЯ ИИ менеджера',
+              display_name: null,
+              label: 'ДЛЯ ИИ менеджера',
+              extension: null,
+              is_active: true,
+              is_inbound_enabled: true,
+              is_outbound_enabled: false,
+              synced_at: '2026-04-13T10:00:00Z',
+            },
+          ],
+          total: 1,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/extensions')) {
+        return new Response(JSON.stringify({
+          detail: {
+            error: 'mango_api_unavailable',
+            message: 'Failed to load Mango extensions.',
+            detail: {
+              http_status: 429,
+            },
+          },
+        }), {
+          status: 502,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/agent-profiles/agent-1/settings')) {
+        return new Response(JSON.stringify({
+          agent_profile_id: 'agent-1',
+          name: 'Sales Alpha',
+          is_active: true,
+          system_prompt: 'Base prompt',
+          tone_rules: '',
+          business_rules: '',
+          sales_objectives: '',
+          greeting_text: '',
+          transfer_rules: '',
+          prohibited_promises: '',
+          voice_strategy: 'tts_primary',
+          voice_provider: 'elevenlabs',
+          telephony_provider: null,
+          telephony_line_id: null,
+          telephony_remote_line_id: null,
+          telephony_extension: null,
+          telephony_line: null,
+          user_settings: {},
+          knowledge_document_ids: [],
+          version: 1,
+          created_at: '2026-04-05T00:00:00Z',
+          updated_at: '2026-04-05T01:00:00Z',
+          assembled_prompt_preview: 'System Prompt:\nBase prompt',
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      throw new Error(`Unexpected fetch path: ${path}`)
+    })
+
+    renderEditor()
+
+    await waitFor(() => {
+      expect(screen.getByText(/Mango временно ограничил extensions API по rate limit/i)).toBeInTheDocument()
+    })
+    expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\) — suggested/i })).toBeInTheDocument()
+  })
+
+  it('shows a friendly inactive-line error instead of raw backend codes', async () => {
+    vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
+      const path = typeof input === 'string' ? input : input.toString()
+      const method = init?.method || 'GET'
+
+      if (path.includes('/v1/admin/auth/me')) {
+        return new Response(JSON.stringify({ email: 'admin@example.com', role: 'admin' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/knowledge-documents?active_only=true')) {
+        return new Response(JSON.stringify({ items: [], total: 0 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/readiness')) {
+        return new Response(JSON.stringify({
+          api_configured: true,
+          webhook_secret_configured: false,
+          from_ext_configured: false,
+          warnings: [],
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/lines')) {
+        return new Response(JSON.stringify({
+          items: [
+            {
+              id: 'line-local-inactive',
+              provider: 'mango',
+              provider_resource_id: '405622036',
+              remote_line_id: '405622036',
+              phone_number: '+79300350609',
+              schema_name: 'ДЛЯ ИИ менеджера',
+              display_name: null,
+              label: 'ДЛЯ ИИ менеджера',
+              extension: null,
+              is_active: true,
+              is_inbound_enabled: true,
+              is_outbound_enabled: false,
+              synced_at: '2026-04-13T10:00:00Z',
+            },
+          ],
+          total: 1,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/extensions')) {
+        return new Response(JSON.stringify({ items: [], total: 0, source: 'mango_api' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/agent-profiles/agent-1/settings') && method === 'PATCH') {
+        return new Response(JSON.stringify({
+          detail: {
+            error: 'telephony_line_inactive',
+            message: 'Telephony line is inactive.',
+          },
+        }), {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/agent-profiles/agent-1/settings')) {
+        return new Response(JSON.stringify({
+          agent_profile_id: 'agent-1',
+          name: 'Sales Alpha',
+          is_active: true,
+          system_prompt: 'Base prompt',
+          tone_rules: '',
+          business_rules: '',
+          sales_objectives: '',
+          greeting_text: '',
+          transfer_rules: '',
+          prohibited_promises: '',
+          voice_strategy: 'tts_primary',
+          voice_provider: 'elevenlabs',
+          telephony_provider: null,
+          telephony_line_id: null,
+          telephony_remote_line_id: null,
+          telephony_extension: null,
+          telephony_line: null,
+          user_settings: {},
+          knowledge_document_ids: [],
+          version: 1,
+          created_at: '2026-04-05T00:00:00Z',
+          updated_at: '2026-04-05T01:00:00Z',
+          assembled_prompt_preview: 'System Prompt:\nBase prompt',
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      throw new Error(`Unexpected fetch path: ${path} (${method})`)
+    })
+
+    renderEditor()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Номер Mango/i)).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByLabelText(/Номер Mango/i), '405622036')
+    await user.click(screen.getByRole('button', { name: /Сохранить настройки агента/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/Выбранная линия Mango неактивна/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/telephony_line_inactive/i)).not.toBeInTheDocument()
+  })
 })
