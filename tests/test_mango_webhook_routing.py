@@ -265,7 +265,14 @@ async def test_webhook_routes_inbound_to_agent(session: AsyncSession) -> None:
                 headers={"content-type": "application/json"},
             )
     assert resp.status_code == 200
-    assert resp.json()["status"] == "ok"
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["webhook_secured"] is False
+    assert body["routing"]["phone_number_input"] == "79300350609"
+    assert body["routing"]["phone_number_normalized"] == "+79300350609"
+    assert body["routing"]["line_found"] is True
+    assert body["routing"]["agent_found"] is True
+    assert body["routing"]["agent_id"] == str(agent.id)
 
 
 @pytest.mark.anyio
@@ -290,6 +297,11 @@ async def test_webhook_inbound_no_matching_line(session: AsyncSession) -> None:
                 headers={"content-type": "application/json"},
             )
     assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["routing"]["line_found"] is False
+    assert body["routing"]["agent_found"] is False
+    assert body["routing"]["phone_number_normalized"] == "+79999999999"
 
 
 # ── Routing map endpoint ───────────────────────────────────────────────────────

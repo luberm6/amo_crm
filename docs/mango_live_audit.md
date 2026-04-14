@@ -183,6 +183,12 @@ Already available:
 - normalized inbound line phone number in `telephony_lines`
 - stable remote Mango line ID
 - agent -> line binding in the database
+- webhook endpoint now returns a routing summary instead of opaque `ok` only:
+  - `webhook_secured`
+  - `routing.line_found`
+  - `routing.agent_found`
+  - `routing.agent_id`
+  - `routing.remote_line_id`
 
 Still missing:
 

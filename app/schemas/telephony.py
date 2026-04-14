@@ -125,6 +125,30 @@ class MangoResolveOutboundResult(BaseModel):
     missing_requirements: list[str] = Field(default_factory=list)
 
 
+class MangoWebhookRoutingSummary(BaseModel):
+    phone_number_input: Optional[str] = None
+    phone_number_normalized: Optional[str] = None
+    line_found: bool = False
+    line_id: Optional[uuid.UUID] = None
+    remote_line_id: Optional[str] = None
+    line_phone_number: Optional[str] = None
+    line_schema_name: Optional[str] = None
+    line_label: Optional[str] = None
+    agent_found: bool = False
+    agent_id: Optional[uuid.UUID] = None
+    agent_name: Optional[str] = None
+    ambiguous: bool = False
+    candidate_count: int = 0
+
+
+class MangoWebhookReceipt(BaseModel):
+    status: str
+    event_id: str
+    event_type: str
+    webhook_secured: bool
+    routing: Optional[MangoWebhookRoutingSummary] = None
+
+
 class AgentProfileSettingsRead(BaseModel):
     agent_profile_id: uuid.UUID
     name: str

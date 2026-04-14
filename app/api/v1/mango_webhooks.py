@@ -19,6 +19,7 @@ from app.integrations.telephony.mango_state_store import (
 )
 from app.core.logging import get_logger
 from app.core.redis_client import get_redis
+from app.schemas.telephony import MangoWebhookReceipt, MangoWebhookRoutingSummary
 from app.services.telephony_routing_service import TelephonyRoutingService
 
 log = get_logger(__name__)
@@ -34,7 +35,7 @@ def _get_state_store():
     return _in_memory_store
 
 
-@router.post("/mango", status_code=status.HTTP_200_OK)
+@router.post("/mango", status_code=status.HTTP_200_OK, response_model=MangoWebhookReceipt)
 async def mango_webhook(
     request: Request,
     session: AsyncSession = Depends(get_db),
@@ -130,11 +131,27 @@ async def mango_webhook(
     )
 
     # ── Inbound routing (informational — log which agent would handle) ────────
+    routing_summary: Optional[MangoWebhookRoutingSummary] = None
     if event.to_number:
         routing_svc = TelephonyRoutingService(session)
         result = await routing_svc.resolve_inbound(
             provider="mango",
             phone_number=event.to_number,
+        )
+        routing_summary = MangoWebhookRoutingSummary(
+            phone_number_input=event.to_number,
+            phone_number_normalized=result.phone_number_normalized,
+            line_found=result.telephony_line is not None,
+            line_id=result.telephony_line.id if result.telephony_line else None,
+            remote_line_id=result.telephony_line.remote_line_id if result.telephony_line else None,
+            line_phone_number=result.telephony_line.phone_number if result.telephony_line else None,
+            line_schema_name=result.telephony_line.schema_name if result.telephony_line else None,
+            line_label=result.telephony_line.label if result.telephony_line else None,
+            agent_found=result.agent is not None,
+            agent_id=result.agent.id if result.agent else None,
+            agent_name=result.agent.name if result.agent else None,
+            ambiguous=result.ambiguous,
+            candidate_count=result.candidate_count,
         )
         if result.agent is None:
             log.info(
@@ -161,5 +178,7 @@ async def mango_webhook(
             "status": "ok",
             "event_id": event.provider_event_id,
             "event_type": event.provider_type,
+            "webhook_secured": webhook_secured,
+            "routing": routing_summary.model_dump(mode="json") if routing_summary else None,
         }
     )
