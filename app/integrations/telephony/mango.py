@@ -160,12 +160,22 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         if not from_ext:
             raise TelephonyError("MANGO_FROM_EXT is not configured.")
 
+        line_number = "0"
+        if metadata:
+            explicit_line = (
+                metadata.get("telephony_remote_line_id")
+                or metadata.get("mango_remote_line_id")
+                or metadata.get("line_number")
+            )
+            if explicit_line:
+                line_number = str(explicit_line)
+
         resp_data = await self._post(
             "/commands/callback",
             {
                 "from[extension]": from_ext,
                 "to[number]": phone,
-                "line_number": "0",
+                "line_number": line_number,
             },
         )
         call_uid = str(resp_data.get("uid", ""))

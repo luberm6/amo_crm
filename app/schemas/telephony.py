@@ -106,6 +106,25 @@ class MangoResolveInboundResult(BaseModel):
     candidate_count: int = 0
 
 
+class MangoResolveOutboundResult(BaseModel):
+    agent_id: uuid.UUID
+    agent_found: bool
+    agent_name: Optional[str] = None
+    agent_is_active: Optional[bool] = None
+    telephony_provider: Optional[str] = None
+    line_found: bool
+    line_id: Optional[uuid.UUID] = None
+    remote_line_id: Optional[str] = None
+    line_phone_number: Optional[str] = None
+    line_schema_name: Optional[str] = None
+    line_display_name: Optional[str] = None
+    line_label: Optional[str] = None
+    line_is_active: Optional[bool] = None
+    from_ext_configured: bool
+    originate_ready: bool
+    missing_requirements: list[str] = Field(default_factory=list)
+
+
 class AgentProfileSettingsRead(BaseModel):
     agent_profile_id: uuid.UUID
     name: str

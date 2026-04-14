@@ -453,3 +453,66 @@ async def test_debug_resolve_inbound_requires_auth(session: AsyncSession, admin_
             json={"phone_number": "79300350609"},
         )
     assert resp.status_code in (401, 403)
+
+
+@pytest.mark.anyio
+async def test_debug_resolve_outbound_returns_agent_bound_line(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    line = await _make_line(session, phone_number="+79300350609")
+    line.provider_resource_id = "405622036"
+    line.schema_name = "ДЛЯ ИИ менеджера"
+    line.display_name = "ДЛЯ ИИ менеджера"
+    agent = await _make_agent(session, name="Outbound Agent", line=line)
+    await session.flush()
+
+    app = _make_app(session)
+    with patch.object(cfg.settings, "mango_from_ext", "101"):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            token = await _admin_login(ac)
+            resp = await ac.get(
+                f"/v1/telephony/mango/debug/resolve-outbound/{agent.id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["agent_found"] is True
+    assert body["agent_name"] == "Outbound Agent"
+    assert body["line_found"] is True
+    assert body["remote_line_id"] == "405622036"
+    assert body["line_phone_number"] == "+79300350609"
+    assert body["line_schema_name"] == "ДЛЯ ИИ менеджера"
+    assert body["from_ext_configured"] is True
+    assert body["originate_ready"] is True
+    assert body["missing_requirements"] == []
+
+
+@pytest.mark.anyio
+async def test_debug_resolve_outbound_reports_missing_from_ext(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    line = await _make_line(session, phone_number="+79300350609")
+    line.provider_resource_id = "405622036"
+    line.schema_name = "ДЛЯ ИИ менеджера"
+    agent = await _make_agent(session, name="Outbound Agent", line=line)
+    await session.flush()
+
+    app = _make_app(session)
+    with patch.object(cfg.settings, "mango_from_ext", ""):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            token = await _admin_login(ac)
+            resp = await ac.get(
+                f"/v1/telephony/mango/debug/resolve-outbound/{agent.id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["agent_found"] is True
+    assert body["line_found"] is True
+    assert body["from_ext_configured"] is False
+    assert body["originate_ready"] is False
+    assert "mango_from_ext_missing" in body["missing_requirements"]

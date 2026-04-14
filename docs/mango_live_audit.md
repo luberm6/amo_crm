@@ -168,6 +168,9 @@ Current UX behavior:
 - missing `MANGO_WEBHOOK_SECRET` and `MANGO_FROM_EXT` are shown as non-blocking warnings
 - empty extensions do not block line binding
 - temporary extensions rate limiting is surfaced as a warning, not a blocking failure
+- admin debug APIs now cover both directions:
+  - `POST /v1/telephony/mango/debug/resolve-inbound`
+  - `GET /v1/telephony/mango/debug/resolve-outbound/{agent_id}`
 
 ## Routing Foundation Readiness
 
@@ -201,6 +204,12 @@ Still missing:
 - `MANGO_FROM_EXT`
 - live originate verification
 - end-to-end PSTN runtime confirmation on real calls
+
+Implementation note:
+
+- Mango originate path can now accept an explicit agent-bound `telephony_remote_line_id`
+- this prepares the control plane for agent-specific `line_number` in `/commands/callback`
+- live confirmation still requires a real outbound call after `MANGO_FROM_EXT` is set
 
 ## Rate Limit Observation
 

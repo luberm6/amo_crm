@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +17,7 @@ from app.schemas.telephony import (
     MangoReadinessRead,
     MangoResolveInboundRequest,
     MangoResolveInboundResult,
+    MangoResolveOutboundResult,
     MangoRoutingMapItem,
     MangoRoutingMapRead,
     TelephonyExtensionListRead,
@@ -179,4 +182,53 @@ async def mango_debug_resolve_inbound(
         agent_name=result.agent.name if result.agent else None,
         ambiguous=result.ambiguous,
         candidate_count=result.candidate_count,
+    )
+
+
+@router.get("/mango/debug/resolve-outbound/{agent_id}", response_model=MangoResolveOutboundResult)
+async def mango_debug_resolve_outbound(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> MangoResolveOutboundResult:
+    """Dry-run: resolve which Mango line an agent would use for outbound originate."""
+    svc = TelephonyRoutingService(db)
+    binding = await svc.resolve_outbound_binding(uuid.UUID(agent_id))
+    from_ext_configured = bool(settings.mango_from_ext)
+
+    if binding is None:
+        return MangoResolveOutboundResult(
+            agent_id=uuid.UUID(agent_id),
+            agent_found=False,
+            line_found=False,
+            from_ext_configured=from_ext_configured,
+            originate_ready=False,
+            missing_requirements=["agent_not_found_or_inactive"],
+        )
+
+    missing: list[str] = []
+    line = binding.telephony_line
+    if line is None:
+        missing.append("agent_has_no_mango_line")
+    elif not line.is_active:
+        missing.append("selected_mango_line_inactive")
+    if not from_ext_configured:
+        missing.append("mango_from_ext_missing")
+
+    return MangoResolveOutboundResult(
+        agent_id=binding.agent.id,
+        agent_found=True,
+        agent_name=binding.agent.name,
+        agent_is_active=binding.agent.is_active,
+        telephony_provider=binding.agent.telephony_provider,
+        line_found=line is not None,
+        line_id=line.id if line else None,
+        remote_line_id=line.remote_line_id if line else None,
+        line_phone_number=line.phone_number if line else None,
+        line_schema_name=line.schema_name if line else None,
+        line_display_name=line.display_name if line else None,
+        line_label=line.label if line else None,
+        line_is_active=line.is_active if line else None,
+        from_ext_configured=from_ext_configured,
+        originate_ready=not missing,
+        missing_requirements=missing,
     )

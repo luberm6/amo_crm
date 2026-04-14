@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
+import json
 
 import pytest
 
@@ -115,6 +116,28 @@ async def test_mango_originate_call_posts_to_callback():
     adapter._http.post.assert_called_once()
     call_args = adapter._http.post.call_args
     assert "/commands/callback" in call_args[0][0]
+
+
+@pytest.mark.anyio
+async def test_mango_originate_call_uses_agent_bound_remote_line_id():
+    """originate_call respects telephony_remote_line_id when runtime passes agent-bound Mango line."""
+    adapter = _make_mango_adapter()
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"success": 1, "uid": "mango-uid-line-bound"}
+    adapter._http.post = AsyncMock(return_value=mock_resp)
+
+    await adapter.originate_call(
+        "+79991234567",
+        metadata={"telephony_remote_line_id": "405622036"},
+    )
+
+    call_args = adapter._http.post.call_args
+    assert "/commands/callback" in call_args[0][0]
+    sent_form = call_args.kwargs["data"]
+    signed_payload = json.loads(sent_form["json"])
+    assert signed_payload["line_number"] == "405622036"
 
 
 @pytest.mark.anyio
