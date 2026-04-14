@@ -26,6 +26,7 @@ class TelephonyLine(UUIDMixin, TimestampMixin, Base):
     provider: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     provider_resource_id: Mapped[str] = mapped_column(String(128), nullable=False)
     phone_number: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    schema_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     extension: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
@@ -44,4 +45,16 @@ class TelephonyLine(UUIDMixin, TimestampMixin, Base):
             f"<TelephonyLine id={self.id} provider={self.provider!r} "
             f"provider_resource_id={self.provider_resource_id!r} phone_number={self.phone_number!r} "
             f"is_active={self.is_active}>"
+        )
+
+    @property
+    def remote_line_id(self) -> str:
+        return self.provider_resource_id
+
+    @property
+    def label(self) -> str:
+        return (
+            (self.schema_name or "").strip()
+            or (self.display_name or "").strip()
+            or (self.phone_number or "").strip()
         )

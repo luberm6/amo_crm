@@ -47,6 +47,11 @@ def _to_read(snapshot: AgentSettingsSnapshot) -> AgentProfileSettingsRead:
         voice_provider=agent.voice_provider,
         telephony_provider=agent.telephony_provider,
         telephony_line_id=agent.telephony_line_id,
+        telephony_remote_line_id=(
+            snapshot.telephony_line.remote_line_id
+            if snapshot.telephony_line is not None
+            else None
+        ),
         telephony_extension=agent.telephony_extension,
         telephony_line=(
             TelephonyLineRead.model_validate(snapshot.telephony_line)

@@ -27,7 +27,7 @@ Why it is not marked `PRODUCTION_READY`:
 
 - browser audio has not been fully confirmed end-to-end by a live manual QA run
 - provider settings are implemented as a safe settings layer, not as a full live routing console
-- Mango number sync and number binding are not implemented yet
+- Mango line sync and agent binding are implemented, but inbound webhook and outbound originate are not fully verified live
 
 ## 2. Current Capabilities
 
@@ -67,6 +67,10 @@ What already affects runtime:
 - `prohibited_promises`
 - `voice_strategy`
 - `config`
+- `voice_provider`
+- `telephony_provider`
+- `telephony_line_id`
+- `telephony_extension`
 
 These fields are not stored just for later editing. They are assembled by the
 backend into the runtime configuration used by Direct sessions and Browser Call
@@ -76,6 +80,37 @@ Status:
 
 - `INTEGRATION_READY`
 - `NEEDS_REAL_WORLD_VALIDATION` for live conversational quality
+
+### Mango Telephony Binding
+
+Implemented:
+
+- Mango inventory sync into `telephony_lines`
+- agent-level telephony binding in Agent Editor
+- stable provider-side key exposure via `remote_line_id`
+- normalized Mango phone numbers in `+7...` form
+- live-confirmed AI line:
+  - `remote_line_id=405622036`
+  - `phone_number=+79300350609`
+  - `schema_name="ДЛЯ ИИ менеджера"`
+
+What the admin panel currently does:
+
+- loads Mango lines for the agent form
+- shows line labels using `schema_name` first, then fallback label/number
+- saves binding through one agent settings PATCH
+- keeps line binding non-blocking even when extensions are unavailable
+
+What is still not confirmed:
+
+- inbound webhook flow
+- outbound originate flow
+- full PSTN runtime end-to-end
+
+Status:
+
+- `INTEGRATION_READY`
+- `NEEDS_REAL_WORLD_VALIDATION`
 
 ### Prompt / Rules
 

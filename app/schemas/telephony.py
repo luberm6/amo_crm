@@ -17,8 +17,11 @@ class TelephonyLineRead(BaseModel):
     id: uuid.UUID
     provider: str
     provider_resource_id: str
+    remote_line_id: str
     phone_number: str
+    schema_name: Optional[str] = None
     display_name: Optional[str] = None
+    label: str
     extension: Optional[str] = None
     is_active: bool
     is_inbound_enabled: bool
@@ -65,8 +68,11 @@ class MangoRoutingMapItem(BaseModel):
     """One Mango line with its bound agent (if any)."""
     line_id: uuid.UUID
     provider_resource_id: str
+    remote_line_id: str
     phone_number: str
+    schema_name: Optional[str] = None
     display_name: Optional[str] = None
+    label: str
     is_active: bool
     is_inbound_enabled: bool
     agent_id: Optional[uuid.UUID] = None
@@ -88,7 +94,11 @@ class MangoResolveInboundResult(BaseModel):
     phone_number_normalized: str
     line_found: bool
     line_id: Optional[uuid.UUID] = None
+    remote_line_id: Optional[str] = None
+    line_phone_number: Optional[str] = None
+    line_schema_name: Optional[str] = None
     line_display_name: Optional[str] = None
+    line_label: Optional[str] = None
     agent_found: bool
     agent_id: Optional[uuid.UUID] = None
     agent_name: Optional[str] = None
@@ -111,6 +121,7 @@ class AgentProfileSettingsRead(BaseModel):
     voice_provider: str
     telephony_provider: Optional[str] = None
     telephony_line_id: Optional[uuid.UUID] = None
+    telephony_remote_line_id: Optional[str] = None
     telephony_extension: Optional[str] = None
     telephony_line: Optional[TelephonyLineRead] = None
     user_settings: dict[str, Any] = Field(default_factory=dict)
@@ -134,6 +145,7 @@ class AgentProfileSettingsUpdate(BaseModel):
     voice_provider: Optional[str] = None
     telephony_provider: Optional[str] = None
     telephony_line_id: Optional[uuid.UUID] = None
+    telephony_remote_line_id: Optional[str] = None
     telephony_extension: Optional[str] = None
     user_settings: Optional[dict[str, Any]] = None
     knowledge_document_ids: Optional[list[uuid.UUID]] = None
@@ -148,6 +160,7 @@ class AgentProfileSettingsUpdate(BaseModel):
         "transfer_rules",
         "prohibited_promises",
         "telephony_provider",
+        "telephony_remote_line_id",
         "telephony_extension",
         "voice_provider",
     )

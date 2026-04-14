@@ -28,6 +28,10 @@ The backend assembles runtime prompt centrally.
 - `transfer_rules` — rules for when and how transfer should happen
 - `prohibited_promises` — things the agent must never promise
 - `voice_strategy` — requested voice strategy for this agent
+- `voice_provider` — selected voice runtime path (`gemini` or `elevenlabs`)
+- `telephony_provider` — selected telephony provider (`mango` when bound)
+- `telephony_line_id` — local FK to synced telephony inventory
+- `telephony_extension` — optional extension override
 - `config` — JSON config/metadata for future runtime extensions
 - `version` — incremented on every update and soft-disable
 - `created_at` / `updated_at`
@@ -93,6 +97,17 @@ The admin panel exposes:
 - edit
 - disable
 - assembled prompt preview
+- Mango line binding with live-synced inventory
+
+Live-confirmed Mango inventory available for binding today includes:
+
+- `remote_line_id=405622036`
+- `phone_number=+79300350609`
+- `schema_name="ДЛЯ ИИ менеджера"`
+
+Current constraint:
+
+- inbound webhook and outbound originate still require additional Mango env/secrets
 
 The UI does not assemble the final prompt itself.
 Preview is returned by the backend.

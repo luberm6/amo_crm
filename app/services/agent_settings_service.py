@@ -113,35 +113,56 @@ class AgentSettingsService:
         telephony_related = {
             "telephony_provider",
             "telephony_line_id",
+            "telephony_remote_line_id",
             "telephony_extension",
         }
         if not (fields & telephony_related):
             return
 
-        if "telephony_provider" in fields and body.telephony_provider is None and "telephony_line_id" not in fields:
+        if (
+            "telephony_provider" in fields
+            and body.telephony_provider is None
+            and "telephony_line_id" not in fields
+            and "telephony_remote_line_id" not in fields
+        ):
             agent.telephony_provider = None
             agent.telephony_line_id = None
             agent.telephony_extension = None
             return
 
-        if "telephony_line_id" in fields:
-            if body.telephony_line_id is None:
+        if "telephony_line_id" in fields or "telephony_remote_line_id" in fields:
+            requested_remote_id = body.telephony_remote_line_id if "telephony_remote_line_id" in fields else None
+            requested_line_id = body.telephony_line_id if "telephony_line_id" in fields else None
+
+            if requested_remote_id is None and requested_line_id is None and (
+                "telephony_line_id" in fields or "telephony_remote_line_id" in fields
+            ):
                 agent.telephony_provider = None if body.telephony_provider is None else body.telephony_provider
                 agent.telephony_line_id = None
                 agent.telephony_extension = None if "telephony_extension" not in fields else body.telephony_extension
                 return
 
-            line = await self.line_repo.get(body.telephony_line_id)
-            if line is None:
-                raise TelephonyLineNotFoundError(f"Telephony line {body.telephony_line_id} not found")
-            if line.provider != "mango":
-                raise TelephonyLineNotFoundError(
-                    f"Telephony line {body.telephony_line_id} is not a Mango line"
+            line: Optional[TelephonyLine]
+            if requested_remote_id:
+                line = await self.line_repo.get_by_provider_resource(
+                    provider=body.telephony_provider or "mango",
+                    provider_resource_id=requested_remote_id,
                 )
+            else:
+                line = await self.line_repo.get(requested_line_id)
+            if line is None:
+                missing_identifier = requested_remote_id or requested_line_id
+                raise TelephonyLineNotFoundError(f"Telephony line {missing_identifier} not found")
+            if line.provider != "mango":
+                raise TelephonyLineNotFoundError(f"Telephony line {line.id} is not a Mango line")
             if not line.is_active:
                 raise TelephonyLineInactiveError(
                     f"Telephony line {line.phone_number} is inactive",
-                    detail={"telephony_line_id": str(line.id), "phone_number": line.phone_number},
+                    detail={
+                        "telephony_line_id": str(line.id),
+                        "telephony_remote_line_id": line.remote_line_id,
+                        "phone_number": line.phone_number,
+                    },
                 )
 
             agent.telephony_provider = body.telephony_provider or line.provider

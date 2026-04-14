@@ -96,6 +96,7 @@ async def test_mango_line_sync_maps_inventory_and_extensions(session: AsyncSessi
             MangoLinePayload(
                 provider_resource_id="line-1",
                 phone_number="+74951234567",
+                schema_name="Main schema",
                 display_name="Main line",
                 extension=None,
                 is_active=True,
@@ -159,6 +160,7 @@ async def test_agent_settings_api_saves_mango_binding_and_knowledge(
             provider="mango",
             provider_resource_id="line-42",
             phone_number="+74950000042",
+            schema_name="Support schema",
             display_name="Support line",
             extension="142",
             is_active=True,
@@ -187,7 +189,7 @@ async def test_agent_settings_api_saves_mango_binding_and_knowledge(
             json={
                 "voice_provider": "gemini",
                 "telephony_provider": "mango",
-                "telephony_line_id": str(line.id),
+                "telephony_remote_line_id": "line-42",
                 "telephony_extension": "142",
                 "system_prompt": "Updated prompt",
                 "user_settings": {"locale": "ru-RU", "gemini_voice_name": "Aoede"},
@@ -204,6 +206,10 @@ async def test_agent_settings_api_saves_mango_binding_and_knowledge(
     assert payload["voice_provider"] == "gemini"
     assert payload["voice_strategy"] == "gemini_primary"
     assert payload["telephony_provider"] == "mango"
+    assert payload["telephony_remote_line_id"] == "line-42"
+    assert payload["telephony_line"]["remote_line_id"] == "line-42"
+    assert payload["telephony_line"]["schema_name"] == "Support schema"
+    assert payload["telephony_line"]["label"] == "Support schema"
     assert payload["telephony_line"]["phone_number"] == "+74950000042"
     assert payload["knowledge_document_ids"] == [str(document.id)]
     assert get_response.status_code == 200
@@ -238,6 +244,7 @@ async def test_agent_settings_api_rejects_inactive_telephony_line(
             provider="mango",
             provider_resource_id="line-dead",
             phone_number="+74950000099",
+            schema_name="Inactive schema",
             display_name="Inactive line",
             extension=None,
             is_active=False,
@@ -256,12 +263,51 @@ async def test_agent_settings_api_rejects_inactive_telephony_line(
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "telephony_provider": "mango",
-                "telephony_line_id": str(line.id),
+                "telephony_remote_line_id": "line-dead",
             },
         )
 
     assert response.status_code == 422
     assert response.json()["detail"]["error"] == "telephony_line_inactive"
+
+
+@pytest.mark.anyio
+async def test_agent_settings_api_rejects_missing_telephony_line(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    app = create_app()
+
+    async def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    agent = await AgentProfileRepository(AgentProfile, session).save(
+        AgentProfile(
+            name="Sales Mango",
+            is_active=True,
+            system_prompt="Base prompt",
+            voice_strategy="tts_primary",
+            voice_provider="elevenlabs",
+            config={},
+            version=1,
+        )
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        token = await _login(ac)
+        response = await ac.patch(
+            f"/v1/agent-profiles/{agent.id}/settings",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "telephony_provider": "mango",
+                "telephony_remote_line_id": "missing-remote-line",
+            },
+        )
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["error"] == "telephony_line_not_found"
 
 
 @pytest.mark.anyio
@@ -281,6 +327,7 @@ async def test_mango_lines_endpoint_lists_cached_inventory(
             provider="mango",
             provider_resource_id="line-cache",
             phone_number="+74957770000",
+            schema_name="Cached schema",
             display_name="Cached line",
             extension="700",
             is_active=True,
@@ -303,6 +350,8 @@ async def test_mango_lines_endpoint_lists_cached_inventory(
     payload = response.json()
     assert payload["total"] >= 1
     assert any(item["phone_number"] == "+74957770000" for item in payload["items"])
+    assert any(item["remote_line_id"] == "line-cache" for item in payload["items"])
+    assert any(item["label"] == "Cached schema" for item in payload["items"])
 
 
 @pytest.mark.anyio
@@ -334,6 +383,7 @@ async def test_mango_line_sync_stores_normalized_phone(session: AsyncSession) ->
             MangoLinePayload(
                 provider_resource_id="line-norm2",
                 phone_number=normalize_mango_phone("79585382099"),  # pre-normalized as real client does
+                schema_name="Test normalization schema",
                 display_name="Test normalization",
                 extension=None,
                 is_active=True,
@@ -378,6 +428,7 @@ async def test_mango_line_sync_updates_existing_phone_to_normalized(session: Asy
             MangoLinePayload(
                 provider_resource_id="line-existing",
                 phone_number="+79300350609",
+                schema_name="Existing schema",
                 display_name="Existing line",
                 extension=None,
                 is_active=True,
@@ -458,6 +509,7 @@ async def test_resolve_inbound_number_to_agent(session: AsyncSession) -> None:
             provider="mango",
             provider_resource_id="line-route",
             phone_number="+79300350609",
+            schema_name="AI schema",
             display_name="AI Line",
             extension=None,
             is_active=True,
@@ -505,6 +557,7 @@ async def test_resolve_agent_to_mango_line(session: AsyncSession) -> None:
             provider="mango",
             provider_resource_id="line-rev",
             phone_number="+79000000001",
+            schema_name="Rev schema",
             display_name="Rev line",
             extension=None,
             is_active=True,

@@ -27,8 +27,11 @@ type TelephonyLine = {
   id: string
   provider: string
   provider_resource_id: string
+  remote_line_id: string
   phone_number: string
+  schema_name?: string | null
   display_name?: string | null
+  label: string
   extension?: string | null
   is_active: boolean
   is_inbound_enabled: boolean
@@ -84,6 +87,7 @@ type AgentSettingsRead = {
   voice_provider: 'elevenlabs' | 'gemini'
   telephony_provider?: string | null
   telephony_line_id?: string | null
+  telephony_remote_line_id?: string | null
   telephony_extension?: string | null
   telephony_line?: TelephonyLine | null
   user_settings: Record<string, unknown>
@@ -105,7 +109,7 @@ type AgentFormState = {
   transfer_rules: string
   prohibited_promises: string
   voiceProvider: 'elevenlabs' | 'gemini'
-  telephonyLineId: string
+  telephonyRemoteLineId: string
   telephonyExtension: string
   userSettingsText: string
   knowledgeDocumentIds: string[]
@@ -136,7 +140,7 @@ const EMPTY_FORM: AgentFormState = {
   transfer_rules: '',
   prohibited_promises: '',
   voiceProvider: 'gemini',
-  telephonyLineId: '',
+  telephonyRemoteLineId: '',
   telephonyExtension: '',
   userSettingsText: '{\n  "locale": "ru-RU",\n  "gemini_voice_name": "Aoede"\n}',
   knowledgeDocumentIds: [],
@@ -165,7 +169,7 @@ function toFormState(settings: AgentSettingsRead): AgentFormState {
     transfer_rules: settings.transfer_rules || '',
     prohibited_promises: settings.prohibited_promises || '',
     voiceProvider: settings.voice_provider,
-    telephonyLineId: settings.telephony_line_id || '',
+    telephonyRemoteLineId: settings.telephony_remote_line_id || settings.telephony_line?.remote_line_id || '',
     telephonyExtension: settings.telephony_extension || settings.telephony_line?.extension || '',
     userSettingsText: JSON.stringify(settings.user_settings || {}, null, 2),
     knowledgeDocumentIds: settings.knowledge_document_ids || [],
@@ -174,6 +178,21 @@ function toFormState(settings: AgentSettingsRead): AgentFormState {
 
 function voiceStrategyFromProvider(provider: AgentFormState['voiceProvider']): 'gemini_primary' | 'tts_primary' {
   return provider === 'gemini' ? 'gemini_primary' : 'tts_primary'
+}
+
+function formatTelephonyLineLabel(line: TelephonyLine): string {
+  const primary = line.schema_name || line.label || line.display_name || line.phone_number
+  return primary === line.phone_number ? line.phone_number : `${primary} (${line.phone_number})`
+}
+
+function mapMangoWarning(warning: string): string {
+  if (warning.includes('MANGO_WEBHOOK_SECRET')) {
+    return 'Inbound webhook verification not configured. Задайте MANGO_WEBHOOK_SECRET перед боевым inbound routing.'
+  }
+  if (warning.includes('MANGO_FROM_EXT')) {
+    return 'Outbound calling not configured. Задайте MANGO_FROM_EXT перед боевым originate/callback.'
+  }
+  return warning
 }
 
 export default function AgentEditorPage() {
@@ -280,8 +299,8 @@ export default function AgentEditorPage() {
   )
 
   const selectedTelephonyLine = useMemo(
-    () => telephonyLines.find((line) => line.id === form.telephonyLineId) || null,
-    [form.telephonyLineId, telephonyLines],
+    () => telephonyLines.find((line) => line.remote_line_id === form.telephonyRemoteLineId) || null,
+    [form.telephonyRemoteLineId, telephonyLines],
   )
 
   const extensionOptions = useMemo(() => {
@@ -296,14 +315,35 @@ export default function AgentEditorPage() {
   }, [selectedTelephonyLine, telephonyExtensions])
 
   const suggestedLineId = useMemo(() => {
-    if (form.telephonyLineId || telephonyLines.length === 0) {
+    if (form.telephonyRemoteLineId || telephonyLines.length === 0) {
       return null
     }
     const aiLine = telephonyLines.find(
-      (line) => line.is_active && /ИИ|AI|искусст/i.test(line.display_name || ''),
+      (line) => line.is_active && ((line.schema_name || '').trim() === 'ДЛЯ ИИ менеджера'),
     )
-    return aiLine?.id ?? null
-  }, [form.telephonyLineId, telephonyLines])
+    return aiLine?.remote_line_id ?? null
+  }, [form.telephonyRemoteLineId, telephonyLines])
+
+  const orderedTelephonyLines = useMemo(() => {
+    const aiRemoteId = suggestedLineId
+    return [...telephonyLines].sort((left, right) => {
+      if (aiRemoteId && left.remote_line_id === aiRemoteId) {
+        return -1
+      }
+      if (aiRemoteId && right.remote_line_id === aiRemoteId) {
+        return 1
+      }
+      if (left.is_active !== right.is_active) {
+        return left.is_active ? -1 : 1
+      }
+      return formatTelephonyLineLabel(left).localeCompare(formatTelephonyLineLabel(right), 'ru')
+    })
+  }, [suggestedLineId, telephonyLines])
+
+  const mangoWarningMessages = useMemo(
+    () => (mangoReadiness?.warnings || []).map(mapMangoWarning),
+    [mangoReadiness],
+  )
 
   const geminiVoiceName = useMemo<string>(() => {
     try {
@@ -428,14 +468,14 @@ export default function AgentEditorPage() {
             business_rules: form.business_rules,
             sales_objectives: form.sales_objectives,
             greeting_text: form.greeting_text,
-            transfer_rules: form.transfer_rules,
-            prohibited_promises: form.prohibited_promises,
-            voice_provider: form.voiceProvider,
-            telephony_provider: form.telephonyLineId ? 'mango' : null,
-            telephony_line_id: form.telephonyLineId || null,
-            telephony_extension: form.telephonyExtension || null,
-            user_settings: parsedSettings,
-            knowledge_document_ids: form.knowledgeDocumentIds,
+              transfer_rules: form.transfer_rules,
+              prohibited_promises: form.prohibited_promises,
+              voice_provider: form.voiceProvider,
+              telephony_provider: form.telephonyRemoteLineId ? 'mango' : null,
+              telephony_remote_line_id: form.telephonyRemoteLineId || null,
+              telephony_extension: form.telephonyExtension || null,
+              user_settings: parsedSettings,
+              knowledge_document_ids: form.knowledgeDocumentIds,
           }),
         },
         token,
@@ -526,18 +566,26 @@ export default function AgentEditorPage() {
                 </div>
                 <div className="debug-row">
                   <span>binding</span>
-                  <strong>{form.telephonyLineId ? 'linked' : 'not linked'}</strong>
+                  <strong>{form.telephonyRemoteLineId ? 'linked' : 'not linked'}</strong>
                 </div>
               </div>
+
+              {selectedTelephonyLine ? (
+                <div className="info-banner">
+                  <strong>Selected line:</strong> {formatTelephonyLineLabel(selectedTelephonyLine)}
+                  <br />
+                  <span>remote_line_id: {selectedTelephonyLine.remote_line_id}</span>
+                </div>
+              ) : null}
 
               <label>
                 Номер Mango
                 <select
-                  value={form.telephonyLineId}
+                  value={form.telephonyRemoteLineId}
                   onChange={(event) => {
-                    const lineId = event.target.value
-                    const matched = telephonyLines.find((line) => line.id === lineId)
-                    updateField('telephonyLineId', lineId)
+                    const remoteLineId = event.target.value
+                    const matched = telephonyLines.find((line) => line.remote_line_id === remoteLineId)
+                    updateField('telephonyRemoteLineId', remoteLineId)
                     if (matched && !form.telephonyExtension) {
                       updateField('telephonyExtension', matched.extension || '')
                     }
@@ -545,10 +593,10 @@ export default function AgentEditorPage() {
                   disabled={isCreateMode || telephonyLoading}
                 >
                   <option value="">Не привязывать номер</option>
-                  {telephonyLines.map((line) => (
-                    <option key={line.id} value={line.id} disabled={!line.is_active}>
-                      {line.display_name || line.phone_number}
-                      {line.display_name ? ` (${line.phone_number})` : ''}
+                  {orderedTelephonyLines.map((line) => (
+                    <option key={line.remote_line_id} value={line.remote_line_id} disabled={!line.is_active}>
+                      {formatTelephonyLineLabel(line)}
+                      {suggestedLineId === line.remote_line_id ? ' — suggested' : ''}
                       {!line.is_active ? ' — неактивна' : ''}
                     </option>
                   ))}
@@ -561,18 +609,24 @@ export default function AgentEditorPage() {
                   <button
                     type="button"
                     className="ghost-link-button"
-                    onClick={() => updateField('telephonyLineId', suggestedLineId)}
+                    onClick={() => updateField('telephonyRemoteLineId', suggestedLineId)}
                   >
                     Выбрать
                   </button>
                 </div>
               ) : null}
 
-              {mangoReadiness?.warnings.map((warning) => (
+              {mangoWarningMessages.map((warning) => (
                 <div key={warning} className="warning-banner">
                   {warning}
                 </div>
               ))}
+
+              {!telephonyLoading && telephonyExtensions.length === 0 ? (
+                <div className="info-banner">
+                  Mango extensions not configured in this tenant. Line binding remains available without extension binding.
+                </div>
+              ) : null}
 
               <label>
                 Extension / сотрудник
@@ -836,7 +890,15 @@ export default function AgentEditorPage() {
               <div className="debug-list compact-debug">
                 <div className="debug-row">
                   <span>provider</span>
-                  <strong>{form.telephonyLineId ? 'mango' : '—'}</strong>
+                  <strong>{form.telephonyRemoteLineId ? 'mango' : '—'}</strong>
+                </div>
+                <div className="debug-row">
+                  <span>selected line</span>
+                  <strong>{selectedTelephonyLine ? formatTelephonyLineLabel(selectedTelephonyLine) : 'не привязан'}</strong>
+                </div>
+                <div className="debug-row">
+                  <span>remote_line_id</span>
+                  <strong>{selectedTelephonyLine?.remote_line_id || '—'}</strong>
                 </div>
                 <div className="debug-row">
                   <span>номер</span>

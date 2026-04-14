@@ -29,6 +29,7 @@ class MangoApiConfig:
 class MangoLinePayload:
     provider_resource_id: str
     phone_number: str
+    schema_name: Optional[str]
     display_name: Optional[str]
     extension: Optional[str]
     is_active: bool
@@ -120,10 +121,17 @@ class MangoClient:
             if not phone_number:
                 continue
             normalized_phone = normalize_mango_phone(phone_number)
+            schema_name = _first_non_empty(
+                record,
+                "schema_name",
+                "schema",
+                "routing_schema_name",
+            )
             lines.append(
                 MangoLinePayload(
                     provider_resource_id=provider_resource_id or normalized_phone,
                     phone_number=normalized_phone,
+                    schema_name=schema_name,
                     display_name=_first_non_empty(
                         record,
                         "display_name",
@@ -131,7 +139,6 @@ class MangoClient:
                         "title",
                         "label",
                         "line_name",
-                        "schema_name",  # Mango: human-readable routing schema name (e.g. "ДЛЯ ИИ менеджера")
                     ),
                     extension=_first_non_empty(
                         record,
