@@ -133,6 +133,38 @@ async def test_mango_line_sync_maps_inventory_and_extensions(session: AsyncSessi
 
 
 @pytest.mark.anyio
+async def test_mango_line_sync_uses_schema_name_as_display_fallback(session: AsyncSession) -> None:
+    client = _FakeMangoClient(
+        config=MangoApiConfig(
+            base_url="https://app.mango-office.ru/vpbx",
+            api_key="api-key",
+            api_salt="api-salt",
+        ),
+        lines=[
+            MangoLinePayload(
+                provider_resource_id="405622036",
+                phone_number="+79300350609",
+                schema_name="ДЛЯ ИИ менеджера",
+                display_name=None,
+                extension=None,
+                is_active=True,
+                is_inbound_enabled=True,
+                is_outbound_enabled=False,
+                raw_payload={"id": "405622036", "number": "79300350609"},
+            )
+        ],
+        extensions=[],
+    )
+    service = MangoTelephonyService(session, client=client)
+
+    result = await service.sync_lines()
+
+    assert result.items[0].schema_name == "ДЛЯ ИИ менеджера"
+    assert result.items[0].display_name == "ДЛЯ ИИ менеджера"
+    assert result.items[0].label == "ДЛЯ ИИ менеджера"
+
+
+@pytest.mark.anyio
 async def test_agent_settings_api_saves_mango_binding_and_knowledge(
     session: AsyncSession,
     admin_auth_settings,

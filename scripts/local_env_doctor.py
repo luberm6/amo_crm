@@ -152,7 +152,7 @@ def optional_pstn_secrets(settings: Any) -> list[dict[str, str]]:
     mapping = [
         ("mango_api_key", "MANGO_API_KEY", "Real Mango telephony"),
         ("mango_api_salt", "MANGO_API_SALT", "Real Mango telephony"),
-        ("mango_from_ext", "MANGO_FROM_EXT", "Real Mango originate/callback source"),
+        ("mango_from_ext", "MANGO_FROM_EXT", "Pinned Mango originate/callback source (optional when runtime auto-discovery succeeds)"),
         (
             "mango_webhook_shared_secret",
             "MANGO_WEBHOOK_SHARED_SECRET",

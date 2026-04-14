@@ -9,7 +9,7 @@ import hmac
 import json
 import uuid
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -515,7 +515,22 @@ async def test_debug_resolve_outbound_reports_missing_from_ext(
     await session.flush()
 
     app = _make_app(session)
-    with patch.object(cfg.settings, "mango_from_ext", ""):
+    with (
+        patch.object(cfg.settings, "mango_from_ext", ""),
+        patch(
+            "app.api.v1.telephony.resolve_mango_from_ext",
+            AsyncMock(
+                return_value=type(
+                    "_Resolved",
+                    (),
+                    {
+                        "value": "10",
+                        "source": "auto_discovered_first_extension",
+                    },
+                )()
+            ),
+        ),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             token = await _admin_login(ac)
             resp = await ac.get(

@@ -59,6 +59,22 @@ The future webhook/originate runtime still additionally depends on:
 - `MANGO_WEBHOOK_SECRET`
 - `MANGO_WEBHOOK_SHARED_SECRET`
 
+## Mango Env Matrix
+
+| Env | Purpose | Runtime usage | Auto-resolved? | Current tenant status |
+|---|---|---|---|---|
+| `MANGO_API_BASE_URL` | Mango API base URL | `MangoClient`, line sync, extensions inventory, callback/originate | No, but safe default exists | default `https://app.mango-office.ru/vpbx` works live |
+| `MANGO_API_KEY` | Mango API credential | signed REST requests | No | set, live-confirmed |
+| `MANGO_API_SALT` | Mango signing salt | signed REST requests | No | set, live-confirmed |
+| `MANGO_FROM_EXT` | pinned outbound source extension | `MangoTelephonyAdapter.originate_call()` | Partially: runtime can auto-discover a fallback extension from live inventory | empty, auto-discovery currently resolves to extension `10` |
+| `MANGO_WEBHOOK_SECRET` | HMAC secret for `X-Mango-Signature` verification | `/v1/webhooks/mango` native signature guard | No | empty |
+| `MANGO_WEBHOOK_SHARED_SECRET` | app-owned fallback secret in `X-Mango-Webhook-Secret` | `/v1/webhooks/mango` fallback guard | No | empty |
+
+Important runtime conclusion:
+
+- `MANGO_FROM_EXT` is not strictly required anymore for this tenant because live `config/users/request` is usable and runtime can auto-discover a source extension.
+- `MANGO_WEBHOOK_SECRET` / `MANGO_WEBHOOK_SHARED_SECRET` are still manual-only. Mango does not expose them through the API paths currently used by the project, so they must be configured intentionally in backend + Mango webhook settings.
+
 ## Real Connectivity
 
 DNS and TLS were verified successfully against `app.mango-office.ru`:
@@ -100,6 +116,25 @@ This means:
 - Mango connectivity is fine
 - auth/signature is fine
 - this tenant **does** expose usable extensions/users for outbound source-extension resolution
+
+### Automatic `from_ext` resolution on current live tenant
+
+Runtime auto-discovery was re-checked live against the current tenant:
+
+- requested line: `405622036` / `+79300350609`
+- resolved extension: `10`
+- resolution source: `auto_discovered_first_extension`
+
+Why it falls back instead of exact match:
+
+- both live extensions currently advertise outgoing line `+79585382099`
+- the AI line `+79300350609` does not currently have a tenant-side exact extension match in the returned inventory
+- runtime therefore picks the first stable extension candidate rather than failing hard
+
+Operational meaning:
+
+- outbound can now proceed without `MANGO_FROM_EXT`
+- but the chosen extension is still a best-effort fallback, not a tenant-confirmed exact mapping to the AI line
 
 ## Backend `sync-lines` Verification
 

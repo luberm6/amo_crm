@@ -75,9 +75,9 @@ Legend for `Required`:
 | `MANGO_API_BASE_URL` | No | `https://app.mango-office.ru/vpbx` | Mango provider, admin telephony sync | Mango API base URL for line sync/originate/webhooks | Only custom Mango endpoint override |
 | `MANGO_API_KEY` | Contextual | empty | Mango provider, preflight | Mango API credential | Real Mango telephony |
 | `MANGO_API_SALT` | Contextual | empty | Mango provider, preflight | Mango API signing salt | Real Mango telephony |
-| `MANGO_FROM_EXT` | Contextual | empty | Mango telephony | Click-to-call source extension/line | Real Mango originate/callback source |
-| `MANGO_WEBHOOK_SECRET` | No | empty | Mango webhook validation | Native webhook signature secret | Webhook hardening only |
-| `MANGO_WEBHOOK_SHARED_SECRET` | No | empty | Mango webhook validation | Shared-secret fallback verifier | Webhook hardening only |
+| `MANGO_FROM_EXT` | Contextual | empty | Mango telephony runtime, readiness | Pinned originate/callback source extension | Real Mango originate/callback if runtime cannot auto-discover a usable extension; optional when live `config/users/request` inventory is usable |
+| `MANGO_WEBHOOK_SECRET` | Contextual | empty | Mango webhook validation | HMAC secret used by backend to verify `X-Mango-Signature` | Secure inbound webhook validation |
+| `MANGO_WEBHOOK_SHARED_SECRET` | No | empty | Mango webhook validation | App-owned shared-secret fallback verifier via `X-Mango-Webhook-Secret` | Alternate webhook hardening when native Mango signature is not available |
 | `MANGO_WEBHOOK_IP_ALLOWLIST` | No | empty | Mango webhook validation | IP allowlist | Webhook hardening only |
 | `MANGO_ANSWER_WAIT_TIMEOUT_SECONDS` | No | `30` | Mango runtime | Wait for answer timeout | Mango timing only |
 | `MANGO_BRIDGE_CONFIRM_TIMEOUT_SECONDS` | No | `12` | Mango runtime | Bridge confirmation timeout | Mango timing only |

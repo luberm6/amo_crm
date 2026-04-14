@@ -69,6 +69,7 @@ type MangoReadiness = {
   api_configured: boolean
   webhook_secret_configured: boolean
   from_ext_configured: boolean
+  from_ext_auto_discoverable?: boolean
   warnings: string[]
 }
 
@@ -198,6 +199,9 @@ function formatTelephonyLineLabel(line: TelephonyLine): string {
 function mapMangoWarning(warning: string): string {
   if (warning.includes('MANGO_WEBHOOK_SECRET')) {
     return 'Inbound webhook verification not configured. Задайте MANGO_WEBHOOK_SECRET перед боевым inbound routing.'
+  }
+  if (warning.includes('auto-discovered Mango extension')) {
+    return 'Outbound calling will use an auto-discovered Mango extension. Для предсказуемого боевого originate всё ещё лучше явно задать MANGO_FROM_EXT.'
   }
   if (warning.includes('MANGO_FROM_EXT')) {
     return 'Outbound calling not configured. Задайте MANGO_FROM_EXT перед боевым originate/callback.'

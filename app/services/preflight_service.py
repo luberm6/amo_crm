@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.integrations.direct.voice_strategy import inspect_voice_strategy
 from app.integrations.media_gateway.factory import get_media_gateway
+from app.integrations.telephony.mango_runtime import resolve_mango_from_ext
 from app.integrations.telephony.registry import build_default_registry
 
 log = get_logger(__name__)
@@ -34,7 +35,7 @@ class DirectVoicePreflightService:
         await self._check_database(checks)
         await self._check_redis(checks)
         self._check_environment(checks)
-        self._check_direct_config(checks)
+        await self._check_direct_config(checks)
 
         adapter = self._resolve_telephony_adapter(checks)
         if adapter is not None:
@@ -121,7 +122,7 @@ class DirectVoicePreflightService:
                 details={"backend_url": settings.backend_url},
             )
 
-    def _check_direct_config(self, checks: list[dict[str, Any]]) -> None:
+    async def _check_direct_config(self, checks: list[dict[str, Any]]) -> None:
         for check in inspect_voice_strategy():
             self._add_check(
                 checks,
@@ -175,12 +176,36 @@ class DirectVoicePreflightService:
                 "MANGO_FROM_EXT is configured.",
             )
         else:
-            self._add_check(
-                checks,
-                "mango_from_ext",
-                "fail",
-                "MANGO_FROM_EXT is missing.",
-            )
+            resolved = None
+            if settings.mango_configured:
+                try:
+                    resolved = await resolve_mango_from_ext()
+                except Exception as exc:
+                    log.warning(
+                        "preflight.mango_from_ext_auto_discovery_failed",
+                        error=str(exc),
+                    )
+            if resolved and resolved.value:
+                self._add_check(
+                    checks,
+                    "mango_from_ext",
+                    "warn",
+                    "MANGO_FROM_EXT is empty, but runtime can auto-discover a usable Mango source extension.",
+                    details={
+                        "resolved_from_ext": resolved.value,
+                        "source": resolved.source,
+                        "candidate_count": resolved.candidate_count,
+                        "matched_line_id": resolved.matched_line_id,
+                        "matched_line_phone_number": resolved.matched_line_phone_number,
+                    },
+                )
+            else:
+                self._add_check(
+                    checks,
+                    "mango_from_ext",
+                    "fail",
+                    "MANGO_FROM_EXT is missing and runtime could not auto-discover a usable Mango source extension.",
+                )
 
         if settings.media_gateway_enabled and settings.media_gateway_provider == "freeswitch":
             self._add_check(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -247,5 +248,58 @@ async def test_direct_voice_preflight_rejects_invalid_hybrid_under_tts_primary(s
             c["name"] == "voice_strategy_hybrid_guard" and c["status"] == "warn"
             for c in payload["checks"]
         )
+    finally:
+        _restore_settings(old)
+
+
+@pytest.mark.anyio
+async def test_direct_voice_preflight_warns_when_from_ext_auto_discoverable(session, monkeypatch):
+    old = _set_direct_voice_settings()
+    try:
+        settings.mango_from_ext = ""
+
+        service = DirectVoicePreflightService(session)
+
+        async def _db_ok(checks):
+            service._add_check(checks, "database", "pass", "Database is reachable.")
+
+        async def _redis_ok(checks):
+            service._add_check(checks, "redis", "pass", "Redis is reachable.")
+
+        monkeypatch.setattr(service, "_check_database", _db_ok)
+        monkeypatch.setattr(service, "_check_redis", _redis_ok)
+        monkeypatch.setattr(
+            service,
+            "_resolve_telephony_adapter",
+            lambda checks: SimpleNamespace(
+                capabilities=SimpleNamespace(
+                    supports_outbound_call=True,
+                    supports_audio_bridge=True,
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            "app.services.preflight_service.resolve_mango_from_ext",
+            AsyncMock(
+                return_value=SimpleNamespace(
+                    value="10",
+                    source="auto_discovered_first_extension",
+                    candidate_count=2,
+                    matched_line_id=None,
+                    matched_line_phone_number="+79585382099",
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            "app.services.preflight_service.get_media_gateway",
+            lambda: _FakeGateway(),
+        )
+
+        payload = await service.run()
+
+        mango_from_ext = next(c for c in payload["checks"] if c["name"] == "mango_from_ext")
+        assert mango_from_ext["status"] == "warn"
+        assert mango_from_ext["details"]["resolved_from_ext"] == "10"
+        assert mango_from_ext["details"]["source"] == "auto_discovered_first_extension"
     finally:
         _restore_settings(old)
