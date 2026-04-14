@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { ApiError, apiFetch } from '../lib/api'
@@ -254,6 +254,7 @@ export default function AgentEditorPage() {
   const { token } = useAuth()
   const { agentId } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const isCreateMode = agentId === 'new'
 
   const [form, setForm] = useState<AgentFormState>(EMPTY_FORM)
@@ -404,6 +405,17 @@ export default function AgentEditorPage() {
     () => (mangoReadiness?.warnings || []).map(mapMangoWarning),
     [mangoReadiness],
   )
+
+  const focusedRemoteLineId = searchParams.get('mango_line') || ''
+  const cameFromProviders = searchParams.get('from') === 'providers'
+
+  const providersDeepLink = useMemo(() => {
+    const targetLineId = focusedRemoteLineId || form.telephonyRemoteLineId || selectedTelephonyLine?.remote_line_id || ''
+    if (!targetLineId) {
+      return '/providers'
+    }
+    return `/providers?line=${encodeURIComponent(targetLineId)}`
+  }, [focusedRemoteLineId, form.telephonyRemoteLineId, selectedTelephonyLine])
 
   const geminiVoiceName = useMemo<string>(() => {
     try {
@@ -570,6 +582,11 @@ export default function AgentEditorPage() {
           <Link to="/agents" className="ghost-link-button">
             Назад к списку
           </Link>
+          {(cameFromProviders || focusedRemoteLineId || form.telephonyRemoteLineId) ? (
+            <Link to={providersDeepLink} className="ghost-link-button">
+              Back to Providers for this line
+            </Link>
+          ) : null}
         </div>
       </article>
 
@@ -640,6 +657,12 @@ export default function AgentEditorPage() {
                   <strong>Selected line:</strong> {formatTelephonyLineLabel(selectedTelephonyLine)}
                   <br />
                   <span>remote_line_id: {selectedTelephonyLine.remote_line_id}</span>
+                </div>
+              ) : null}
+
+              {!selectedTelephonyLine && focusedRemoteLineId ? (
+                <div className="info-banner">
+                  Providers requested focus for Mango line <strong>{focusedRemoteLineId}</strong>. Sync inventory or reselect the line if it is missing.
                 </div>
               ) : null}
 

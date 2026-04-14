@@ -189,7 +189,7 @@ describe('providers page smoke', () => {
     })
 
     render(
-      <MemoryRouter initialEntries={['/providers']}>
+      <MemoryRouter initialEntries={['/providers?line=405622036']}>
         <AuthProvider>
           <Routes>
             <Route element={<ProtectedRoute />}>
@@ -217,8 +217,16 @@ describe('providers page smoke', () => {
     expect(screen.getByText('Sales Alpha')).toBeInTheDocument()
     expect(screen.getByText(/Outbound source extension будет auto-discovered/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Go to Agent settings to bind a number/i })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Open bound agent/i })).toHaveAttribute('href', '/agents/agent-1')
+    expect(screen.getByRole('link', { name: /Open bound agent/i })).toHaveAttribute('href', '/agents/agent-1?mango_line=405622036&from=providers')
     expect(screen.getByText(/Last sync status/i)).toBeInTheDocument()
+    expect(screen.getByText(/Focused line:/i)).toBeInTheDocument()
+    expect(screen.getByText(/Честный статус Mango routing/i)).toBeInTheDocument()
+    expect(screen.getByText(/ready for webhook rollout/i)).toBeInTheDocument()
+    expect(screen.getByText(/ready for originate smoke/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/^active$/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/^inactive$/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/^bound$/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/^unbound$/i).length).toBeGreaterThanOrEqual(1)
 
     await user.click(screen.getByRole('button', { name: /Unbound only/i }))
     expect(screen.getAllByText(/По умолчанию \(\+79585382099\)/i).length).toBeGreaterThanOrEqual(2)

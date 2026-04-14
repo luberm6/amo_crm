@@ -708,6 +708,12 @@ a.info-card:hover {
   background: rgba(255, 250, 242, 0.88);
 }
 
+.inventory-item.focused {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(13, 107, 87, 0.18);
+  background: rgba(220, 239, 231, 0.45);
+}
+
 .inventory-item-main {
   display: grid;
   gap: 0.2rem;
@@ -721,6 +727,34 @@ a.info-card:hover {
 .inline-link {
   color: var(--ink);
   font-weight: 600;
+}
+
+.sync-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.9rem;
+}
+
+.sync-summary-item {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 250, 242, 0.88);
+}
+
+.sync-summary-item span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.sync-summary-item strong {
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+  color: var(--ink);
 }
 
 .ghost-button.active-filter {
@@ -743,6 +777,10 @@ a.info-card:hover {
 
   .split-card {
     flex-direction: column;
+  }
+
+  .sync-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .sidebar {

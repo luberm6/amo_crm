@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { ApiError, apiFetch } from '../lib/api'
@@ -216,6 +216,7 @@ function mapMangoReadinessWarning(warning: string) {
 
 export default function ProvidersPage() {
   const { token } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [settingsByProvider, setSettingsByProvider] = useState<Record<string, ProviderSetting>>({})
   const [formsByProvider, setFormsByProvider] = useState<Record<string, ProviderFormState>>({})
   const [loading, setLoading] = useState(true)
@@ -233,6 +234,8 @@ export default function ProvidersPage() {
   const [mangoSyncMessage, setMangoSyncMessage] = useState<string | null>(null)
   const [inventoryFilter, setInventoryFilter] = useState<InventoryFilter>('all')
 
+  const focusedRemoteLineId = searchParams.get('line') || ''
+
   const providerCards = useMemo(
     () => PROVIDER_DEFINITIONS.map((definition) => ({ definition, setting: settingsByProvider[definition.provider] })),
     [settingsByProvider],
@@ -242,6 +245,24 @@ export default function ProvidersPage() {
     () => (mangoReadiness?.warnings || []).map(mapMangoReadinessWarning),
     [mangoReadiness],
   )
+
+  const boundRoutingItems = useMemo(
+    () => mangoRoutingMap.filter((item) => item.agent_id),
+    [mangoRoutingMap],
+  )
+
+  const activeLineCount = useMemo(
+    () => mangoLines.filter((line) => line.is_active).length,
+    [mangoLines],
+  )
+
+  const inactiveLineCount = useMemo(
+    () => mangoLines.filter((line) => !line.is_active).length,
+    [mangoLines],
+  )
+
+  const boundLineCount = boundRoutingItems.length
+  const unboundLineCount = Math.max(mangoLines.length - boundLineCount, 0)
 
   const latestMangoSyncAt = useMemo(() => {
     const values = mangoLines
@@ -255,6 +276,21 @@ export default function ProvidersPage() {
     const match = mangoLines.find((line) => (line.schema_name || '').trim() === 'ДЛЯ ИИ менеджера')
     return match?.remote_line_id || null
   }, [mangoLines])
+
+  const focusedLine = useMemo(
+    () => mangoLines.find((line) => line.remote_line_id === focusedRemoteLineId) || null,
+    [focusedRemoteLineId, mangoLines],
+  )
+
+  const controlPlaneInboundReady = Boolean(
+    mangoReadiness?.api_configured && mangoLines.length > 0 && boundLineCount > 0,
+  )
+
+  const controlPlaneOutboundReady = Boolean(
+    mangoReadiness?.api_configured
+      && mangoLines.length > 0
+      && (mangoReadiness?.from_ext_configured || mangoReadiness?.from_ext_auto_discoverable),
+  )
 
   const unboundRemoteLineIds = useMemo(() => {
     const boundIds = new Set(
@@ -282,6 +318,13 @@ export default function ProvidersPage() {
     }
     return mangoRoutingMap
   }, [inventoryFilter, mangoRoutingMap, recommendedMangoRemoteLineId])
+
+  useEffect(() => {
+    const filter = searchParams.get('filter')
+    if (filter === 'all' || filter === 'recommended_only' || filter === 'unbound_only') {
+      setInventoryFilter(filter)
+    }
+  }, [searchParams])
 
   const loadProviders = useCallback(async () => {
     if (!token) {
@@ -491,6 +534,19 @@ export default function ProvidersPage() {
     }
   }
 
+  function selectInventoryFilter(next: InventoryFilter) {
+    setInventoryFilter(next)
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('filter', next)
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  function clearFocusedLine() {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('line')
+    setSearchParams(nextParams, { replace: true })
+  }
+
   return (
     <section className="stack-page providers-page">
       <article className="hero-card split-card providers-hero">
@@ -553,6 +609,18 @@ export default function ProvidersPage() {
                   <Link to="/agents" className="inline-link">Go to Agent settings to bind a number</Link>
                 </div>
 
+                {focusedLine ? (
+                  <div className="info-banner">
+                    <strong>Focused line:</strong> {formatMangoLineLabel(focusedLine)}
+                    <div className="table-secondary">remote_line_id: {focusedLine.remote_line_id}</div>
+                    <div className="button-row">
+                      <button type="button" className="ghost-button" onClick={clearFocusedLine}>
+                        Clear line focus
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="button-row">
                   <button
                     type="button"
@@ -576,21 +644,21 @@ export default function ProvidersPage() {
                   <button
                     type="button"
                     className={`ghost-button${inventoryFilter === 'all' ? ' active-filter' : ''}`}
-                    onClick={() => setInventoryFilter('all')}
+                    onClick={() => selectInventoryFilter('all')}
                   >
                     All lines
                   </button>
                   <button
                     type="button"
                     className={`ghost-button${inventoryFilter === 'recommended_only' ? ' active-filter' : ''}`}
-                    onClick={() => setInventoryFilter('recommended_only')}
+                    onClick={() => selectInventoryFilter('recommended_only')}
                   >
                     AI recommended
                   </button>
                   <button
                     type="button"
                     className={`ghost-button${inventoryFilter === 'unbound_only' ? ' active-filter' : ''}`}
-                    onClick={() => setInventoryFilter('unbound_only')}
+                    onClick={() => selectInventoryFilter('unbound_only')}
                   >
                     Unbound only
                   </button>
@@ -622,9 +690,79 @@ export default function ProvidersPage() {
                       ? mangoSyncMessage
                       : latestMangoSyncAt
                         ? `Inventory already synced. Latest known sync: ${formatTimestamp(latestMangoSyncAt)}.`
-                        : 'Sync has not been run from this page yet.'}
+                      : 'Sync has not been run from this page yet.'}
+                  </div>
+                  <div className="sync-summary-grid">
+                    <div className="sync-summary-item">
+                      <span>active</span>
+                      <strong>{activeLineCount}</strong>
+                    </div>
+                    <div className="sync-summary-item">
+                      <span>inactive</span>
+                      <strong>{inactiveLineCount}</strong>
+                    </div>
+                    <div className="sync-summary-item">
+                      <span>bound</span>
+                      <strong>{boundLineCount}</strong>
+                    </div>
+                    <div className="sync-summary-item">
+                      <span>unbound</span>
+                      <strong>{unboundLineCount}</strong>
+                    </div>
                   </div>
                 </div>
+
+                <section className="provider-subpanel">
+                  <div className="panel-header">
+                    <div>
+                      <p className="eyebrow">Live readiness</p>
+                      <h4>Честный статус Mango routing</h4>
+                    </div>
+                  </div>
+                  <div className="debug-list compact-debug">
+                    <div className="debug-row">
+                      <span>Mango API</span>
+                      <strong>{mangoReadiness?.api_configured ? 'configured' : 'blocked'}</strong>
+                    </div>
+                    <div className="debug-row">
+                      <span>inventory synced</span>
+                      <strong>{mangoLines.length > 0 ? 'yes' : 'no'}</strong>
+                    </div>
+                    <div className="debug-row">
+                      <span>agent-bound lines</span>
+                      <strong>{boundLineCount > 0 ? `${boundLineCount} linked` : 'none linked'}</strong>
+                    </div>
+                    <div className="debug-row">
+                      <span>inbound control-plane</span>
+                      <strong>{controlPlaneInboundReady ? 'ready for webhook rollout' : 'not ready'}</strong>
+                    </div>
+                    <div className="debug-row">
+                      <span>webhook verification</span>
+                      <strong>{mangoReadiness?.webhook_secret_configured ? 'configured' : 'missing secret'}</strong>
+                    </div>
+                    <div className="debug-row">
+                      <span>outbound control-plane</span>
+                      <strong>{controlPlaneOutboundReady ? 'ready for originate smoke' : 'not ready'}</strong>
+                    </div>
+                    <div className="debug-row">
+                      <span>source extension</span>
+                      <strong>
+                        {mangoReadiness?.from_ext_configured
+                          ? 'configured'
+                          : mangoReadiness?.from_ext_auto_discoverable
+                            ? 'auto-discoverable'
+                            : 'missing'}
+                      </strong>
+                    </div>
+                    <div className="debug-row">
+                      <span>live PSTN proof</span>
+                      <strong>not verified</strong>
+                    </div>
+                  </div>
+                  <div className="warning-banner">
+                    Этот блок не объявляет PSTN готовым. Он показывает только control-plane readiness для следующего live inbound/outbound smoke шага.
+                  </div>
+                </section>
 
                 {mangoInventoryError ? <div className="error-banner">{mangoInventoryError}</div> : null}
                 {mangoSyncMessage ? <div className="success-banner">{mangoSyncMessage}</div> : null}
@@ -644,7 +782,10 @@ export default function ProvidersPage() {
                   ) : (
                     <div className="inventory-list">
                       {filteredMangoLines.map((line) => (
-                        <article key={line.remote_line_id} className="inventory-item">
+                        <article
+                          key={line.remote_line_id}
+                          className={`inventory-item${focusedRemoteLineId === line.remote_line_id ? ' focused' : ''}`}
+                        >
                           <div className="inventory-item-main">
                             <strong>{formatMangoLineLabel(line)}</strong>
                             <div className="table-secondary">line_id: {line.remote_line_id}</div>
@@ -673,7 +814,10 @@ export default function ProvidersPage() {
                   ) : (
                     <div className="inventory-list">
                       {filteredRoutingMap.map((item) => (
-                        <article key={item.remote_line_id} className="inventory-item">
+                        <article
+                          key={item.remote_line_id}
+                          className={`inventory-item${focusedRemoteLineId === item.remote_line_id ? ' focused' : ''}`}
+                        >
                           <div className="inventory-item-main">
                             <strong>{formatMangoLineLabel(item)}</strong>
                             <div className="table-secondary">remote_line_id: {item.remote_line_id}</div>
@@ -683,7 +827,12 @@ export default function ProvidersPage() {
                               <>
                                 <strong>Bound agent:</strong> {item.agent_name || item.agent_id}
                                 <div>
-                                  <Link to={`/agents/${item.agent_id}`} className="inline-link">Open bound agent</Link>
+                                  <Link
+                                    to={`/agents/${item.agent_id}?mango_line=${item.remote_line_id}&from=providers`}
+                                    className="inline-link"
+                                  >
+                                    Open bound agent
+                                  </Link>
                                 </div>
                               </>
                             ) : (

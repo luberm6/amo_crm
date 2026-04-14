@@ -8,9 +8,9 @@ import ProtectedRoute from '../components/ProtectedRoute'
 import AdminLayout from '../layout/AdminLayout'
 import AgentEditorPage from '../pages/AgentEditorPage'
 
-function renderEditor() {
+function renderEditor(initialEntry = '/agents/agent-1') {
   return render(
-    <MemoryRouter initialEntries={['/agents/agent-1']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <AuthProvider>
         <Routes>
           <Route element={<ProtectedRoute />}>
@@ -248,6 +248,120 @@ describe('agent editor telephony smoke', () => {
     })
     expect(screen.getByText(/Selected line:/i).closest('.info-banner')).toHaveTextContent('ДЛЯ ИИ менеджера (+79300350609)')
     expect(screen.getByText(/linked/i)).toBeInTheDocument()
+  })
+
+  it('shows deep-link back to providers for the focused Mango line', async () => {
+    const aiLine = {
+      id: 'line-local-ai',
+      provider: 'mango',
+      provider_resource_id: '405622036',
+      remote_line_id: '405622036',
+      phone_number: '+79300350609',
+      schema_name: 'ДЛЯ ИИ менеджера',
+      display_name: null,
+      label: 'ДЛЯ ИИ менеджера',
+      extension: null,
+      is_active: true,
+      is_inbound_enabled: true,
+      is_outbound_enabled: false,
+      synced_at: '2026-04-13T10:00:00Z',
+    }
+
+    vi.spyOn(window, 'fetch').mockImplementation(async (input) => {
+      const path = typeof input === 'string' ? input : input.toString()
+
+      if (path.includes('/v1/admin/auth/me')) {
+        return new Response(JSON.stringify({ email: 'admin@example.com', role: 'admin' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/knowledge-documents?active_only=true')) {
+        return new Response(JSON.stringify({ items: [], total: 0 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/readiness')) {
+        return new Response(JSON.stringify({
+          api_configured: true,
+          webhook_secret_configured: false,
+          from_ext_configured: false,
+          from_ext_auto_discoverable: true,
+          warnings: [
+            'Inbound webhook verification is not configured (MANGO_WEBHOOK_SECRET is empty).',
+          ],
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/lines')) {
+        return new Response(JSON.stringify({
+          items: [aiLine],
+          total: 1,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/extensions')) {
+        return new Response(JSON.stringify({
+          items: [],
+          total: 0,
+          source: 'mango_api',
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/agent-profiles/agent-1/settings')) {
+        return new Response(JSON.stringify({
+          agent_profile_id: 'agent-1',
+          name: 'Sales Alpha',
+          is_active: true,
+          system_prompt: 'Base prompt',
+          tone_rules: '',
+          business_rules: '',
+          sales_objectives: '',
+          greeting_text: '',
+          transfer_rules: '',
+          prohibited_promises: '',
+          voice_strategy: 'tts_primary',
+          voice_provider: 'elevenlabs',
+          telephony_provider: 'mango',
+          telephony_line_id: aiLine.id,
+          telephony_remote_line_id: aiLine.remote_line_id,
+          telephony_extension: null,
+          telephony_line: aiLine,
+          user_settings: { locale: 'ru-RU' },
+          knowledge_document_ids: [],
+          version: 2,
+          created_at: '2026-04-05T00:00:00Z',
+          updated_at: '2026-04-13T10:00:00Z',
+          assembled_prompt_preview: 'System Prompt:\\nBase prompt',
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      throw new Error(`Unexpected fetch path: ${path}`)
+    })
+
+    renderEditor('/agents/agent-1?mango_line=405622036&from=providers')
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Back to Providers for this line/i })).toBeInTheDocument()
+    })
+
+    expect(screen.getByRole('link', { name: /Back to Providers for this line/i })).toHaveAttribute('href', '/providers?line=405622036')
+    expect(screen.getByText(/Selected line:/i).closest('.info-banner')).toHaveTextContent('ДЛЯ ИИ менеджера (+79300350609)')
   })
 
   it('shows readiness warnings without blocking line selection', async () => {
