@@ -30,6 +30,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.db.session import get_db
@@ -122,7 +123,14 @@ def anyio_backend():
 
 @pytest.fixture(scope="session")
 async def test_engine():
-    engine = create_async_engine(TEST_DB_URL, echo=False)
+    # For SQLite in-memory, use StaticPool so all connections share the same
+    # database instance; without it each new connection gets an empty DB.
+    is_sqlite = "sqlite" in TEST_DB_URL
+    kwargs: dict = {}
+    if is_sqlite:
+        kwargs["poolclass"] = StaticPool
+        kwargs["connect_args"] = {"check_same_thread": False}
+    engine = create_async_engine(TEST_DB_URL, echo=False, **kwargs)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine

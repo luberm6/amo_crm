@@ -531,3 +531,83 @@ async def test_debug_resolve_outbound_reports_missing_from_ext(
     assert body["originate_ready"] is True
     assert body["resolved_from_ext"] in {"10", "12"}
     assert body["from_ext_source"] in {"auto_discovered_by_line", "auto_discovered_first_extension"}
+
+
+# ── Additional edge-case tests ─────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_webhook_no_to_number_has_no_routing(session: AsyncSession) -> None:
+    """Webhook payload without a to-number produces no routing or inbound_launch."""
+    payload = json.dumps({"event": "call_start", "entry": {"id": "leg-x"}}).encode()
+    app = _make_app(session)
+    with (
+        patch.object(cfg.settings, "mango_webhook_secret", ""),
+        patch.object(cfg.settings, "mango_webhook_shared_secret", ""),
+        patch.object(cfg.settings, "mango_webhook_ip_allowlist", ""),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post(
+                "/v1/webhooks/mango",
+                content=payload,
+                headers={"content-type": "application/json"},
+            )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["routing"] is None
+    assert body["inbound_launch"] is None
+
+
+@pytest.mark.anyio
+async def test_debug_resolve_outbound_agent_not_found(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    """Unknown agent UUID → agent_found=False, originate_ready=False."""
+    random_id = uuid.uuid4()
+    app = _make_app(session)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        token = await _admin_login(ac)
+        resp = await ac.get(
+            f"/v1/telephony/mango/debug/resolve-outbound/{random_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["agent_found"] is False
+    assert body["originate_ready"] is False
+    assert "agent_not_found_or_inactive" in body["missing_requirements"]
+
+
+@pytest.mark.anyio
+async def test_debug_resolve_outbound_agent_has_no_line(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    """Agent with no telephony_line → line_found=False, originate_ready=False."""
+    agent = AgentProfile(
+        name="No-line Agent",
+        is_active=True,
+        system_prompt="test",
+        voice_strategy="tts_primary",
+        voice_provider="elevenlabs",
+        config={},
+        version=1,
+    )
+    session.add(agent)
+    await session.flush()
+
+    app = _make_app(session)
+    with patch.object(cfg.settings, "mango_from_ext", "101"):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            token = await _admin_login(ac)
+            resp = await ac.get(
+                f"/v1/telephony/mango/debug/resolve-outbound/{agent.id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["agent_found"] is True
+    assert body["line_found"] is False
+    assert body["originate_ready"] is False
+    assert "agent_has_no_mango_line" in body["missing_requirements"]
