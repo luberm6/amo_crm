@@ -67,14 +67,19 @@ class StubTelephonyAdapter(AbstractTelephonyAdapter):
 
     # ── Audio channel API ─────────────────────────────────────────────────────
 
-    async def connect(self, phone: str) -> TelephonyChannel:
+    async def connect(
+        self,
+        phone: str,
+        caller_id: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ) -> TelephonyChannel:
         channel = TelephonyChannel(
             channel_id=f"stub-tel-{phone}",
             phone=phone,
             sip_call_id=f"stub-sip-{phone}@localhost",
             provider_leg_id=f"stub-leg-{phone}",
             state=TelephonyLegState.ANSWERED,
-            metadata={"adapter": "stub"},
+            metadata={"adapter": "stub", "caller_id": caller_id, "runtime_metadata": metadata or {}},
         )
         self._inject_queues[channel.channel_id] = asyncio.Queue()
         self._leg_states[channel.provider_leg_id] = TelephonyLegState.ANSWERED

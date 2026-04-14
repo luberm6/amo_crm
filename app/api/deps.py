@@ -180,7 +180,22 @@ async def get_call_engine() -> AbstractCallEngine:
         if _telephony_adapter is None:
             from app.integrations.telephony.registry import build_default_registry
             _telephony_registry = build_default_registry()
-            _telephony_adapter = _telephony_registry.resolve(settings.telephony_provider)
+            telephony_preference = settings.telephony_provider
+            if (
+                telephony_preference == "stub"
+                and settings.mango_configured
+                and not settings.is_testing
+            ):
+                log.warning(
+                    "deps.direct_engine.stub_telephony_overridden",
+                    message=(
+                        "TELEPHONY_PROVIDER=stub would block real Mango PSTN runtime. "
+                        "Using MangoTelephonyAdapter for Direct PSTN engine while keeping "
+                        "browser sandbox on BrowserTelephonyAdapter."
+                    ),
+                )
+                telephony_preference = "mango"
+            _telephony_adapter = _telephony_registry.resolve(telephony_preference)
         telephony = _telephony_adapter
         voice = _build_voice_provider()
 

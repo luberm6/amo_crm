@@ -273,6 +273,8 @@ async def test_webhook_routes_inbound_to_agent(session: AsyncSession) -> None:
     assert body["routing"]["line_found"] is True
     assert body["routing"]["agent_found"] is True
     assert body["routing"]["agent_id"] == str(agent.id)
+    assert body["inbound_launch"]["status"] == "blocked"
+    assert "media_gateway_disabled" in body["inbound_launch"]["reason"]
 
 
 @pytest.mark.anyio
@@ -526,5 +528,6 @@ async def test_debug_resolve_outbound_reports_missing_from_ext(
     assert body["agent_found"] is True
     assert body["line_found"] is True
     assert body["from_ext_configured"] is False
-    assert body["originate_ready"] is False
-    assert "mango_from_ext_missing" in body["missing_requirements"]
+    assert body["originate_ready"] is True
+    assert body["resolved_from_ext"] in {"10", "12"}
+    assert body["from_ext_source"] in {"auto_discovered_by_line", "auto_discovered_first_extension"}

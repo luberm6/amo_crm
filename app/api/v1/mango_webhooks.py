@@ -20,6 +20,8 @@ from app.integrations.telephony.mango_state_store import (
 from app.core.logging import get_logger
 from app.core.redis_client import get_redis
 from app.schemas.telephony import MangoWebhookReceipt, MangoWebhookRoutingSummary
+from app.schemas.telephony import MangoInboundLaunchSummary
+from app.services.mango_inbound_call_service import MangoInboundCallService
 from app.services.telephony_routing_service import TelephonyRoutingService
 
 log = get_logger(__name__)
@@ -132,6 +134,7 @@ async def mango_webhook(
 
     # ── Inbound routing (informational — log which agent would handle) ────────
     routing_summary: Optional[MangoWebhookRoutingSummary] = None
+    inbound_launch_summary: Optional[MangoInboundLaunchSummary] = None
     if event.to_number:
         routing_svc = TelephonyRoutingService(session)
         result = await routing_svc.resolve_inbound(
@@ -172,6 +175,22 @@ async def mango_webhook(
                 ambiguous=result.ambiguous,
                 event_id=event.provider_event_id,
             )
+            inbound_service = MangoInboundCallService(session)
+            launch = await inbound_service.ensure_inbound_call(event=event, routing=result)
+            inbound_launch_summary = MangoInboundLaunchSummary(
+                status=launch.status,
+                reason=launch.reason,
+                call_id=launch.call.id if launch.call else None,
+                telephony_leg_id=launch.call.telephony_leg_id if launch.call else event.leg_id,
+            )
+            log.info(
+                "mango_inbound.call_launch_result",
+                request_id=request_id,
+                event_id=event.provider_event_id,
+                status=launch.status,
+                reason=launch.reason,
+                call_id=str(launch.call.id) if launch.call else None,
+            )
 
     return JSONResponse(
         content={
@@ -180,5 +199,6 @@ async def mango_webhook(
             "event_type": event.provider_type,
             "webhook_secured": webhook_secured,
             "routing": routing_summary.model_dump(mode="json") if routing_summary else None,
+            "inbound_launch": inbound_launch_summary.model_dump(mode="json") if inbound_launch_summary else None,
         }
     )

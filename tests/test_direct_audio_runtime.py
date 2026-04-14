@@ -184,7 +184,7 @@ class BridgeTelephonyAdapter(AbstractTelephonyAdapter):
             supports_audio_bridge=True,
         )
 
-    async def connect(self, phone: str) -> TelephonyChannel:
+    async def connect(self, phone: str, caller_id=None, metadata=None) -> TelephonyChannel:
         return TelephonyChannel(
             channel_id=f"ch-{phone}",
             phone=phone,

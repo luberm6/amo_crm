@@ -21,7 +21,9 @@ from app.integrations.direct.engine import DirectGeminiEngine
 from app.integrations.direct.session_manager import DirectSessionManager, DirectSession
 from app.integrations.telephony.stub import StubTelephonyAdapter
 from app.integrations.voice.stub import StubVoiceProvider
+from app.models.agent_profile import AgentProfile
 from app.models.call import Call, CallMode, CallStatus
+from app.models.telephony_line import TelephonyLine
 
 
 def _make_call(
@@ -156,3 +158,55 @@ async def test_get_status_returns_completed_when_no_session():
     status = await engine.get_status(call)
 
     assert status == CallStatus.IN_PROGRESS
+
+
+@pytest.mark.anyio
+async def test_initiate_call_passes_agent_bound_mango_context():
+    """Direct runtime must pass the selected Mango line and extension into session creation."""
+    mock_sm = AsyncMock(spec=DirectSessionManager)
+    mock_sm.create_session.return_value = "session-with-mango-context"
+
+    engine = DirectGeminiEngine(
+        session_manager=mock_sm,
+        telephony=StubTelephonyAdapter(),
+        voice=StubVoiceProvider(),
+        session_factory=AsyncMock(),
+    )
+
+    telephony_line = TelephonyLine(
+        provider="mango",
+        provider_resource_id="405622036",
+        phone_number="+79300350609",
+        schema_name="ДЛЯ ИИ менеджера",
+        display_name="ДЛЯ ИИ менеджера",
+        extension="12",
+        is_active=True,
+        is_inbound_enabled=True,
+        is_outbound_enabled=True,
+        raw_payload={},
+    )
+    telephony_line.id = uuid.uuid4()
+    agent = AgentProfile(
+        name="Mango Agent",
+        is_active=True,
+        system_prompt="Prompt",
+        voice_strategy="tts_primary",
+        voice_provider="elevenlabs",
+        telephony_provider="mango",
+        telephony_extension="12",
+        version=1,
+    )
+    agent.id = uuid.uuid4()
+    agent.telephony_line_id = telephony_line.id
+    agent.telephony_line = telephony_line
+
+    call = _make_call()
+    call.agent_profile = agent
+    call.agent_profile_id = None
+
+    await engine.initiate_call(call)
+
+    kwargs = mock_sm.create_session.call_args.kwargs
+    assert kwargs["telephony_caller_id"] == "12"
+    assert kwargs["telephony_metadata"]["telephony_remote_line_id"] == "405622036"
+    assert kwargs["telephony_metadata"]["telephony_line_phone_number"] == "+79300350609"

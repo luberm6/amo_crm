@@ -14,8 +14,8 @@ Tooling: `scripts/mango_live_probe.py`, `docs/mango_live_inventory_sample.json`
 | Live inventory fetched | YES |
 | `sync-lines` live verified | YES |
 | Agent binding on live Mango data | YES |
-| `config/users/request` returns usable extensions for this tenant | NO |
-| Repeated `config/users/request` calls stable | NO |
+| `config/users/request` returns usable extensions for this tenant | YES |
+| Repeated `config/users/request` calls stable | PARTIAL |
 
 Current live-confirmed tenant state:
 
@@ -24,7 +24,7 @@ Current live-confirmed tenant state:
   - `remote_line_id = 405622036`
   - `phone_number = +79300350609`
   - `schema_name = "ДЛЯ ИИ менеджера"`
-- `/config/users/request` currently returns `users: []` for this tenant
+- `/config/users/request` currently returns **2 usable extensions** for this tenant
 - `MANGO_FROM_EXT` is not configured
 - `MANGO_WEBHOOK_SECRET` is not configured
 
@@ -32,8 +32,8 @@ The important operational nuance is that line binding is already usable, but ext
 
 - line inventory is live-confirmed and synced
 - agent binding to a live Mango line is live-confirmed
-- extensions are empty in the current tenant snapshot
-- repeated `config/users/request` calls may return `429`
+- extensions inventory is now usable for outbound source-extension discovery
+- repeated `config/users/request` calls may still return `429`, so runtime now relies on short-lived cache/fallback
 
 ## Live Env Diagnostics
 
@@ -86,13 +86,20 @@ Confirmed live line data:
 
 - Status: `200`
 - Success: yes
-- Tenant result: `users: []`
+- Parsed extensions: `2`
+
+Confirmed live extension data:
+
+| extension | display_name | outgoing_line |
+|---|---|---|
+| `10` | `Каширина Ольга` | `+79585382099` |
+| `12` | `МЕ  Матвеев Евгений` | `+79585382099` |
 
 This means:
 
 - Mango connectivity is fine
 - auth/signature is fine
-- but this tenant does **not** currently expose extensions/users via this call in a way we can use for agent binding
+- this tenant **does** expose usable extensions/users for outbound source-extension resolution
 
 ## Backend `sync-lines` Verification
 
@@ -207,15 +214,16 @@ Already available:
 
 Still missing:
 
-- `MANGO_FROM_EXT`
+- explicit `MANGO_FROM_EXT` if you want a pinned source extension instead of runtime auto-discovery
 - live originate verification
 - end-to-end PSTN runtime confirmation on real calls
 
 Implementation note:
 
-- Mango originate path can now accept an explicit agent-bound `telephony_remote_line_id`
-- this prepares the control plane for agent-specific `line_number` in `/commands/callback`
-- live confirmation still requires a real outbound call after `MANGO_FROM_EXT` is set
+- Mango originate path now accepts an explicit agent-bound `telephony_remote_line_id`
+- Direct runtime now forwards the selected agent-bound Mango line into the actual telephony originate path
+- when `MANGO_FROM_EXT` is empty, runtime can auto-discover a usable extension from live Mango inventory and caches it defensively against `429`
+- live confirmation still requires a real outbound call
 
 ## Rate Limit Observation
 
@@ -225,6 +233,7 @@ Observed live behavior:
 
 - first request can return `200`
 - repeated requests in the same probe window may return `429 Too Many Requests`
+- runtime now uses a short-lived cache/fallback for extension inventory to avoid brittle repeated failures
 
 Implication:
 
@@ -250,5 +259,5 @@ Implication:
 - live inbound webhook event from Mango after the latest admin-side polish
 - live outbound originate using agent-bound Mango line
 - live inbound number -> agent routing on a real phone call
-- stable extensions inventory for this tenant
+- stable repeated extension polling without hitting Mango tenant rate limits
 - full PSTN runtime

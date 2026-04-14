@@ -19,6 +19,7 @@ import json
 import pytest
 
 from app.integrations.telephony.base import TelephonyLegState, TelephonyOriginateResult
+from app.integrations.telephony.mango_runtime import ResolvedMangoFromExt
 from app.integrations.telephony.mango_state_store import InMemoryMangoLegStateStore
 from app.integrations.telephony.stub import StubTelephonyAdapter
 
@@ -138,6 +139,44 @@ async def test_mango_originate_call_uses_agent_bound_remote_line_id():
     sent_form = call_args.kwargs["data"]
     signed_payload = json.loads(sent_form["json"])
     assert signed_payload["line_number"] == "405622036"
+
+
+@pytest.mark.anyio
+async def test_mango_originate_call_auto_discovers_from_ext():
+    """originate_call falls back to live/discovered extension when MANGO_FROM_EXT is empty."""
+    adapter = _make_mango_adapter()
+    adapter._from_ext = ""
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"success": 1, "uid": "mango-uid-auto-ext"}
+    adapter._http.post = AsyncMock(return_value=mock_resp)
+
+    with patch(
+        "app.integrations.telephony.mango.resolve_mango_from_ext",
+        AsyncMock(return_value=ResolvedMangoFromExt(value="12", source="auto_discovered_first_extension")),
+    ):
+        await adapter.originate_call("+79991234567")
+
+    signed_payload = json.loads(adapter._http.post.call_args.kwargs["data"]["json"])
+    assert signed_payload["from[extension]"] == "12"
+
+
+@pytest.mark.anyio
+async def test_mango_connect_existing_leg_skips_originate():
+    """Inbound runtime can attach to an already-existing Mango leg without callback originate."""
+    adapter = _make_mango_adapter()
+    adapter.originate_call = AsyncMock()
+    adapter.wait_for_answered = AsyncMock()
+
+    channel = await adapter.connect(
+        "+79991234567",
+        metadata={"existing_leg_id": "mango-leg-existing-1", "call_id": "internal-call-id"},
+    )
+
+    adapter.originate_call.assert_not_called()
+    assert channel.provider_leg_id == "mango-leg-existing-1"
+    assert channel.metadata["existing_leg"] is True
 
 
 @pytest.mark.anyio

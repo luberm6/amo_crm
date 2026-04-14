@@ -32,6 +32,7 @@ from app.integrations.telephony.mango_freeswitch_correlation import (
     AbstractMangoFreeSwitchCorrelationStore,
     get_mango_freeswitch_correlation_store,
 )
+from app.integrations.telephony.mango_runtime import resolve_mango_from_ext
 from app.integrations.telephony.mango_state_store import (
     AbstractMangoLegStateStore,
     InMemoryMangoLegStateStore,
@@ -103,8 +104,39 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             ),
         )
 
-    async def connect(self, phone: str) -> TelephonyChannel:
-        result = await self.originate_call(phone)
+    async def connect(
+        self,
+        phone: str,
+        caller_id: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ) -> TelephonyChannel:
+        existing_leg_id = str(
+            (metadata or {}).get("existing_leg_id")
+            or (metadata or {}).get("provider_leg_id")
+            or (metadata or {}).get("mango_leg_id")
+            or ""
+        ).strip()
+        if existing_leg_id:
+            log.info(
+                "mango_telephony.attach_existing_leg",
+                phone=phone,
+                mango_leg_id=existing_leg_id,
+            )
+            channel = TelephonyChannel(
+                channel_id=existing_leg_id,
+                phone=phone,
+                sip_call_id=None,
+                provider_leg_id=existing_leg_id,
+                state=TelephonyLegState.ANSWERED,
+                metadata={
+                    "internal_call_id": (metadata or {}).get("call_id"),
+                    "existing_leg": True,
+                    **(metadata or {}),
+                },
+            )
+            return channel
+
+        result = await self.originate_call(phone, caller_id=caller_id, metadata=metadata)
         answered_state = await self.wait_for_answered(result.leg_id)
         channel = TelephonyChannel(
             channel_id=result.leg_id,
@@ -156,7 +188,11 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         caller_id: Optional[str] = None,
         metadata: Optional[dict] = None,
     ) -> TelephonyOriginateResult:
-        from_ext = caller_id or self._from_ext
+        resolved_from_ext = await resolve_mango_from_ext(
+            explicit_from_ext=caller_id or self._from_ext,
+            metadata=metadata,
+        )
+        from_ext = resolved_from_ext.value
         if not from_ext:
             raise TelephonyError("MANGO_FROM_EXT is not configured.")
 
@@ -198,11 +234,24 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             freeswitch_uuid=call_uid,
         )
 
-        log.info("mango_telephony.call_originated", phone=phone, mango_uid=call_uid)
+        log.info(
+            "mango_telephony.call_originated",
+            phone=phone,
+            mango_uid=call_uid,
+            line_number=line_number,
+            from_ext=from_ext,
+            from_ext_source=resolved_from_ext.source,
+            from_ext_candidate_count=resolved_from_ext.candidate_count,
+        )
         return TelephonyOriginateResult(
             leg_id=call_uid,
             sip_call_id=None,
-            provider_response=resp_data,
+            provider_response={
+                **resp_data,
+                "line_number": line_number,
+                "from_extension": from_ext,
+                "from_extension_source": resolved_from_ext.source,
+            },
         )
 
     async def wait_for_answered(

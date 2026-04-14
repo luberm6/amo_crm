@@ -9,6 +9,7 @@ from app.api.admin_auth import require_admin_auth
 from app.api.deps import get_db
 from app.core.exceptions import AppError
 from app.core.config import settings
+from app.integrations.telephony.mango_runtime import resolve_mango_from_ext
 from app.models.agent_profile import AgentProfile
 from app.models.telephony_line import TelephonyLine
 from app.repositories.agent_profile_repo import AgentProfileRepository
@@ -45,19 +46,26 @@ async def mango_readiness() -> MangoReadinessRead:
     api_configured = bool(settings.mango_api_key and settings.mango_api_salt)
     webhook_secret_configured = bool(settings.mango_webhook_secret or settings.mango_webhook_shared_secret)
     from_ext_configured = bool(settings.mango_from_ext)
+    from_ext_auto_discoverable = False
+    if api_configured and not from_ext_configured:
+        resolved = await resolve_mango_from_ext()
+        from_ext_auto_discoverable = bool(resolved.value)
 
     warnings: list[str] = []
     if not api_configured:
         warnings.append("Mango API credentials (MANGO_API_KEY / MANGO_API_SALT) are not configured.")
     if not webhook_secret_configured:
         warnings.append("Inbound webhook verification is not configured (MANGO_WEBHOOK_SECRET is empty).")
-    if not from_ext_configured:
+    if not from_ext_configured and not from_ext_auto_discoverable:
         warnings.append("Outbound calling is not configured (MANGO_FROM_EXT is empty).")
+    elif not from_ext_configured and from_ext_auto_discoverable:
+        warnings.append("Outbound calling will use an auto-discovered Mango extension because MANGO_FROM_EXT is empty.")
 
     return MangoReadinessRead(
         api_configured=api_configured,
         webhook_secret_configured=webhook_secret_configured,
         from_ext_configured=from_ext_configured,
+        from_ext_auto_discoverable=from_ext_auto_discoverable,
         warnings=warnings,
     )
 
@@ -201,6 +209,8 @@ async def mango_debug_resolve_outbound(
             agent_found=False,
             line_found=False,
             from_ext_configured=from_ext_configured,
+            resolved_from_ext=None,
+            from_ext_source=None,
             originate_ready=False,
             missing_requirements=["agent_not_found_or_inactive"],
         )
@@ -211,7 +221,20 @@ async def mango_debug_resolve_outbound(
         missing.append("agent_has_no_mango_line")
     elif not line.is_active:
         missing.append("selected_mango_line_inactive")
-    if not from_ext_configured:
+    resolved_from_ext = None
+    from_ext_source = None
+    if line is not None:
+        resolution = await resolve_mango_from_ext(
+            explicit_from_ext=(binding.agent.telephony_extension or "").strip() or None,
+            metadata={
+                "telephony_remote_line_id": line.remote_line_id,
+                "telephony_line_phone_number": line.phone_number,
+                "telephony_extension": binding.agent.telephony_extension or line.extension,
+            },
+        )
+        resolved_from_ext = resolution.value
+        from_ext_source = resolution.source
+    if not resolved_from_ext:
         missing.append("mango_from_ext_missing")
 
     return MangoResolveOutboundResult(
@@ -229,6 +252,8 @@ async def mango_debug_resolve_outbound(
         line_label=line.label if line else None,
         line_is_active=line.is_active if line else None,
         from_ext_configured=from_ext_configured,
+        resolved_from_ext=resolved_from_ext,
+        from_ext_source=from_ext_source,
         originate_ready=not missing,
         missing_requirements=missing,
     )

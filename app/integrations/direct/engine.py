@@ -33,7 +33,9 @@ from app.integrations.call_engine.base import AbstractCallEngine, EngineCallResu
 from app.integrations.direct.session_manager import DirectSessionManager
 from app.integrations.telephony.base import AbstractTelephonyAdapter
 from app.integrations.voice.base import AbstractVoiceProvider
+from app.models.agent_profile import AgentProfile
 from app.models.call import Call, CallStatus
+from app.repositories.agent_profile_repo import AgentProfileRepository
 from app.services.agent_profile_service import build_agent_runtime_configuration
 from app.services.knowledge_base_service import KnowledgeBaseService
 
@@ -83,37 +85,70 @@ class DirectGeminiEngine(AbstractCallEngine):
                 "Вызови set_session_factory() перед initiate_call()."
             )
 
+        call_agent_profile_id = getattr(call, "agent_profile_id", None)
         log.info(
             "direct_engine.initiate_call",
             call_id=str(call.id),
             phone=call.phone,
-            agent_profile_id=str(call.agent_profile_id) if call.agent_profile_id else None,
+            agent_profile_id=str(call_agent_profile_id) if isinstance(call_agent_profile_id, uuid.UUID) else None,
         )
+        runtime_context = dict(getattr(call, "_runtime_context", {}) or {})
+        full_agent_profile: Optional[AgentProfile] = getattr(call, "agent_profile", None)
         knowledge_context = None
-        if self._session_factory is not None and call.agent_profile_id is not None:
+        if self._session_factory is not None and isinstance(call_agent_profile_id, uuid.UUID):
             try:
                 async with self._session_factory() as runtime_session:
+                    agent_repo = AgentProfileRepository(AgentProfile, runtime_session)
+                    fetched_agent = await agent_repo.get_with_related(call_agent_profile_id)
+                    if fetched_agent is not None:
+                        full_agent_profile = fetched_agent
                     kb_service = KnowledgeBaseService(runtime_session)
                     knowledge_context = await kb_service.build_agent_runtime_knowledge_context(
-                        call.agent_profile_id
+                        call_agent_profile_id
                     )
             except Exception as exc:
                 log.warning(
                     "direct_engine.knowledge_context_unavailable",
                     call_id=str(call.id),
-                    agent_profile_id=str(call.agent_profile_id)
-                    if call.agent_profile_id
-                    else None,
+                    agent_profile_id=str(call_agent_profile_id) if call_agent_profile_id else None,
                     error=str(exc),
                 )
 
         runtime_agent = build_agent_runtime_configuration(
-            getattr(call, "agent_profile", None),
+            full_agent_profile,
             knowledge_context=knowledge_context,
         )
         agent_config = runtime_agent.config or {}
         gemini_voice_name = agent_config.get("gemini_voice_name") or None
         gemini_language_code = agent_config.get("gemini_language_code") or "ru-RU"
+        telephony_metadata = dict(runtime_context.get("telephony") or {})
+        telephony_caller_id = str(
+            runtime_context.get("telephony_caller_id")
+            or runtime_agent.telephony_extension
+            or telephony_metadata.get("telephony_extension")
+            or ""
+        ).strip() or None
+        if full_agent_profile is not None and getattr(full_agent_profile, "telephony_line", None) is not None:
+            telephony_line = full_agent_profile.telephony_line
+            telephony_metadata.setdefault("telephony_provider", full_agent_profile.telephony_provider or telephony_line.provider)
+            telephony_metadata.setdefault("telephony_line_id", str(telephony_line.id))
+            telephony_metadata.setdefault("telephony_remote_line_id", telephony_line.remote_line_id)
+            telephony_metadata.setdefault("telephony_line_phone_number", telephony_line.phone_number)
+            telephony_metadata.setdefault("telephony_line_label", telephony_line.label)
+            telephony_metadata.setdefault("telephony_extension", runtime_agent.telephony_extension or telephony_line.extension)
+            telephony_metadata.setdefault("call_id", str(call.id))
+            if telephony_caller_id is None:
+                telephony_caller_id = (runtime_agent.telephony_extension or telephony_line.extension or "").strip() or None
+        log.info(
+            "direct_engine.telephony_context_resolved",
+            call_id=str(call.id),
+            telephony_provider=telephony_metadata.get("telephony_provider"),
+            telephony_remote_line_id=telephony_metadata.get("telephony_remote_line_id"),
+            telephony_line_phone_number=telephony_metadata.get("telephony_line_phone_number"),
+            telephony_extension=telephony_metadata.get("telephony_extension"),
+            caller_id_present=bool(telephony_caller_id),
+            existing_leg=bool(telephony_metadata.get("existing_leg_id")),
+        )
         try:
             session_id = await self._sm.create_session(
                 call_id=call.id,
@@ -126,6 +161,8 @@ class DirectGeminiEngine(AbstractCallEngine):
                 voice_strategy_name=runtime_agent.voice_strategy,
                 gemini_voice_name=gemini_voice_name,
                 gemini_language_code=gemini_language_code,
+                telephony_caller_id=telephony_caller_id,
+                telephony_metadata=telephony_metadata or None,
             )
         except EngineError:
             raise

@@ -47,7 +47,12 @@ class BrowserTelephonyAdapter(AbstractTelephonyAdapter):
     def prepare_browser_call(self, call_id: uuid.UUID) -> None:
         self._prepared_call_id = call_id
 
-    async def connect(self, phone: str) -> TelephonyChannel:
+    async def connect(
+        self,
+        phone: str,
+        caller_id: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ) -> TelephonyChannel:
         call_id = self._prepared_call_id
         if call_id is None:
             raise RuntimeError("BrowserTelephonyAdapter.prepare_browser_call() was not called")
@@ -58,7 +63,11 @@ class BrowserTelephonyAdapter(AbstractTelephonyAdapter):
             phone=phone,
             provider_leg_id=f"browser-leg-{call_id}",
             state=TelephonyLegState.ANSWERED,
-            metadata={"browser_call_id": str(call_id)},
+            metadata={
+                "browser_call_id": str(call_id),
+                "caller_id": caller_id,
+                "runtime_metadata": metadata or {},
+            },
         )
         log.info("browser_telephony.connect", call_id=str(call_id), phone=phone)
         return channel

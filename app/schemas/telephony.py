@@ -61,6 +61,7 @@ class MangoReadinessRead(BaseModel):
     api_configured: bool
     webhook_secret_configured: bool
     from_ext_configured: bool
+    from_ext_auto_discoverable: bool = False
     warnings: list[str]
 
 
@@ -121,6 +122,8 @@ class MangoResolveOutboundResult(BaseModel):
     line_label: Optional[str] = None
     line_is_active: Optional[bool] = None
     from_ext_configured: bool
+    resolved_from_ext: Optional[str] = None
+    from_ext_source: Optional[str] = None
     originate_ready: bool
     missing_requirements: list[str] = Field(default_factory=list)
 
@@ -141,12 +144,20 @@ class MangoWebhookRoutingSummary(BaseModel):
     candidate_count: int = 0
 
 
+class MangoInboundLaunchSummary(BaseModel):
+    status: str
+    reason: Optional[str] = None
+    call_id: Optional[uuid.UUID] = None
+    telephony_leg_id: Optional[str] = None
+
+
 class MangoWebhookReceipt(BaseModel):
     status: str
     event_id: str
     event_type: str
     webhook_secured: bool
     routing: Optional[MangoWebhookRoutingSummary] = None
+    inbound_launch: Optional[MangoInboundLaunchSummary] = None
 
 
 class AgentProfileSettingsRead(BaseModel):

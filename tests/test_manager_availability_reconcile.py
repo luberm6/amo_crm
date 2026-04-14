@@ -15,7 +15,7 @@ from app.services.manager_availability import reconcile_manager_availability_job
 
 
 class _FakeTelephony(MangoTelephonyAdapter):
-    async def connect(self, phone: str) -> TelephonyChannel:  # pragma: no cover - not used
+    async def connect(self, phone: str, caller_id=None, metadata=None) -> TelephonyChannel:  # pragma: no cover - not used
         return TelephonyChannel(
             channel_id="ch",
             phone=phone,

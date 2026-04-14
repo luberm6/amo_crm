@@ -130,7 +130,12 @@ class AbstractTelephonyAdapter(ABC):
     # ── Audio channel API (used by DirectGeminiEngine) ────────────────────────
 
     @abstractmethod
-    async def connect(self, phone: str) -> TelephonyChannel:
+    async def connect(
+        self,
+        phone: str,
+        caller_id: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ) -> TelephonyChannel:
         """
         Initiate an outbound call to phone, return an audio channel handle.
 
@@ -138,7 +143,8 @@ class AbstractTelephonyAdapter(ABC):
         Use audio_stream() to wait for actual audio data (implies answered state).
 
         In stub: returns immediately with synthetic channel, no real call.
-        In Mango: uses originate_call() + wait for ANSWERED event.
+        In Mango: uses originate_call() + wait for ANSWERED event, or attaches to an
+        already-existing leg when metadata carries provider-specific inbound context.
         """
         ...
 

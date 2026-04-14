@@ -228,6 +228,7 @@ class DirectSession:
     phone: str
     current_status: CallStatus = CallStatus.IN_PROGRESS
     gemini_client: Optional[GeminiLiveClient] = None
+    telephony_adapter: Optional[AbstractTelephonyAdapter] = None
     telephony_channel: Optional[TelephonyChannel] = None
     audio_bridge: Optional["AbstractAudioBridge"] = None
     voice_provider: Optional[AbstractVoiceProvider] = None
@@ -280,6 +281,8 @@ class DirectSessionManager:
         voice_strategy_name: Optional[str] = None,
         gemini_voice_name: Optional[str] = None,
         gemini_language_code: str = "ru-RU",
+        telephony_caller_id: Optional[str] = None,
+        telephony_metadata: Optional[dict] = None,
     ) -> str:
         """
         Create a new session: connect to Gemini, start background audio loop,
@@ -310,7 +313,11 @@ class DirectSessionManager:
             else make_session_voice_state()
         )
 
-        channel = await telephony.connect(phone)
+        channel = await telephony.connect(
+            phone,
+            caller_id=telephony_caller_id,
+            metadata=telephony_metadata,
+        )
         if channel.metadata is None:
             channel.metadata = {}
         channel.metadata["internal_call_id"] = str(call_id)
@@ -393,6 +400,7 @@ class DirectSessionManager:
             call_id=call_id,
             phone=phone,
             telephony_channel=channel,
+            telephony_adapter=telephony,
             audio_bridge=audio_bridge,
             voice_provider=voice,
             event_handler=event_handler,
@@ -711,6 +719,20 @@ class DirectSessionManager:
                     session_id=session_id,
                     error=str(exc),
                 )
+
+        if session.telephony_adapter is not None and session.telephony_channel is not None:
+            leg_id = session.telephony_channel.provider_leg_id
+            if leg_id:
+                try:
+                    await session.telephony_adapter.terminate_leg(leg_id)
+                except Exception as exc:
+                    log.error(
+                        "session_manager.telephony_leg_terminate_error",
+                        session_id=session_id,
+                        call_id=str(session.call_id),
+                        leg_id=leg_id,
+                        error=str(exc),
+                    )
 
         # ── Finalize call in DB ───────────────────────────────────────────────
         if session.event_handler:

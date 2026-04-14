@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -64,6 +65,9 @@ class MangoClientError(RuntimeError):
 
 
 class MangoClient:
+    _EXTENSIONS_CACHE_TTL_SECONDS = 30.0
+    _shared_extensions_cache: dict[tuple[str, str], tuple[float, list[MangoExtensionPayload]]] = {}
+
     def __init__(self, config: MangoApiConfig) -> None:
         self.config = config
         self._http = httpx.AsyncClient(
@@ -168,69 +172,31 @@ class MangoClient:
         return _deduplicate_lines(lines)
 
     async def list_extensions(self) -> list[MangoExtensionPayload]:
-        payload = await self._post_json("/config/users/request", {})
-        records = _extract_records(payload, preferred_keys=("users", "employees", "extensions"))
-        extensions: list[MangoExtensionPayload] = []
-        for record in records:
-            general = record.get("general") if isinstance(record.get("general"), dict) else {}
-            telephony = record.get("telephony") if isinstance(record.get("telephony"), dict) else {}
-            extension = _first_non_empty(
-                telephony,
-                "extension",
-                "internal_number",
-                "sip_number",
-                "short_number",
-                "number",
-            ) or _first_non_empty(
-                record,
-                "extension",
-                "internal_number",
-                "sip_number",
-                "short_number",
-                "number",
+        cache_key = (self.config.base_url, self.config.api_key)
+        cached = self._shared_extensions_cache.get(cache_key)
+        now = time.monotonic()
+        if cached is not None and (now - cached[0]) < self._EXTENSIONS_CACHE_TTL_SECONDS:
+            log.info(
+                "mango_client.extensions_cache_hit",
+                extension_count=len(cached[1]),
+                base_url=self.config.base_url,
             )
-            if not extension:
-                continue
-            provider_resource_id = (
-                _first_non_empty(record, "id", "user_id", "employee_id")
-                or _first_non_empty(general, "id", "user_id", "employee_id")
-                or extension
-            )
-            line_phone_number = _first_non_empty(
-                telephony,
-                "outgoingline",
-                "outgoing_line",
-                "line_number",
-                "phone_number",
-            ) or _first_non_empty(
-                record,
-                "line_number",
-                "outgoing_line",
-                "phone_number",
-            )
-            extensions.append(
-                MangoExtensionPayload(
-                    provider_resource_id=provider_resource_id,
-                    extension=extension,
-                    display_name=(
-                        _first_non_empty(general, "name", "full_name", "fio", "title")
-                        or _first_non_empty(record, "name", "full_name", "fio", "title")
-                    ),
-                    line_provider_resource_id=_first_non_empty(
-                        telephony,
-                        "line_id",
-                        "outgoing_line_id",
-                        "line_number_id",
-                    ) or _first_non_empty(
-                        record,
-                        "line_id",
-                        "outgoing_line_id",
-                        "line_number_id",
-                    ),
-                    line_phone_number=normalize_mango_phone(line_phone_number),
-                    raw_payload=record,
+            return list(cached[1])
+
+        try:
+            payload = await self._post_json("/config/users/request", {})
+        except MangoClientError as exc:
+            if exc.http_status == 429 and cached is not None:
+                log.warning(
+                    "mango_client.extensions_rate_limited_using_cache",
+                    extension_count=len(cached[1]),
+                    base_url=self.config.base_url,
                 )
-            )
+                return list(cached[1])
+            raise
+
+        records = _extract_records(payload, preferred_keys=("users", "employees", "extensions"))
+        extensions = _parse_extensions(records)
 
         log.info(
             "mango_client.extensions_loaded",
@@ -238,6 +204,7 @@ class MangoClient:
             base_url=self.config.base_url,
             api_key_masked=_mask_secret(self.config.api_key),
         )
+        self._shared_extensions_cache[cache_key] = (now, list(extensions))
         return _deduplicate_extensions(extensions)
 
     async def _post_json(self, path: str, payload: dict[str, Any]) -> Any:
@@ -391,6 +358,71 @@ def _deduplicate_lines(lines: list[MangoLinePayload]) -> list[MangoLinePayload]:
     for item in lines:
         deduped[(item.provider_resource_id, item.phone_number)] = item
     return list(deduped.values())
+
+
+def _parse_extensions(records: list[dict[str, Any]]) -> list[MangoExtensionPayload]:
+    extensions: list[MangoExtensionPayload] = []
+    for record in records:
+        general = record.get("general") if isinstance(record.get("general"), dict) else {}
+        telephony = record.get("telephony") if isinstance(record.get("telephony"), dict) else {}
+        extension = _first_non_empty(
+            telephony,
+            "extension",
+            "internal_number",
+            "sip_number",
+            "short_number",
+            "number",
+        ) or _first_non_empty(
+            record,
+            "extension",
+            "internal_number",
+            "sip_number",
+            "short_number",
+            "number",
+        )
+        if not extension:
+            continue
+        provider_resource_id = (
+            _first_non_empty(record, "id", "user_id", "employee_id")
+            or _first_non_empty(general, "id", "user_id", "employee_id")
+            or extension
+        )
+        line_phone_number = _first_non_empty(
+            telephony,
+            "outgoingline",
+            "outgoing_line",
+            "line_number",
+            "phone_number",
+        ) or _first_non_empty(
+            record,
+            "line_number",
+            "outgoing_line",
+            "phone_number",
+        )
+        extensions.append(
+            MangoExtensionPayload(
+                provider_resource_id=provider_resource_id,
+                extension=extension,
+                display_name=(
+                    _first_non_empty(general, "name", "full_name", "fio", "title")
+                    or _first_non_empty(record, "name", "full_name", "fio", "title")
+                ),
+                line_provider_resource_id=_first_non_empty(
+                    telephony,
+                    "line_id",
+                    "outgoing_line_id",
+                    "line_number_id",
+                ) or _first_non_empty(
+                    record,
+                    "line_id",
+                    "outgoing_line_id",
+                    "line_number_id",
+                ),
+                line_phone_number=normalize_mango_phone(line_phone_number),
+                raw_payload=record,
+            )
+        )
+    return extensions
 
 
 def _deduplicate_extensions(items: list[MangoExtensionPayload]) -> list[MangoExtensionPayload]:

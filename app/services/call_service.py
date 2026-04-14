@@ -63,6 +63,8 @@ class CallService:
         mode: CallMode = CallMode.AUTO,
         actor: str = "system",
         agent_profile_id: Optional[uuid.UUID] = None,
+        runtime_context: Optional[dict] = None,
+        skip_policy_checks: bool = False,
     ) -> Call:
         """
         Normalize phone, run pre-call checks, persist a Call, and hand off to engine.
@@ -79,7 +81,7 @@ class CallService:
             phone = normalize_phone(raw_phone)
 
         # ── Deny list check ────────────────────────────────────────────────────
-        if not is_browser_call and await self._blocked_repo.is_blocked(phone):
+        if not skip_policy_checks and not is_browser_call and await self._blocked_repo.is_blocked(phone):
             log.warning("call_blocked", phone=phone, actor=actor)
             raise BlockedPhoneError(
                 f"Phone number {phone} is on the deny list",
@@ -87,7 +89,7 @@ class CallService:
             )
 
         # ── Quiet hours check ──────────────────────────────────────────────────
-        if not is_browser_call:
+        if not skip_policy_checks and not is_browser_call:
             _check_quiet_hours()
 
         agent_profile = None
@@ -110,6 +112,8 @@ class CallService:
         if agent_profile is not None:
             call.agent_profile = agent_profile
         await self.repo.save(call)
+        if runtime_context:
+            setattr(call, "_runtime_context", dict(runtime_context))
         await self._audit(call, "created", actor=actor)
         log.info("call_created", call_id=str(call.id), phone=phone, mode=mode)
 

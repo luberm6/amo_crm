@@ -102,7 +102,12 @@ class TwilioTelephonyAdapter(AbstractTelephonyAdapter):
 
     # ── Audio channel API ─────────────────────────────────────────────────────
 
-    async def connect(self, phone: str) -> TelephonyChannel:
+    async def connect(
+        self,
+        phone: str,
+        caller_id: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ) -> TelephonyChannel:
         """
         TODO: Initiate outbound call via Twilio REST API and return channel handle.
 

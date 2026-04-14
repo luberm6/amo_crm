@@ -21,6 +21,7 @@ import pytest
 
 from app.core.config import settings
 from app.integrations.direct.session_manager import DirectSession, DirectSessionManager
+from app.integrations.telephony.base import TelephonyLegState
 from app.integrations.telephony.stub import StubTelephonyAdapter
 from app.integrations.voice.stub import StubVoiceProvider
 from app.models.call import CallStatus
@@ -172,3 +173,46 @@ async def test_terminate_session_bridge_close_error_does_not_crash(mock_session_
     # Не должен упасть
     await sm.terminate_session(session_id)
     assert sm.active_count() == 0
+
+
+@pytest.mark.anyio
+async def test_terminate_session_terminates_telephony_leg(mock_session_factory):
+    """Direct session shutdown must also terminate the provider leg, not only the AI session."""
+    sm = DirectSessionManager()
+    telephony = StubTelephonyAdapter()
+    voice = StubVoiceProvider()
+
+    old_el_enabled = settings.elevenlabs_enabled
+    old_el_key = settings.elevenlabs_api_key
+    old_el_voice = settings.elevenlabs_voice_id
+    old_greeting_enabled = settings.direct_initial_greeting_enabled
+    old_voice_strategy = settings.direct_voice_strategy
+    try:
+        settings.direct_voice_strategy = "tts_primary"
+        settings.elevenlabs_enabled = True
+        settings.elevenlabs_api_key = "k"
+        settings.elevenlabs_voice_id = "v"
+        settings.direct_initial_greeting_enabled = False
+        with patch(
+            "app.integrations.direct.session_manager.GeminiLiveClient",
+            new=MockGeminiLiveClient,
+        ):
+            session_id = await sm.create_session(
+                call_id=uuid.uuid4(),
+                phone="+79991234567",
+                telephony=telephony,
+                voice=voice,
+                session_factory=mock_session_factory,
+                system_prompt="Тест",
+            )
+    finally:
+        settings.elevenlabs_enabled = old_el_enabled
+        settings.elevenlabs_api_key = old_el_key
+        settings.elevenlabs_voice_id = old_el_voice
+        settings.direct_initial_greeting_enabled = old_greeting_enabled
+        settings.direct_voice_strategy = old_voice_strategy
+
+    session = sm.get_session(session_id)
+    leg_id = session.telephony_channel.provider_leg_id
+    await sm.terminate_session(session_id)
+    assert await telephony.get_leg_state(leg_id) == TelephonyLegState.TERMINATED

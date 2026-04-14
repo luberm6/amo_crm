@@ -326,6 +326,12 @@ class MangoEventProcessor:
 
 
 def _extract_leg_id(payload: dict[str, Any]) -> Optional[str]:
+    nested_entry = payload.get("entry")
+    if isinstance(nested_entry, dict):
+        nested_id = _str_or(nested_entry, "id", "call_id", "uid", "entry_id")
+        if nested_id:
+            return nested_id
+
     nested_call = payload.get("call")
     if isinstance(nested_call, dict):
         nested_id = _str_or(nested_call, "id", "call_id", "uid")
