@@ -113,6 +113,7 @@ class MangoTelephonyService:
                     phone_number=remote.phone_number,
                 )
 
+            line.phone_number = remote.phone_number
             line.display_name = remote.display_name or remote.phone_number
             line.extension = remote.extension or (
                 matched_extension.extension if matched_extension is not None else None

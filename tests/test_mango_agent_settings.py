@@ -8,12 +8,14 @@ import json
 import uuid
 
 import pytest
+import httpx
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.core.config as cfg
 from app.db.session import get_db
 from app.integrations.telephony.mango_client import (
+    MangoClient,
     MangoApiConfig,
     MangoExtensionPayload,
     MangoLinePayload,
@@ -346,6 +348,107 @@ async def test_mango_line_sync_stores_normalized_phone(session: AsyncSession) ->
     result = await service.sync_lines()
 
     assert any(item.phone_number == "+79585382099" for item in result.items)
+
+
+@pytest.mark.anyio
+async def test_mango_line_sync_updates_existing_phone_to_normalized(session: AsyncSession) -> None:
+    existing = await session.merge(
+        TelephonyLine(
+            provider="mango",
+            provider_resource_id="line-existing",
+            phone_number="79300350609",
+            display_name="Existing line",
+            extension=None,
+            is_active=True,
+            is_inbound_enabled=True,
+            is_outbound_enabled=False,
+            raw_payload={"number": "79300350609"},
+            synced_at=datetime.now(timezone.utc),
+        )
+    )
+    await session.flush()
+
+    client = _FakeMangoClient(
+        config=MangoApiConfig(
+            base_url="https://app.mango-office.ru/vpbx",
+            api_key="api-key",
+            api_salt="api-salt",
+        ),
+        lines=[
+            MangoLinePayload(
+                provider_resource_id="line-existing",
+                phone_number="+79300350609",
+                display_name="Existing line",
+                extension=None,
+                is_active=True,
+                is_inbound_enabled=True,
+                is_outbound_enabled=False,
+                raw_payload={"number": "79300350609"},
+            )
+        ],
+        extensions=[],
+    )
+    service = MangoTelephonyService(session, client=client)
+
+    await service.sync_lines()
+
+    await session.refresh(existing)
+    assert existing.phone_number == "+79300350609"
+
+
+@pytest.mark.anyio
+async def test_mango_list_extensions_parses_nested_live_payload() -> None:
+    payload = {
+        "users": [
+            {
+                "general": {
+                    "name": "Каширина Ольга",
+                    "email": "masked@example.com",
+                },
+                "telephony": {
+                    "extension": "10",
+                    "outgoingline": "79585382099",
+                    "numbers": [
+                        {
+                            "number": "sip:olga@tenant.mangosip.ru",
+                            "protocol": "sip",
+                            "status": "on",
+                        }
+                    ],
+                },
+            }
+        ]
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/config/users/request")
+        return httpx.Response(200, json=payload)
+
+    client = MangoClient(
+        MangoApiConfig(
+            base_url="https://app.mango-office.ru/vpbx",
+            api_key="api-key",
+            api_salt="api-salt",
+        )
+    )
+    await client._http.aclose()
+    client._http = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://app.mango-office.ru/vpbx",
+        timeout=15.0,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+    try:
+        items = await client.list_extensions()
+    finally:
+        await client.aclose()
+
+    assert len(items) == 1
+    assert items[0].provider_resource_id == "10"
+    assert items[0].extension == "10"
+    assert items[0].display_name == "Каширина Ольга"
+    assert items[0].line_phone_number == "+79585382099"
 
 
 @pytest.mark.anyio

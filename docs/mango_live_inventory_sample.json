@@ -1,0 +1,236 @@
+{
+  "generated_at_utc": "2026-04-14T02:50:33Z",
+  "env": {
+    "mango_api_key_present": true,
+    "mango_api_salt_present": true,
+    "mango_api_base_url": "https://app.mango-office.ru/vpbx",
+    "mango_from_ext_present": false,
+    "mango_webhook_secret_present": false,
+    "mango_webhook_shared_secret_present": false,
+    "admin_auth_configured": true,
+    "mango_client_env_used": [
+      "MANGO_API_KEY",
+      "MANGO_API_SALT",
+      "MANGO_API_BASE_URL"
+    ],
+    "mango_runtime_env_used": [
+      "MANGO_FROM_EXT",
+      "MANGO_WEBHOOK_SECRET",
+      "MANGO_WEBHOOK_SHARED_SECRET"
+    ],
+    "mango_api_key_masked": "xj***a0",
+    "mango_api_salt_masked": "4b***ai"
+  },
+  "dns_tls": {
+    "host": "app.mango-office.ru",
+    "dns_ok": true,
+    "addresses": [
+      "81.88.85.67"
+    ],
+    "tls_ok": true,
+    "tls_version": "TLSv1.2",
+    "cipher": "ECDHE-RSA-AES256-GCM-SHA384",
+    "cert_subject": [
+      [
+        [
+          "commonName",
+          "*.mango-office.ru"
+        ]
+      ]
+    ],
+    "cert_issuer": [
+      [
+        [
+          "countryName",
+          "BE"
+        ]
+      ],
+      [
+        [
+          "organizationName",
+          "GlobalSign nv-sa"
+        ]
+      ],
+      [
+        [
+          "commonName",
+          "GlobalSign GCC R3 DV TLS CA 2020"
+        ]
+      ]
+    ]
+  },
+  "direct_mango_calls": [
+    {
+      "endpoint": "/incominglines",
+      "status_code": 200,
+      "success": true,
+      "body_preview": "{\"top_level_keys\": [\"lines\", \"result\"], \"line_count\": 2}",
+      "parsed_count": 2,
+      "parsed_preview": [
+        {
+          "remote_line_id": "405519147",
+          "phone_number": "+795***2099",
+          "schema_name": "По умолчанию",
+          "display_name": "По умолчанию",
+          "extension": null,
+          "is_active": true,
+          "is_inbound_enabled": true,
+          "is_outbound_enabled": false,
+          "raw_payload": {
+            "remote_line_id": "405519147",
+            "phone_number": "+795***2099",
+            "schema_name": "По умолчанию",
+            "name": null,
+            "comment": null,
+            "region": "98",
+            "schema_id": "11071988"
+          },
+          "line_phone_number": null
+        },
+        {
+          "remote_line_id": "405622036",
+          "phone_number": "+793***0609",
+          "schema_name": "ДЛЯ ИИ менеджера",
+          "display_name": "ДЛЯ ИИ менеджера",
+          "extension": null,
+          "is_active": true,
+          "is_inbound_enabled": true,
+          "is_outbound_enabled": false,
+          "raw_payload": {
+            "remote_line_id": "405622036",
+            "phone_number": "+793***0609",
+            "schema_name": "ДЛЯ ИИ менеджера",
+            "name": null,
+            "comment": null,
+            "region": "98",
+            "schema_id": "11086409"
+          },
+          "line_phone_number": null
+        }
+      ]
+    },
+    {
+      "endpoint": "/config/users/request",
+      "status_code": 200,
+      "success": true,
+      "body_preview": "{\"top_level_keys\": [\"users\"], \"user_count\": 3}",
+      "parsed_count": 2,
+      "parsed_preview": [
+        {
+          "provider_resource_id": "10",
+          "extension": "10",
+          "display_name": "<redacted>",
+          "line_provider_resource_id": null,
+          "line_phone_number": "+795***2099",
+          "raw_payload": {
+            "provider_resource_id": null,
+            "extension": "10",
+            "display_name": "<redacted>",
+            "line_provider_resource_id": null,
+            "line_phone_number": "+795***2099"
+          },
+          "phone_number": null
+        },
+        {
+          "provider_resource_id": "12",
+          "extension": "12",
+          "display_name": "<redacted>",
+          "line_provider_resource_id": null,
+          "line_phone_number": "+795***2099",
+          "raw_payload": {
+            "provider_resource_id": null,
+            "extension": "12",
+            "display_name": "<redacted>",
+            "line_provider_resource_id": null,
+            "line_phone_number": "+795***2099"
+          },
+          "phone_number": null
+        }
+      ]
+    }
+  ],
+  "backend_path": {
+    "login": {
+      "success": true,
+      "status_code": 200,
+      "detail": null
+    },
+    "sync_lines": {
+      "status_code": 200,
+      "success": true,
+      "body_preview": "{\"items\": [{\"id\": \"bfe8e766-a7d7-413a-92fc-cb8cfd3af230\", \"provider\": \"mango\", \"provider_resource_id\": \"405622036\", \"phone_number\": \"+79300350609\", \"display_name\": \"ДЛЯ ИИ менеджера\", \"extension\": null, \"is_active\": true, \"is_inbound_enabled\": true, \"is_outbound_enabled\": false, \"synced_at\": \"2026-04-14T02:50:35.804175Z\"}, {\"id\": \"69cbac9f-26fe-4039-a896-531765d873e0\", \"provider\": \"mango\", \"provider_resource_id\": \"405519147\", \"phone_number\": \"+79585382099\", \"display_name\": \"По умолчанию\", \"extension\": null, \"is_active\": true, \"is_inbound_enabled\": true, \"is_outbound_enabled\": false, \"synced_at\": \"2026-04-14T02:50:35.804175Z\"}], \"total\": 2, \"synced_count\": 2, \"deactivated_count\": 0, \"source\": \"mango_api\", \"synced_at\": \"2026-04-14T02:50:35.804175Z\"}"
+    },
+    "lines_get": {
+      "status_code": 200,
+      "success": true,
+      "total": 2,
+      "items_preview": [
+        {
+          "id": "bfe8e766-a7d7-413a-92fc-cb8cfd3af230",
+          "remote_line_id": "405622036",
+          "phone_number": "+793***0609",
+          "display_name": "ДЛЯ ИИ менеджера",
+          "schema_name": null,
+          "label": null,
+          "is_active": true
+        },
+        {
+          "id": "69cbac9f-26fe-4039-a896-531765d873e0",
+          "remote_line_id": "405519147",
+          "phone_number": "+795***2099",
+          "display_name": "По умолчанию",
+          "schema_name": null,
+          "label": null,
+          "is_active": true
+        }
+      ]
+    },
+    "extensions_get": {
+      "status_code": 502,
+      "success": false,
+      "body_preview": "{\"detail\": {\"error\": \"mango_api_unavailable\", \"message\": \"Failed to load Mango extensions.\", \"detail\": {\"stage\": \"http_response\", \"http_status\": 429, \"detail\": {\"name\": \"Too Many Requests\", \"message\": \"Product rate limit exceeded for action vpbx/config/users/request\", \"code\": 0, \"status\": 429}}}}"
+    },
+    "db_lines": [
+      {
+        "id": "bfe8e766-a7d7-413a-92fc-cb8cfd3af230",
+        "provider": "mango",
+        "remote_line_id": "405622036",
+        "phone_number": "+793***0609",
+        "display_name": "ДЛЯ ИИ менеджера",
+        "schema_name": null,
+        "is_active": true,
+        "is_inbound_enabled": true,
+        "is_outbound_enabled": false
+      },
+      {
+        "id": "69cbac9f-26fe-4039-a896-531765d873e0",
+        "provider": "mango",
+        "remote_line_id": "405519147",
+        "phone_number": "+795***2099",
+        "display_name": "По умолчанию",
+        "schema_name": null,
+        "is_active": true,
+        "is_inbound_enabled": true,
+        "is_outbound_enabled": false
+      }
+    ],
+    "binding": {
+      "agent_id": "41411345-7e97-4ed5-a738-b42af643571d",
+      "create_status_code": 201,
+      "patch_status_code": 200,
+      "get_status_code": 200,
+      "patch_success": true,
+      "get_success": true,
+      "target_remote_line_id": "405622036",
+      "patch_body_preview": "{\"telephony_provider\": \"mango\", \"telephony_line_id\": \"bfe8e766-a7d7-413a-92fc-cb8cfd3af230\", \"telephony_line\": {\"remote_line_id\": \"405622036\", \"phone_number\": \"+793***0609\", \"display_name\": \"ДЛЯ ИИ менеджера\", \"schema_name\": null, \"label\": null}}",
+      "get_body_preview": "{\"telephony_provider\": \"mango\", \"telephony_line_id\": \"bfe8e766-a7d7-413a-92fc-cb8cfd3af230\", \"telephony_line\": {\"remote_line_id\": \"405622036\", \"phone_number\": \"+793***0609\", \"display_name\": \"ДЛЯ ИИ менеджера\", \"schema_name\": null, \"label\": null}}"
+    }
+  },
+  "verdict": {
+    "mango_connectivity": "yes",
+    "auth_signature": "yes",
+    "live_inventory_fetched": "yes",
+    "sync_lines_live_verified": "yes",
+    "agent_binding_verified_on_live_data": "yes"
+  }
+}

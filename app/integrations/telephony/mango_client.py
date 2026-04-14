@@ -165,7 +165,16 @@ class MangoClient:
         records = _extract_records(payload, preferred_keys=("users", "employees", "extensions"))
         extensions: list[MangoExtensionPayload] = []
         for record in records:
+            general = record.get("general") if isinstance(record.get("general"), dict) else {}
+            telephony = record.get("telephony") if isinstance(record.get("telephony"), dict) else {}
             extension = _first_non_empty(
+                telephony,
+                "extension",
+                "internal_number",
+                "sip_number",
+                "short_number",
+                "number",
+            ) or _first_non_empty(
                 record,
                 "extension",
                 "internal_number",
@@ -175,24 +184,43 @@ class MangoClient:
             )
             if not extension:
                 continue
-            provider_resource_id = _first_non_empty(record, "id", "user_id", "employee_id") or extension
+            provider_resource_id = (
+                _first_non_empty(record, "id", "user_id", "employee_id")
+                or _first_non_empty(general, "id", "user_id", "employee_id")
+                or extension
+            )
+            line_phone_number = _first_non_empty(
+                telephony,
+                "outgoingline",
+                "outgoing_line",
+                "line_number",
+                "phone_number",
+            ) or _first_non_empty(
+                record,
+                "line_number",
+                "outgoing_line",
+                "phone_number",
+            )
             extensions.append(
                 MangoExtensionPayload(
                     provider_resource_id=provider_resource_id,
                     extension=extension,
-                    display_name=_first_non_empty(record, "name", "full_name", "fio", "title"),
+                    display_name=(
+                        _first_non_empty(general, "name", "full_name", "fio", "title")
+                        or _first_non_empty(record, "name", "full_name", "fio", "title")
+                    ),
                     line_provider_resource_id=_first_non_empty(
+                        telephony,
+                        "line_id",
+                        "outgoing_line_id",
+                        "line_number_id",
+                    ) or _first_non_empty(
                         record,
                         "line_id",
                         "outgoing_line_id",
                         "line_number_id",
                     ),
-                    line_phone_number=_first_non_empty(
-                        record,
-                        "line_number",
-                        "outgoing_line",
-                        "phone_number",
-                    ),
+                    line_phone_number=normalize_mango_phone(line_phone_number),
                     raw_payload=record,
                 )
             )

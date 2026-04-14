@@ -1,259 +1,268 @@
-# Mango Live Integration Audit
+# Mango Live Audit
 
-**Date**: 2026-04-13  
-**Type**: Real live API calls — no mocks, no paper audit  
-**Commit**: see section 13
+Date: 2026-04-14  
+Method: Real env-backed Mango API calls + backend `sync-lines` + DB verification + agent binding roundtrip  
+Tooling: `scripts/mango_live_probe.py`, `docs/mango_live_inventory_sample.json`
 
----
-
-## 1. Executive Summary
+## Executive Summary
 
 | Check | Result |
 |---|---|
-| Mango connectivity | **YES** |
-| Auth / signature | **YES** |
-| Live inventory fetched | **YES** — 2 lines |
-| sync-lines via backend API | **YES** — HTTP 200, 2 записи в БД |
-| Agent binding on live data | **YES** — PATCH + GET roundtrip подтверждён |
-| Parser fix applied | **YES** — `schema_name` добавлен как fallback для display_name |
+| Mango connectivity | YES |
+| Auth / signature | YES |
+| Live inventory fetched | YES |
+| `sync-lines` live verified | YES |
+| Agent binding on live Mango data | YES |
+| Repeated `config/users/request` calls stable | NO |
 
----
+The Mango tenant is reachable with the configured credentials. Real live requests returned:
 
-## 2. Live Env Diagnostics
+- 2 incoming lines from `/incominglines`
+- 2 parseable extension/user records from `/config/users/request`
+- a successful backend `POST /v1/telephony/mango/sync-lines`
+- a successful live roundtrip for `PATCH` + `GET /v1/agent-profiles/{id}/settings`
 
-| Параметр | Статус |
+The main operational caveat is **rate limiting on repeated `config/users/request` calls**. The first direct request succeeded with data, but repeated calls in the same probe window returned **HTTP 429**, which also affects `GET /v1/telephony/mango/extensions` during the same run.
+
+## Live Env Diagnostics
+
+| Variable | Status |
 |---|---|
-| `MANGO_API_KEY` | ✅ Заполнен (mask: `xj***a0`) |
-| `MANGO_API_SALT` | ✅ Заполнен (mask: `4b***ai`) |
-| `MANGO_API_BASE_URL` | дефолт → `https://app.mango-office.ru/vpbx` |
-| `MANGO_FROM_EXT` | ❌ Пуст (outbound невозможен) |
-| `MANGO_WEBHOOK_SECRET` | ❌ Пуст |
-| `MANGO_WEBHOOK_SHARED_SECRET` | ❌ Пуст |
-| `TELEPHONY_PROVIDER` | `stub` (Mango выключен в runtime) |
+| `MANGO_API_KEY` | set |
+| `MANGO_API_SALT` | set |
+| `MANGO_API_BASE_URL` | `https://app.mango-office.ru/vpbx` |
+| `MANGO_FROM_EXT` | not set |
+| `MANGO_WEBHOOK_SECRET` | not set |
+| `MANGO_WEBHOOK_SHARED_SECRET` | not set |
+| Admin auth for backend probe | configured |
 
-Для аудита и sync credentials достаточны. Для outbound и webhook нужны дополнительные переменные.
+The Mango client currently reads:
 
----
+- `MANGO_API_KEY`
+- `MANGO_API_SALT`
+- `MANGO_API_BASE_URL`
 
-## 3. Реально выполненные Mango API вызовы
+The broader Mango runtime path also depends on:
 
-### 3.1 Прямые запросы через MangoClient
+- `MANGO_FROM_EXT`
+- `MANGO_WEBHOOK_SECRET`
+- `MANGO_WEBHOOK_SHARED_SECRET`
 
-| Endpoint | Method | Status | Elapsed | Result |
-|---|---|---|---|---|
-| `/incominglines` | POST | **200** | 1278 ms | 2 lines |
-| `/config/users/request` | POST | **200** | 515 ms | 0 users (empty) |
+## Real Connectivity
 
-Auth: форма `vpbx_api_key + sign=SHA256(key+json+salt) + json={}` — принята.
+DNS and TLS were verified successfully against `app.mango-office.ru`:
 
-### 3.2 Через backend REST API (после запуска сервера и миграции 0012)
+- DNS resolved to `81.88.85.67`
+- TLS handshake succeeded
+- certificate CN matched `*.mango-office.ru`
 
-| Endpoint | Method | Status | Result |
-|---|---|---|---|
-| `POST /v1/admin/auth/login` | POST | **200** | token OK |
-| `POST /v1/telephony/mango/sync-lines` | POST | **200** | 2 lines synced |
-| `GET /v1/telephony/mango/lines` | GET | **200** | 2 lines returned |
-| `GET /v1/telephony/mango/extensions` | GET | **200** | 0 extensions |
-| `POST /v1/agents` | POST | **200** | agent created |
-| `PATCH /v1/agent-profiles/{id}/settings` | PATCH | **200** | binding saved |
-| `GET /v1/agent-profiles/{id}/settings` | GET | **200** | binding readable |
+## Real Mango API Calls
 
----
+### Direct call: `POST /incominglines`
 
-## 4. Какие реальные данные Mango вернул
+- Status: `200`
+- Success: yes
+- Parsed lines: `2`
 
-### Линии (`/incominglines`) — 2 объекта
+Confirmed live line data:
 
-**Линия 1**
-
-| Поле | Значение |
-|---|---|
-| `line_id` | `405519147` |
-| `number` | `79585382099` |
-| `name` | `null` |
-| `schema_name` | `"По умолчанию"` |
-| `schema_id` | `11071988` |
-| `region` | `98` |
-
-**Линия 2 — для AI менеджера** ⭐
-
-| Поле | Значение |
-|---|---|
-| `line_id` | `405622036` |
-| `number` | `79300350609` |
-| `name` | `null` |
-| `schema_name` | `"ДЛЯ ИИ менеджера"` |
-| `schema_id` | `11086409` |
-| `region` | `98` |
-
-**Extensions** (`/config/users/request`) — `{"users": []}` — пусто.  
-Это подтверждает, что в аккаунте нет настроенных SIP/IP-пользователей.
-
----
-
-## 5. Что записалось в telephony_lines
-
-После двух sync-cycles (до и после parser fix):
-
-| provider_resource_id | phone_number | display_name | is_active | is_inbound | is_outbound | synced_at |
-|---|---|---|---|---|---|---|
-| `405519147` | `79585382099` | `По умолчанию` | true | true | false | 2026-04-13T07:19:52Z |
-| `405622036` | `79300350609` | `ДЛЯ ИИ менеджера` | true | true | false | 2026-04-13T07:19:52Z |
-
-Все поля схемы заполнены корректно. `raw_payload` содержит полный JSON-ответ Mango.
-
----
-
-## 6. Проверка live binding agent → Mango line
-
-```
-PATCH /v1/agent-profiles/a6df034e-c44c-48ee-9f00-ec2ffe06badd/settings
-Body: {"telephony_provider": "mango", "telephony_line_id": "bfe8e766-a7d7-413a-92fc-cb8cfd3af230"}
-→ HTTP 200
-→ telephony_line.id:                   bfe8e766-a7d7-413a-92fc-cb8cfd3af230
-→ telephony_line.phone_number:          79300350609
-→ telephony_line.provider_resource_id:  405622036
-→ telephony_line.display_name:          ДЛЯ ИИ менеджера
-→ telephony_line.is_active:             true
-
-GET /v1/agent-profiles/{id}/settings → HTTP 200
-→ Все поля прочитаны корректно (roundtrip подтверждён)
-```
-
-**DB verification:**
-```
-agent_id: a6df034e...
-telephony_provider: mango
-telephony_line_id: bfe8e766... (FK в telephony_lines)
-phone_number: 79300350609
-display_name: ДЛЯ ИИ менеджера
-provider_resource_id: 405622036
-```
-
-Привязка работает end-to-end.
-
----
-
-## 7. Подходит ли это уже для UI select
-
-**Да.** Данные достаточны для dropdown в Agent Editor:
-
-| Поле | Значение | Пригодность |
+| remote_line_id | phone_number | schema_name |
 |---|---|---|
-| ID для binding | `telephony_line.id` (UUID) | ✅ Стабильный ключ |
-| Отображаемый текст | `display_name` = schema_name | ✅ Human-readable после fix |
-| Номер телефона | `phone_number` | ✅ |
-| Активность | `is_active` | ✅ Фильтр |
-| Inbound/outbound | `is_inbound_enabled`, `is_outbound_enabled` | ✅ |
+| `405519147` | `+79585382099` | `По умолчанию` |
+| `405622036` | `+79300350609` | `ДЛЯ ИИ менеджера` |
 
-**Рекомендация для UI select**: отображать `"{display_name} ({phone_number})"`,
-фильтровать по `is_active=true`, сохранять в агент `telephony_line_id` (UUID).
+### Direct call: `POST /config/users/request`
 
----
+- Status: `200`
+- Success: yes
+- Parsed extension/user records: `2`
 
-## 8. Подходит ли это для routing foundation
+Parseable live records included:
 
-### Inbound (входящий звонок → агент)
+| extension | display_name | outgoing_line |
+|---|---|---|
+| `10` | redacted in repo docs | `+79585382099` |
+| `12` | redacted in repo docs | `+79585382099` |
 
-**Готово частично:**
-- Есть `phone_number` в `telephony_lines`
-- Можно: `SELECT * FROM telephony_lines WHERE phone_number = :caller_id AND provider='mango'`
-- Затем: найти агент по `telephony_line_id`
-- **Не готово**: webhook не настроен (секрет пуст, URL не зарегистрирован в Mango)
+Important note:
 
-### Outbound (агент → исходящий через Mango)
+- Mango returned a **nested payload** (`general` + `telephony`)
+- the original parser did not recognize this tenant-specific shape
+- the parser was updated to handle the nested structure
 
-**Не готово:**
-- `MANGO_FROM_EXT` пуст — `MangoTelephonyAdapter.originate_call()` упадёт
-- `TELEPHONY_PROVIDER=stub` — Mango не используется в runtime
-- `is_outbound_enabled=False` для обеих линий (нужно уточнить в кабинете Mango)
+## Backend `sync-lines` Verification
 
----
+### `POST /v1/telephony/mango/sync-lines`
 
-## 9. Что пришлось исправить
+- Status: `200`
+- Success: yes
+- Synced rows: `2`
+- Deactivated rows: `0`
 
-### Parser fix: `schema_name` как fallback для display_name
+### What was written to `telephony_lines`
 
-**Файл**: `app/integrations/telephony/mango_client.py`
+After the live sync and DB query, the stored lines were:
 
-**Проблема**: Mango возвращает `"name": null` для линий. Парсер не находил display_name
-и ставил null. Сервис подставлял `phone_number` вместо human-readable label.
+| provider | remote_line_id | phone_number | display_name | is_active |
+|---|---|---|---|---|
+| `mango` | `405622036` | `+79300350609` | `ДЛЯ ИИ менеджера` | `true` |
+| `mango` | `405519147` | `+79585382099` | `По умолчанию` | `true` |
 
-**Решение**: добавить `"schema_name"` в список ключей для `display_name`:
+Confirmed facts:
 
-```python
-# Before:
-display_name=_first_non_empty(record, "display_name", "name", "title", "label", "line_name"),
+- `phone_number` is now stored in normalized `+7...` form
+- `provider_resource_id` is the stable remote Mango line ID
+- `display_name` is correctly derived for the live AI line
+- the sync path does not report false success on empty line inventory
 
-# After:
-display_name=_first_non_empty(record, "display_name", "name", "title", "label", "line_name", "schema_name"),
-```
+Current limitation:
 
-**Результат**: `display_name` теперь `"ДЛЯ ИИ менеджера"` вместо `"79300350609"`.
+- `schema_name` is visible in the raw Mango payload and reflected into `display_name`
+- it is **not materialized as a dedicated database column yet**
 
----
+## Live Binding Check: Agent -> Mango Line
 
-## 10. Что реально протестировано
+The probe created a temporary agent through the backend, bound it to the synced Mango line, read the settings back, and deleted the temporary agent.
 
-- [x] Docker Compose → Postgres + Redis запущены
-- [x] Alembic upgrade head → применена migration 0012 (telephony_lines + agent_profiles FK)
-- [x] Uvicorn backend запущен на :8000
-- [x] `POST /v1/admin/auth/login` → JWT token получен
-- [x] `MangoClient.from_settings()` — diagnostics: configured=True
-- [x] `POST /incominglines` → HTTP 200, 2 lines
-- [x] `POST /config/users/request` → HTTP 200, 0 users
-- [x] `POST /v1/telephony/mango/sync-lines` → HTTP 200, 2 rows in DB (первый sync)
-- [x] Parser fix применён и re-sync выполнен → display_name корректны
-- [x] `GET /v1/telephony/mango/lines` → HTTP 200, 2 items
-- [x] `GET /v1/telephony/mango/extensions` → HTTP 200, 0 items
-- [x] `POST /v1/agents` → agent создан
-- [x] `PATCH /v1/agent-profiles/{id}/settings` → binding сохранён
-- [x] `GET /v1/agent-profiles/{id}/settings` → binding прочитан (roundtrip OK)
-- [x] DB: SELECT JOIN подтверждает FK integrity
-- [x] 456 тестов проходят (регрессий нет)
+### Binding target
 
----
+- remote Mango line ID: `405622036`
+- phone number: `+79300350609`
+- label: `ДЛЯ ИИ менеджера`
 
-## 11. Что не протестировано
+### Verified roundtrip
 
-| Пробел | Причина |
-|---|---|
-| Webhook live event | `MANGO_WEBHOOK_SECRET` пуст, URL не зарегистрирован |
-| Реальный входящий звонок | Требует звонка на номер в prod среде |
-| Outbound originate | `MANGO_FROM_EXT` пуст |
-| Bridge / transfer flow | Требует активной сессии + SIP bridge |
-| FreeSWITCH media bridge | `MEDIA_GATEWAY_ENABLED=false` |
-| Повторный sync (deactivate stale) | Не тестировался edge case |
-| Номер в формате +7 (нормализация) | Mango отдаёт без `+`, backend хранит как есть |
+- `POST /v1/agents` -> `201`
+- `PATCH /v1/agent-profiles/{id}/settings` -> `200`
+- `GET /v1/agent-profiles/{id}/settings` -> `200`
 
----
+Confirmed on the returned payload:
 
-## 12. Final Verdict
+- `telephony_provider = "mango"`
+- `telephony_line_id` points to the local `telephony_lines.id`
+- `telephony_line.provider_resource_id = "405622036"`
+- `telephony_line.phone_number = "+79300350609"`
+- `telephony_line.display_name = "ДЛЯ ИИ менеджера"`
 
-| Пункт | Результат |
-|---|---|
-| Mango connectivity | ✅ **YES** — HTTP 200 на все вызовы |
-| Auth / signature | ✅ **YES** — SHA256 accepted |
-| Live inventory | ✅ **YES** — 2 lines, 0 extensions |
-| sync-lines | ✅ **YES** — 2 строки в telephony_lines, display_name корректны после fix |
-| Agent binding | ✅ **YES** — PATCH+GET roundtrip verified, FK в DB |
-| UI select ready | ✅ **YES** — данных достаточно |
-| Inbound routing foundation | ⚠️ **PARTIAL** — данные есть, webhook не настроен |
-| Outbound routing | ❌ **NOT READY** — MANGO_FROM_EXT пуст |
-| Webhook | ❌ **NOT READY** — секрет пуст |
+This means the existing binding contract is live-confirmed and usable:
 
-### Следующий шаг
+- local FK: `telephony_line_id`
+- provider canonical key on the synced line row: `provider_resource_id` / remote Mango line ID
 
-1. Нормализация номеров: добавить `+` к `phone_number` при sync (сейчас `79300350609` → нужно `+79300350609`)
-2. Задать `MANGO_WEBHOOK_SECRET` и зарегистрировать URL в кабинете Mango
-3. Задать `MANGO_FROM_EXT` для outbound
-4. Переключить `TELEPHONY_PROVIDER=mango` в production
+## UI Select Readiness
 
----
+The current live inventory is already sufficient for an admin dropdown:
 
-## 13. Git
+- stable provider key: `provider_resource_id`
+- stable local row key: `telephony_lines.id`
+- human-readable label available for the AI line: `ДЛЯ ИИ менеджера`
+- normalized number available: `+79300350609`
 
-- Parser fix: `app/integrations/telephony/mango_client.py` — добавлен `schema_name` в display_name fallback list
-- Новый файл: `docs/mango_live_audit.md` (этот отчёт)
-- Commit: см. ниже
-- Pushed: yes
+Recommended canonical provider-side key for future routing logic:
+
+- `remote_line_id = provider_resource_id`
+
+Not recommended as the binding key:
+
+- raw phone number alone
+- label alone
+- extension alone
+
+## Routing Foundation Readiness
+
+### Inbound number -> agent lookup
+
+Partially ready.
+
+What is already available:
+
+- normalized inbound line phone number in `telephony_lines`
+- stable remote Mango line ID
+- agent -> line binding in the database
+
+What is still missing:
+
+- configured webhook secret
+- live webhook registration in Mango
+- live event payload confirmation for call lifecycle
+
+### Outbound agent -> Mango line lookup
+
+Partially ready.
+
+What is already available:
+
+- agent binding to a live synced Mango line
+- line inventory with stable provider IDs
+
+What is still missing:
+
+- `MANGO_FROM_EXT`
+- live originate verification
+- production runtime switch from `stub` to Mango where appropriate
+
+## What Had To Be Fixed
+
+### 1. Extension parser mismatch for live tenant payload
+
+Problem:
+
+- `/config/users/request` returned real data
+- the parser produced zero records because the tenant payload is nested under `general` and `telephony`
+
+Fix:
+
+- parse `general.name`
+- parse `telephony.extension`
+- parse `telephony.outgoingline`
+
+### 2. Existing synced line rows were not guaranteed to refresh normalized phone numbers
+
+Problem:
+
+- the sync path did not explicitly overwrite `line.phone_number` for already existing rows
+
+Fix:
+
+- update `line.phone_number = remote.phone_number` on every sync cycle
+
+Result:
+
+- the live backend `sync-lines` response and the database now show normalized `+7...` numbers
+
+## Rate Limit Observation
+
+The Mango tenant/API applies a per-action limit for `vpbx/config/users/request`.
+
+Observed live behavior:
+
+- first direct request -> `200`
+- repeated requests in the same probe window -> `429 Too Many Requests`
+- backend `GET /v1/telephony/mango/extensions` in the same run -> `502` because Mango returned `429`
+
+This is a real operational constraint, not a local bug.
+
+Implication:
+
+- extension inventory should not be aggressively polled
+- UI should tolerate temporary extension unavailability
+- line binding must remain usable even when extensions are unavailable
+
+## What Is Confirmed vs Not Confirmed
+
+### Confirmed
+
+- Mango API connectivity
+- signature/auth acceptance
+- live line inventory
+- live extension/user payload availability
+- live backend sync to `telephony_lines`
+- live agent binding roundtrip
+
+### Not Confirmed
+
+- inbound webhook delivery from Mango
+- outbound originate
+- full PSTN runtime
+- media bridge
+- production call routing end-to-end
