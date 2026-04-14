@@ -68,6 +68,7 @@ class MockGeminiLiveClient:
         on_interrupted: Optional[Callable[[], None]] = None,
         on_turn_complete: Optional[Callable[[], None]] = None,
         on_tool_call: Optional[Callable] = None,
+        on_text_fragment: Optional[Callable] = None,
         audio_input: bool = False,
         audio_output: bool = False,
         transcription_output: bool = False,
@@ -81,6 +82,7 @@ class MockGeminiLiveClient:
         self._on_close = on_close
         self._on_interrupted = on_interrupted
         self._on_turn_complete = on_turn_complete
+        self._on_text_fragment = on_text_fragment
         self.injected_instructions: List[str] = []
         self.sent_audio_chunks: List[bytes] = []
         self.connected: bool = False
@@ -99,7 +101,13 @@ class MockGeminiLiveClient:
         self.closed = True
 
     def simulate_text(self, role: str, text: str) -> None:
-        """Сымитировать текстовый ответ от Gemini."""
+        """Сымитировать текстовый ответ от Gemini.
+
+        Mirrors the real GeminiLiveClient behaviour: fragment path fires first
+        (is_final=True), then the full-text on_text callback fires.
+        """
+        if self._on_text_fragment:
+            self._on_text_fragment(role, text, True)
         self._on_text(role, text)
 
     def simulate_audio(self, pcm: bytes) -> None:

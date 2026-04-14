@@ -74,6 +74,7 @@ class GeminiLiveClient:
         on_interrupted: Optional[Callable[[], None]] = None,
         on_turn_complete: Optional[Callable[[], None]] = None,
         on_tool_call: Optional[Callable[[str, dict], None]] = None,
+        on_text_fragment: Optional[Callable[[str, str, bool], None]] = None,
         audio_input: bool = False,
         audio_output: bool = False,
         transcription_output: bool = False,
@@ -88,6 +89,7 @@ class GeminiLiveClient:
         self._on_interrupted = on_interrupted
         self._on_turn_complete = on_turn_complete
         self._on_tool_call = on_tool_call
+        self._on_text_fragment = on_text_fragment
         self._audio_input = audio_input
         self._audio_output = audio_output
         self._transcription_output = transcription_output
@@ -324,6 +326,8 @@ class GeminiLiveClient:
                 chunk = sc_raw["outputTranscription"].get("text", "")
                 if chunk:
                     self._pending_transcription += chunk
+                    if self._on_text_fragment:
+                        self._on_text_fragment("assistant", chunk, False)
             sc = GeminiServerContent.from_dict(sc_raw)
             if sc.interrupted:
                 log.debug("gemini_client.interrupted")
@@ -342,6 +346,9 @@ class GeminiLiveClient:
                         pcm = base64.b64decode(part.inline_data.data_b64)
                         self._on_audio(pcm)
             if sc.turn_complete:
+                # Signal streaming fragment consumer that the turn is complete.
+                if self._on_text_fragment:
+                    self._on_text_fragment("assistant", "", True)
                 # Flush accumulated transcript (TTS path) before signalling turn done.
                 if self._transcription_output and self._pending_transcription.strip():
                     self._on_text("assistant", self._pending_transcription.strip())

@@ -32,6 +32,7 @@ Lifecycle:
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 import uuid
 import zoneinfo
@@ -82,6 +83,12 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 _AUDIO_CHUNK_BYTES = 640
+
+# Incremental TTS: split text at sentence boundaries detected mid-stream.
+# Matches whitespace (or end-of-string) that follows terminal punctuation.
+_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?…])\s+")
+# Minimum chars required to fire a TTS call (avoid synthesizing single words).
+_MIN_TTS_SENTENCE_CHARS = 12
 
 _DAY_NAMES_RU = {
     0: "понедельник", 1: "вторник", 2: "среда",
@@ -147,6 +154,58 @@ def _resample_pcm16(data: bytes, from_rate: int, to_rate: int) -> bytes:
     return out.tobytes()
 
 
+class IncrementalTTSBuffer:
+    """
+    Buffers Gemini text fragments and fires a TTS task for each complete sentence.
+
+    Instead of waiting for the full Gemini turn to complete, this splits incoming
+    text at sentence boundaries (.  !  ?  …) and calls flush_fn immediately.
+    This reduces first-audio latency from ~700-1200 ms to first-sentence latency
+    (typically 150-400 ms for short Russian sentences).
+
+    Usage:
+      buf = IncrementalTTSBuffer(flush_fn=lambda text: ...)
+      buf.push(fragment, is_final=False)  # called per Gemini outputTranscription chunk
+      buf.push("", is_final=True)         # called once at turn_complete
+      buf.reset()                          # called on interrupted
+    """
+
+    def __init__(self, flush_fn: Callable[[str], None], min_chars: int = _MIN_TTS_SENTENCE_CHARS) -> None:
+        self._buf: str = ""
+        self._flush_fn = flush_fn
+        self._min_chars = min_chars
+
+    def push(self, fragment: str, is_final: bool) -> None:
+        if fragment:
+            self._buf += fragment
+        if is_final:
+            remaining = self._buf.strip()
+            if remaining:
+                self._flush_fn(remaining)
+            self._buf = ""
+            return
+        self._try_flush()
+
+    def reset(self) -> None:
+        """Discard buffered text (e.g. on user interrupt)."""
+        self._buf = ""
+
+    def _try_flush(self) -> None:
+        """Flush all complete sentences from the buffer."""
+        while True:
+            match = _SENTENCE_BOUNDARY_RE.search(self._buf)
+            if not match:
+                break
+            sentence = self._buf[: match.start()].strip()  # includes punctuation
+            remainder = self._buf[match.end() :]
+            if len(sentence) < self._min_chars:
+                # Too short — merge with the next sentence for better prosody.
+                break
+            self._buf = remainder
+            if sentence:
+                self._flush_fn(sentence)
+
+
 @dataclass
 class DirectSessionCapabilities:
     mode: str = "text_only"  # text_only | audio_in_only | audio_out_only | full_duplex
@@ -190,6 +249,7 @@ class DirectSessionMetrics:
     awaiting_model_response: bool = False
     model_turn_active: bool = False  # True while Gemini is mid-turn (first audio → turn_complete/interrupted)
     last_tts_started_at: Optional[float] = None
+    llm_first_token_ms_last: Optional[float] = None  # ms from user turn to first Gemini text fragment
 
 
 @dataclass
@@ -415,6 +475,28 @@ class DirectSessionManager:
         # ── Callbacks: transcript, assistant audio, TTS fallback ────────────
         base_text_cb = event_handler.make_text_callback()
 
+        # Incremental TTS: fire synthesis per sentence, not per full turn.
+        # Only active on the TTS path (transcription_output=True).
+        _wants_tts = bool(
+            session.voice_state is not None
+            and session.voice_state.wants_tts_for_assistant_text()
+        )
+
+        def _tts_dispatch(text: str) -> None:
+            """Create a TTS task and track it in session.tts_tasks."""
+            task = asyncio.create_task(
+                self._synthesize_to_audio_queue(session, voice, text),
+                name=f"tts_{session_id}_{len(session.tts_tasks) + 1}",
+            )
+            session.tts_tasks.add(task)
+            task.add_done_callback(lambda t: session.tts_tasks.discard(t))
+
+        tts_buffer = (
+            IncrementalTTSBuffer(flush_fn=_tts_dispatch)
+            if _wants_tts
+            else None
+        )
+
         def on_text(role: str, text: str) -> None:
             base_text_cb(role, text)
             # Real-time push to browser — avoid waiting for the 1s polling cycle.
@@ -423,6 +505,7 @@ class DirectSessionManager:
                 _bridge.send_control({"type": "transcript", "role": role, "text": text})
             if role != "assistant":
                 return
+            # Latency accounting — skip if on_text_fragment already fired it.
             if session.metrics.awaiting_model_response and session.metrics.last_model_request_at:
                 session.metrics.model_response_latency_ms_last = (
                     (time.perf_counter() - session.metrics.last_model_request_at) * 1000
@@ -440,17 +523,40 @@ class DirectSessionManager:
                     voice_path=session.voice_state.active_path if session.voice_state else "unknown",
                     source="assistant_text",
                 )
+            # TTS dispatch — only on legacy (non-streaming) path.
+            # On streaming path tts_buffer handles sentence-level dispatch via on_text_fragment.
             if (
-                session.capabilities.audio_out
+                tts_buffer is None
+                and session.capabilities.audio_out
                 and session.voice_state is not None
                 and session.voice_state.wants_tts_for_assistant_text()
             ):
-                task = asyncio.create_task(
-                    self._synthesize_to_audio_queue(session, voice, text),
-                    name=f"tts_{session_id}_{len(session.tts_tasks)+1}",
+                _tts_dispatch(text)
+
+        def on_text_fragment(role: str, fragment: str, is_final: bool) -> None:
+            """Called per outputTranscription chunk (streaming path)."""
+            if role != "assistant":
+                return
+            # First fragment arriving → record LLM first-token latency.
+            if fragment and session.metrics.awaiting_model_response and session.metrics.last_model_request_at:
+                session.metrics.llm_first_token_ms_last = round(
+                    (time.perf_counter() - session.metrics.last_model_request_at) * 1000, 2
                 )
-                session.tts_tasks.add(task)
-                task.add_done_callback(lambda t: session.tts_tasks.discard(t))
+                session.metrics.model_response_latency_ms_last = session.metrics.llm_first_token_ms_last
+                observe_direct_model_response_latency(session.metrics.model_response_latency_ms_last)
+                session.metrics.awaiting_model_response = False
+                session.metrics.model_turn_active = True
+                log.info(
+                    "session_manager.assistant_reply_started",
+                    session_id=session.session_id,
+                    call_id=str(session.call_id),
+                    voice_strategy=session.voice_state.strategy if session.voice_state else "unknown",
+                    voice_path=session.voice_state.active_path if session.voice_state else "unknown",
+                    source="text_fragment",
+                    llm_first_token_ms=session.metrics.llm_first_token_ms_last,
+                )
+            if tts_buffer is not None:
+                tts_buffer.push(fragment, is_final)
 
         def on_audio(pcm: bytes) -> None:
             # Native Gemini audio path (when enabled + audio_out capability).
@@ -484,6 +590,15 @@ class DirectSessionManager:
         def on_interrupted() -> None:
             # Clear buffered outbound audio so the browser stops playing stale speech.
             session.metrics.model_turn_active = False
+            # Cancel in-flight TTS tasks (streaming path may have several mid-sentence).
+            if session.tts_tasks:
+                for _task in list(session.tts_tasks):
+                    if not _task.done():
+                        _task.cancel()
+                session.tts_tasks.clear()
+            # Reset incremental TTS buffer so stale fragments are discarded.
+            if tts_buffer is not None:
+                tts_buffer.reset()
             cleared = 0
             while not session.audio_out_queue.empty():
                 try:
@@ -522,10 +637,6 @@ class DirectSessionManager:
         # a text transcript of its speech. We discard Gemini's audio (on_audio returns
         # early when not wants_gemini_audio_output) and pipe the transcript to ElevenLabs.
         # TEXT modality is unsupported by audio-only models (returns error 1011).
-        _wants_tts = bool(
-            session.voice_state is not None
-            and session.voice_state.wants_tts_for_assistant_text()
-        )
         client = GeminiLiveClient(
             on_text=on_text,
             on_audio=on_audio,
@@ -535,6 +646,7 @@ class DirectSessionManager:
             on_interrupted=on_interrupted,
             on_turn_complete=on_turn_complete,
             on_tool_call=on_tool_call,
+            on_text_fragment=on_text_fragment if tts_buffer is not None else None,
             audio_input=bool(session.capabilities.audio_in),
             audio_output=_wants_audio_out,
             transcription_output=_wants_tts,
