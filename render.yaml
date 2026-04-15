@@ -84,9 +84,21 @@ services:
         sync: false
       - key: MEDIA_GATEWAY_ENABLED
         sync: false
+      - key: MEDIA_GATEWAY_PROVIDER
+        value: freeswitch
+      - key: MEDIA_GATEWAY_MODE
+        sync: false
+      - key: FREESWITCH_ESL_HOST
+        sync: false
+      - key: FREESWITCH_ESL_PORT
+        value: "8021"
+      - key: FREESWITCH_ESL_PASSWORD
+        sync: false
       - key: ENFORCE_QUIET_HOURS
         value: "true"
       # Mango telephony — set these in Render dashboard when deploying PSTN/Mango
+      - key: MANGO_API_BASE_URL
+        value: https://app.mango-office.ru/vpbx
       - key: MANGO_API_KEY
         sync: false
       - key: MANGO_API_SALT

@@ -27,13 +27,18 @@
 
 ## Optional For PSTN / Mango Later
 
+- `TELEPHONY_PROVIDER=mango`
+- `MANGO_API_BASE_URL=https://app.mango-office.ru/vpbx`
 - `MANGO_API_KEY=...`
 - `MANGO_API_SALT=...`
 - `MANGO_FROM_EXT=...`
+- `MANGO_WEBHOOK_SECRET=...`
 - `MANGO_WEBHOOK_SHARED_SECRET=...`
 - `MEDIA_GATEWAY_ENABLED=true`
+- `MEDIA_GATEWAY_PROVIDER=freeswitch`
 - `MEDIA_GATEWAY_MODE=esl_rtp`
 - `FREESWITCH_ESL_HOST=...`
+- `FREESWITCH_ESL_PORT=8021`
 - `FREESWITCH_ESL_PASSWORD=...`
 
 ## Frontend Static Site Env
@@ -45,3 +50,4 @@
 - Render-managed `DATABASE_URL` and `REDIS_URL` come from the blueprint
 - provider settings do not enable Mango routing automatically
 - browser voice needs only Gemini + ElevenLabs, not Mango
+- for Render-side Mango readiness, backend env wins: saving Mango credentials only in Providers UI is not enough for PSTN readiness checks

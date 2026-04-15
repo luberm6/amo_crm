@@ -79,7 +79,9 @@ def _resolve_direct_runtime_provider() -> tuple[str, bool]:
         and not settings.is_testing
     ):
         return "mango", True
-    if preferred in {"mango", "stub"}:
+    if preferred == "mango":
+        return "mango", bool(settings.mango_configured)
+    if preferred == "stub":
         return preferred, preferred != "stub"
     if preferred == "auto":
         return ("mango", True) if settings.mango_configured else ("stub", False)

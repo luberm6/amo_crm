@@ -706,6 +706,39 @@ async def test_mango_readiness_reports_direct_override_to_mango(
 
 
 @pytest.mark.anyio
+async def test_mango_readiness_keeps_mango_override_blocked_without_credentials(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    app = _make_app(session)
+    with (
+        patch.object(cfg.settings, "mango_api_key", ""),
+        patch.object(cfg.settings, "mango_api_salt", ""),
+        patch.object(cfg.settings, "telephony_provider", "mango"),
+        patch.object(cfg.settings, "backend_url", "https://voice.example.com"),
+        patch.object(cfg.settings, "mango_webhook_secret", "whsec"),
+        patch.object(cfg.settings, "mango_from_ext", "101"),
+        patch.object(cfg.settings, "media_gateway_enabled", True),
+        patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
+        patch.object(cfg.settings, "media_gateway_mode", "esl_rtp"),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            token = await _admin_login(ac)
+            resp = await ac.get(
+                "/v1/telephony/mango/readiness",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["telephony_runtime_provider"] == "mango"
+    assert body["telephony_runtime_real"] is False
+    assert body["outbound_originate_smoke_ready"] is False
+    assert "mango_api_credentials_missing" in body["missing_requirements"]
+    assert "telephony_runtime_not_real" in body["missing_requirements"]
+
+
+@pytest.mark.anyio
 async def test_mango_readiness_uses_render_external_url_when_backend_url_is_local(
     session: AsyncSession,
     admin_auth_settings,
