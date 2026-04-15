@@ -100,6 +100,13 @@ type MangoReadiness = {
     overall_status: 'ready' | 'partial' | 'blocked'
     operator_summary: string
   }
+  actionable_next_step?: {
+    key: string
+    title: string
+    description: string
+    cta_label: string
+    scope: 'global' | 'inbound_webhook' | 'outbound_originate' | 'inbound_ai_runtime'
+  }
 }
 
 type MangoRoutingMapItem = {
@@ -489,6 +496,7 @@ export default function ProvidersPage() {
     || 'Agent-bound Mango line to outbound smoke'
   const inboundAiSummary = mangoReadiness?.route_readiness?.inbound_ai_runtime?.summary
     || 'Webhook to bound agent to AI runtime'
+  const nextStep = mangoReadiness?.actionable_next_step || null
 
   const unboundRemoteLineIds = useMemo(() => {
     const boundIds = new Set(
@@ -1094,6 +1102,16 @@ export default function ProvidersPage() {
                       <div className="table-secondary">
                         ready: {mangoReadiness.render_summary.ready_count} / blocked: {mangoReadiness.render_summary.blocked_count}
                       </div>
+                    </div>
+                  ) : null}
+                  {nextStep ? (
+                    <div className={`next-step-banner${mangoReadiness?.render_summary?.overall_status === 'ready' ? ' success' : ''}`}>
+                      <div>
+                        <p className="eyebrow">Main next step</p>
+                        <strong>{nextStep.title}</strong>
+                        <div className="table-secondary">{nextStep.description}</div>
+                      </div>
+                      <span className="next-step-cta">{nextStep.cta_label}</span>
                     </div>
                   ) : null}
                   <div className="readiness-card-grid">

@@ -225,7 +225,7 @@ describe('agent editor telephony smoke', () => {
     })
 
     const lineSelect = screen.getByLabelText(/Select Mango number/i)
-    expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\) — suggested/i })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\)/i })).toBeInTheDocument()
 
     await user.selectOptions(lineSelect, '405622036')
     await user.click(screen.getByLabelText(/Refund policy/i))
@@ -478,7 +478,7 @@ describe('agent editor telephony smoke', () => {
 
     expect(screen.getByText(/Outbound calling not configured/i)).toBeInTheDocument()
     expect(screen.getByText(/Mango extensions not configured in this tenant/i)).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\) — suggested/i })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\)/i })).toBeInTheDocument()
   })
 
   it('shows non-blocking rate-limit warning when Mango extensions endpoint is temporarily unavailable', async () => {
@@ -591,7 +591,7 @@ describe('agent editor telephony smoke', () => {
     await waitFor(() => {
       expect(screen.getByText(/Mango временно ограничил extensions API по rate limit/i)).toBeInTheDocument()
     })
-    expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\) — suggested/i })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\)/i })).toBeInTheDocument()
   })
 
   it('shows an auto-discovery notice instead of a hard outbound blocker when Mango can resolve from_ext automatically', async () => {

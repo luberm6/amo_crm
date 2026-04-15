@@ -75,6 +75,7 @@ class MangoReadinessRead(BaseModel):
     warnings: list[str]
     route_readiness: dict[str, "MangoRouteReadinessScope"] = Field(default_factory=dict)
     render_summary: "MangoRenderReadinessSummary"
+    actionable_next_step: "MangoActionableNextStep"
 
 
 class MangoRouteReadinessScope(BaseModel):
@@ -90,6 +91,14 @@ class MangoRenderReadinessSummary(BaseModel):
     blocked_count: int = 0
     overall_status: Literal["ready", "partial", "blocked"]
     operator_summary: str
+
+
+class MangoActionableNextStep(BaseModel):
+    key: str
+    title: str
+    description: str
+    cta_label: str
+    scope: Literal["global", "inbound_webhook", "outbound_originate", "inbound_ai_runtime"]
 
 
 class MangoRoutingMapItem(BaseModel):

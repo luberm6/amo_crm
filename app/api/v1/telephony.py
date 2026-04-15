@@ -17,6 +17,7 @@ from app.models.telephony_line import TelephonyLine
 from app.repositories.agent_profile_repo import AgentProfileRepository
 from app.repositories.telephony_line_repo import TelephonyLineRepository
 from app.schemas.telephony import (
+    MangoActionableNextStep,
     MangoRenderReadinessSummary,
     MangoReadinessRead,
     MangoRouteReadinessScope,
@@ -185,6 +186,116 @@ def _build_route_readiness(
     )
 
 
+def _build_actionable_next_step(
+    *,
+    missing_requirements: list[str],
+    render_summary: MangoRenderReadinessSummary,
+) -> MangoActionableNextStep:
+    priorities: list[tuple[str, MangoActionableNextStep]] = [
+        (
+            "mango_api_credentials_missing",
+            MangoActionableNextStep(
+                key="configure_mango_credentials",
+                title="Save Mango API credentials",
+                description="Set MANGO_API_KEY and MANGO_API_SALT before trying to sync lines or run live routing checks.",
+                cta_label="Set MANGO_API_KEY and MANGO_API_SALT",
+                scope="global",
+            ),
+        ),
+        (
+            "backend_url_not_public",
+            MangoActionableNextStep(
+                key="make_backend_url_public",
+                title="Make BACKEND_URL public",
+                description="Mango cannot deliver a webhook to a local or private BACKEND_URL. Point it to the public Render backend URL.",
+                cta_label="Set a public BACKEND_URL",
+                scope="inbound_webhook",
+            ),
+        ),
+        (
+            "mango_webhook_secret_missing",
+            MangoActionableNextStep(
+                key="set_mango_webhook_secret",
+                title="Set webhook verification secret",
+                description="Configure MANGO_WEBHOOK_SECRET or MANGO_WEBHOOK_SHARED_SECRET before testing inbound webhook delivery.",
+                cta_label="Set MANGO_WEBHOOK_SECRET",
+                scope="inbound_webhook",
+            ),
+        ),
+        (
+            "mango_from_ext_missing",
+            MangoActionableNextStep(
+                key="set_mango_from_ext",
+                title="Set outbound source extension",
+                description="Outbound originate still needs a stable source extension when auto-discovery is unavailable.",
+                cta_label="Set MANGO_FROM_EXT",
+                scope="outbound_originate",
+            ),
+        ),
+        (
+            "telephony_runtime_not_real",
+            MangoActionableNextStep(
+                key="use_real_mango_runtime",
+                title="Switch telephony runtime to Mango",
+                description="The current telephony runtime is not using a real Mango route, so originate smoke would not hit PSTN.",
+                cta_label="Set TELEPHONY_PROVIDER=mango",
+                scope="outbound_originate",
+            ),
+        ),
+        (
+            "media_gateway_disabled",
+            MangoActionableNextStep(
+                key="enable_media_gateway",
+                title="Enable media gateway",
+                description="Inbound AI runtime requires MEDIA_GATEWAY_ENABLED=true before Mango inbound calls can reach the AI voice path.",
+                cta_label="Enable MEDIA_GATEWAY_ENABLED",
+                scope="inbound_ai_runtime",
+            ),
+        ),
+        (
+            "media_gateway_provider_not_freeswitch",
+            MangoActionableNextStep(
+                key="set_freeswitch_gateway_provider",
+                title="Use FreeSWITCH media gateway",
+                description="Inbound AI runtime currently expects MEDIA_GATEWAY_PROVIDER=freeswitch.",
+                cta_label="Set MEDIA_GATEWAY_PROVIDER=freeswitch",
+                scope="inbound_ai_runtime",
+            ),
+        ),
+        (
+            "media_gateway_mode_not_supported",
+            MangoActionableNextStep(
+                key="set_supported_gateway_mode",
+                title="Use a supported media gateway mode",
+                description="Inbound AI runtime currently supports MEDIA_GATEWAY_MODE=mock or esl_rtp.",
+                cta_label="Set MEDIA_GATEWAY_MODE=mock or esl_rtp",
+                scope="inbound_ai_runtime",
+            ),
+        ),
+    ]
+    present = set(missing_requirements)
+    for requirement, step in priorities:
+        if requirement in present:
+            return step
+
+    if render_summary.overall_status == "ready":
+        return MangoActionableNextStep(
+            key="run_live_smoke",
+            title="Run a live Mango smoke check",
+            description="Render-side readiness is green. The next honest step is one real webhook delivery or originate smoke.",
+            cta_label="Run one live smoke check",
+            scope="global",
+        )
+
+    return MangoActionableNextStep(
+        key="review_blocked_cards",
+        title="Review blocked routing cards",
+        description="Read the blocked cards below and clear the first blocker before attempting a live smoke.",
+        cta_label="Clear the first blocked card",
+        scope="global",
+    )
+
+
 @router.get("/mango/readiness", response_model=MangoReadinessRead)
 async def mango_readiness() -> MangoReadinessRead:
     api_configured = bool(settings.mango_api_key and settings.mango_api_salt)
@@ -247,6 +358,10 @@ async def mango_readiness() -> MangoReadinessRead:
         inbound_ai_runtime_ready=inbound_ai_runtime_ready,
         missing_requirements=missing_requirements,
     )
+    actionable_next_step = _build_actionable_next_step(
+        missing_requirements=missing_requirements,
+        render_summary=render_summary,
+    )
 
     return MangoReadinessRead(
         api_configured=api_configured,
@@ -265,6 +380,7 @@ async def mango_readiness() -> MangoReadinessRead:
         warnings=warnings,
         route_readiness=route_readiness,
         render_summary=render_summary,
+        actionable_next_step=actionable_next_step,
     )
 
 

@@ -142,6 +142,13 @@ describe('providers page smoke', () => {
             overall_status: 'partial',
             operator_summary: 'Render-side Mango routing is partially ready. Check the blocked cards before live smoke.',
           },
+          actionable_next_step: {
+            key: 'make_backend_url_public',
+            title: 'Make BACKEND_URL public',
+            description: 'Mango cannot deliver a webhook to a local or private BACKEND_URL. Point it to the public Render backend URL.',
+            cta_label: 'Set a public BACKEND_URL',
+            scope: 'inbound_webhook',
+          },
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -271,6 +278,10 @@ describe('providers page smoke', () => {
     expect(screen.getByText(/Render-side routing readiness/i)).toBeInTheDocument()
     expect(screen.getByText(/Render routing is partially ready/i)).toBeInTheDocument()
     expect(screen.getByText(/Render-side Mango routing is partially ready/i)).toBeInTheDocument()
+    expect(screen.getByText(/Main next step/i)).toBeInTheDocument()
+    expect(screen.getByText(/Make BACKEND_URL public/i)).toBeInTheDocument()
+    expect(screen.getByText(/Point it to the public Render backend URL/i)).toBeInTheDocument()
+    expect(screen.getByText(/^Set a public BACKEND_URL$/i)).toBeInTheDocument()
     expect(screen.getAllByText(/^Inbound webhook$/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText(/^Outbound originate$/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText(/^Inbound AI runtime$/i).length).toBeGreaterThanOrEqual(1)

@@ -848,6 +848,35 @@ a.info-card:hover {
   background: linear-gradient(180deg, rgba(237, 248, 239, 0.95) 0%, rgba(220, 239, 231, 0.9) 100%);
 }
 
+.next-step-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+  border: 1px solid #ecd09b;
+  background: linear-gradient(180deg, rgba(255, 248, 235, 0.98) 0%, rgba(255, 243, 220, 0.92) 100%);
+}
+
+.next-step-banner.success {
+  border-color: #b6d9bb;
+  background: linear-gradient(180deg, rgba(237, 248, 239, 0.98) 0%, rgba(220, 239, 231, 0.92) 100%);
+}
+
+.next-step-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 0.9rem;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid rgba(58, 43, 21, 0.12);
+  color: var(--ink);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .readiness-card-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1012,6 +1041,7 @@ a.info-card:hover {
   }
 
   .binding-cta-card,
+  .next-step-banner,
   .inventory-card-header {
     flex-direction: column;
   }
