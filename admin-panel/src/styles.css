@@ -765,6 +765,50 @@ a.info-card:hover {
   font-size: 0.88rem;
 }
 
+.setup-progress-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid #d6c7ae;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(250, 244, 233, 0.98) 0%, rgba(247, 242, 232, 0.88) 100%);
+}
+
+.setup-progress-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.setup-progress-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: start;
+  padding: 0.9rem;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 250, 242, 0.92);
+}
+
+.setup-progress-step.ready {
+  border-color: #b6d9bb;
+  background: #edf8ef;
+}
+
+.setup-progress-badge {
+  width: 1.9rem;
+  height: 1.9rem;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid rgba(58, 43, 21, 0.14);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
 .inventory-toolbar {
   display: grid;
   gap: 0.8rem;
@@ -1034,6 +1078,7 @@ a.info-card:hover {
   }
 
   .saas-summary-grid,
+  .setup-progress-grid,
   .telephony-summary-grid,
   .inventory-card-meta,
   .readiness-card-grid {
@@ -1066,6 +1111,7 @@ a.info-card:hover {
   }
 
   .saas-summary-grid,
+  .setup-progress-grid,
   .telephony-summary-grid,
   .inventory-card-meta,
   .readiness-card-grid {

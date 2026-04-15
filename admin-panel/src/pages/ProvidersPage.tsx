@@ -354,6 +354,21 @@ function mapMangoReadinessWarning(warning: string) {
   return warning
 }
 
+type SetupStage = {
+  key: 'connected' | 'synced' | 'bound' | 'live_ready'
+  title: string
+  description: string
+  ready: boolean
+}
+
+type LocalNextStep = {
+  title: string
+  description: string
+  ctaLabel: string
+  href?: string
+  buttonAction?: 'sync'
+}
+
 export default function ProvidersPage() {
   const { token } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -497,6 +512,89 @@ export default function ProvidersPage() {
   const inboundAiSummary = mangoReadiness?.route_readiness?.inbound_ai_runtime?.summary
     || 'Webhook to bound agent to AI runtime'
   const nextStep = mangoReadiness?.actionable_next_step || null
+  const setupStages = useMemo<SetupStage[]>(() => [
+    {
+      key: 'connected',
+      title: 'Connected',
+      description: 'Mango credentials are saved and the API can be used.',
+      ready: Boolean(mangoReadiness?.api_configured),
+    },
+    {
+      key: 'synced',
+      title: 'Synced',
+      description: 'Mango numbers are visible in inventory.',
+      ready: mangoLines.length > 0,
+    },
+    {
+      key: 'bound',
+      title: 'Bound',
+      description: 'At least one Mango line is assigned to an agent.',
+      ready: boundLineCount > 0,
+    },
+    {
+      key: 'live_ready',
+      title: 'Live-ready',
+      description: 'Render-side webhook/originate path is ready for honest smoke.',
+      ready: mangoReadiness?.render_summary?.overall_status === 'ready',
+    },
+  ], [boundLineCount, mangoLines.length, mangoReadiness?.api_configured, mangoReadiness?.render_summary?.overall_status])
+
+  const inventoryNextStep = useMemo<LocalNextStep>(() => {
+    if (!mangoReadiness?.api_configured) {
+      return {
+        title: 'Save Mango credentials first',
+        description: 'Connection must be configured before inventory sync can fetch numbers from Mango.',
+        ctaLabel: 'Save credentials below',
+      }
+    }
+    if (mangoLines.length === 0) {
+      return {
+        title: 'Sync numbers from Mango',
+        description: 'Pull the current tenant inventory so operators can see real numbers and bind them.',
+        ctaLabel: 'Sync numbers from Mango',
+        buttonAction: 'sync',
+      }
+    }
+    return {
+      title: 'Inventory is visible',
+      description: 'Numbers are already synced. Refresh when the Mango tenant changes or after provider edits.',
+      ctaLabel: 'Refresh inventory',
+      buttonAction: 'sync',
+    }
+  }, [mangoLines.length, mangoReadiness?.api_configured])
+
+  const bindingNextStep = useMemo<LocalNextStep>(() => {
+    if (mangoLines.length === 0) {
+      return {
+        title: 'Sync numbers before binding',
+        description: 'An agent cannot be assigned until Mango inventory is visible on this page.',
+        ctaLabel: 'Sync numbers first',
+        buttonAction: 'sync',
+      }
+    }
+    if (boundLineCount === 0 && recommendedLine) {
+      return {
+        title: 'Bind the recommended AI line now',
+        description: `Open Agent settings and bind ${formatMangoLineLabel(recommendedLine)} so inbound/outbound control can target a real line.`,
+        ctaLabel: 'Go bind the recommended line',
+        href: `/agents?source=mango&line=${recommendedLine.remote_line_id}`,
+      }
+    }
+    if (boundLineCount === 0) {
+      return {
+        title: 'Bind a synced line to an agent',
+        description: 'The numbers are visible, but no agent owns a line yet. Pick one line and assign it.',
+        ctaLabel: 'Go bind a line now',
+        href: '/agents?source=mango',
+      }
+    }
+    return {
+      title: 'Review current agent binding',
+      description: 'At least one line is already assigned. Open the bound agent to confirm telephony, voice, and prompt settings.',
+      ctaLabel: 'Open bound agent',
+      href: boundRoutingItems[0]?.agent_id ? `/agents/${boundRoutingItems[0].agent_id}?mango_line=${boundRoutingItems[0].remote_line_id}&from=providers` : '/agents',
+    }
+  }, [boundLineCount, boundRoutingItems, mangoLines.length, recommendedLine])
 
   const unboundRemoteLineIds = useMemo(() => {
     const boundIds = new Set(
@@ -754,6 +852,12 @@ export default function ProvidersPage() {
     setSearchParams(nextParams, { replace: true })
   }
 
+  function setFocusedLine(remoteLineId: string) {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('line', remoteLineId)
+    setSearchParams(nextParams, { replace: true })
+  }
+
   return (
     <section className="stack-page providers-page">
       <article className="hero-card split-card providers-hero">
@@ -843,6 +947,25 @@ export default function ProvidersPage() {
                     <div className="saas-summary-card">
                       <span>Issues</span>
                       <strong>{summarizeMangoIssue(mangoReadiness, mangoLines.length)}</strong>
+                    </div>
+                  </div>
+                  <div className="setup-progress-card">
+                    <div className="panel-header">
+                      <div>
+                        <p className="eyebrow">Setup progress</p>
+                        <h4>Connected → Synced → Bound → Live-ready</h4>
+                      </div>
+                    </div>
+                    <div className="setup-progress-grid">
+                      {setupStages.map((stage) => (
+                        <div key={stage.key} className={`setup-progress-step${stage.ready ? ' ready' : ''}`}>
+                          <div className="setup-progress-badge">{stage.ready ? '✓' : stage.key === 'live_ready' ? '4' : stage.key === 'bound' ? '3' : stage.key === 'synced' ? '2' : '1'}</div>
+                          <div>
+                            <strong>{stage.title}</strong>
+                            <div className="table-secondary">{stage.description}</div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                   {mangoIssues.length > 0 ? (
@@ -992,6 +1115,26 @@ export default function ProvidersPage() {
                       <h4>Mango Lines</h4>
                     </div>
                   </div>
+                  <div className="binding-cta-card">
+                    <div>
+                      <p className="binding-cta-title">{inventoryNextStep.title}</p>
+                      <p className="binding-cta-copy">{inventoryNextStep.description}</p>
+                    </div>
+                    {inventoryNextStep.href ? (
+                      <Link to={inventoryNextStep.href} className="primary-link-button">
+                        {inventoryNextStep.ctaLabel}
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() => void handleSyncMangoInventory()}
+                        disabled={mangoSyncing}
+                      >
+                        {mangoSyncing && inventoryNextStep.buttonAction === 'sync' ? 'Syncing…' : inventoryNextStep.ctaLabel}
+                      </button>
+                    )}
+                  </div>
                   <div className="provider-note">
                     <strong>Last sync status</strong>
                     <div className="table-secondary">
@@ -1066,10 +1209,15 @@ export default function ProvidersPage() {
                                   Open bound agent
                                 </Link>
                               ) : (
-                                <Link to={`/agents?source=mango&line=${line.remote_line_id}`} className="ghost-link-button">
-                                  Assign to agent
+                                <Link to={`/agents?source=mango&line=${line.remote_line_id}`} className="primary-link-button">
+                                  Go bind this line now
                                 </Link>
                               )}
+                              {focusedRemoteLineId !== line.remote_line_id ? (
+                                <button type="button" className="ghost-button" onClick={() => setFocusedLine(line.remote_line_id)}>
+                                  Focus this line
+                                </button>
+                              ) : null}
                             </div>
                           </article>
                         )
@@ -1179,6 +1327,26 @@ export default function ProvidersPage() {
                       <p className="eyebrow">4. Agent Binding</p>
                       <h4>Where number assignment happens</h4>
                     </div>
+                  </div>
+                  <div className="binding-cta-card">
+                    <div>
+                      <p className="binding-cta-title">{bindingNextStep.title}</p>
+                      <p className="binding-cta-copy">{bindingNextStep.description}</p>
+                    </div>
+                    {bindingNextStep.href ? (
+                      <Link to={bindingNextStep.href} className="primary-link-button">
+                        {bindingNextStep.ctaLabel}
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() => void handleSyncMangoInventory()}
+                        disabled={mangoSyncing}
+                      >
+                        {mangoSyncing && bindingNextStep.buttonAction === 'sync' ? 'Syncing…' : bindingNextStep.ctaLabel}
+                      </button>
+                    )}
                   </div>
                   <div className="info-banner">
                     <strong>Assign number to agent to enable calls.</strong> Откройте карточку агента, выберите Mango number в блоке
