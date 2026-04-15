@@ -7,7 +7,7 @@ export default function ProtectedRoute() {
   const location = useLocation()
 
   if (loading) {
-    return <div className="route-state">Проверяем admin session…</div>
+    return <div className="route-state">Проверяем административную сессию…</div>
   }
 
   if (!isAuthenticated) {

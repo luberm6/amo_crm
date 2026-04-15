@@ -67,8 +67,8 @@ export default function AgentsPage() {
           <p className="eyebrow">Профили агентов</p>
           <h3>Управление конфигурацией общения агентов</h3>
           <p>
-            Здесь живут реальные runtime-поля: system prompt, greeting, business rules, sales objectives,
-            transfer guardrails и voice strategy. Prompt preview собирается backend’ом, а не UI.
+            Здесь хранятся реальные поля рантайма: системный промпт, приветствие, бизнес-правила, цели продаж,
+            правила перевода и голосовая стратегия. Предпросмотр итогового промпта собирает backend, а не интерфейс.
           </p>
         </div>
         <div className="button-row">
@@ -97,7 +97,7 @@ export default function AgentsPage() {
         {loading ? (
           <div className="empty-state">Загружаем профили агентов…</div>
         ) : items.length === 0 ? (
-          <div className="empty-state">Пока нет agent profiles. Можно создать первый профиль и сразу использовать его в browser call runtime.</div>
+          <div className="empty-state">Пока нет профилей агентов. Можно создать первый профиль и сразу использовать его в браузерном звонке.</div>
         ) : (
           <div className="data-table-wrap">
             <table className="data-table">
@@ -105,7 +105,7 @@ export default function AgentsPage() {
                 <tr>
                   <th>Название</th>
                   <th>Статус</th>
-                  <th>Голос агента</th>
+                  <th>Голосовой путь</th>
                   <th>Версия</th>
                   <th>Обновлён</th>
                   <th />

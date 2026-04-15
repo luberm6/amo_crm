@@ -43,12 +43,12 @@ export default function LoginPage() {
       <section className="login-card">
         <div>
           <p className="eyebrow">Вход в систему</p>
-          <h1>AMO CRM Voice Admin</h1>
-          <p className="login-copy">Вход для внутренней панели. Используется минимальный backend admin auth без отдельной user-management системы.</p>
+          <h1>Панель управления AMO CRM Voice</h1>
+          <p className="login-copy">Вход во внутреннюю админку. Используется встроенная серверная авторизация без отдельной системы управления пользователями.</p>
         </div>
         <form className="login-form" onSubmit={handleSubmit}>
           <label>
-            Email
+            Электронная почта
             <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="admin@example.com" required />
           </label>
           <label>

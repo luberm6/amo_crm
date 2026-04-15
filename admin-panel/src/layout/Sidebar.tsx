@@ -15,7 +15,7 @@ export default function Sidebar() {
       <div className="brand-block">
         <p className="eyebrow">Внутренняя панель</p>
         <h1>AMO CRM Voice</h1>
-        <p className="sidebar-copy">Рабочий контур для настройки агентов, промптов и browser-based voice QA.</p>
+        <p className="sidebar-copy">Рабочий контур для настройки агентов, промптов и голосовой проверки в браузере.</p>
       </div>
       <nav className="nav-list" aria-label="Навигация администратора">
         {items.map((item) => (

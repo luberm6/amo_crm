@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom'
 
 const cards = [
-  { to: '/agents',         title: 'Агенты',           body: 'Следующий этап: карточки агентов и конфигурация маршрутов.' },
-  { to: '/prompts',        title: 'Промпты',           body: 'Место для prompt profiles и prompt revision history.' },
-  { to: '/knowledge-base', title: 'База знаний',       body: 'Подготовлено пространство под QA базы знаний и indexing status.' },
-  { to: '/browser-call',   title: 'Браузерный звонок', body: 'Уже подключён как реальный QA-контур поверх Direct session runtime.' },
+  { to: '/agents',         title: 'Агенты',           body: 'Карточки агентов, голосовые настройки, телеметрия и маршрутизация.' },
+  { to: '/prompts',        title: 'Промпты',           body: 'Системные инструкции, правила общения и история изменений.' },
+  { to: '/knowledge-base', title: 'База знаний',       body: 'Документы компании, категории знаний и контекст для агентов.' },
+  { to: '/browser-call',   title: 'Браузерный звонок', body: 'Реальный контур ручной проверки поверх direct-runtime контура.' },
 ]
 
 export default function DashboardPage() {
@@ -12,10 +12,10 @@ export default function DashboardPage() {
     <section className="page-grid">
       <article className="hero-card">
         <p className="eyebrow">Панель управления</p>
-        <h3>Каркас админки поднят как отдельный frontend.</h3>
+        <h3>Внутренняя админка для настройки агентов и голосового контура.</h3>
         <p>
-          Backend остаётся на FastAPI, а browser-based voice QA теперь можно развивать из нормального web-admin,
-          а не из временной HTML-страницы.
+          Backend остаётся на FastAPI, а настройка агентов, провайдеров и голосовой проверки теперь живёт
+          в полноценной веб-панели, а не во временных страницах и ручных скриптах.
         </p>
       </article>
       <div className="dashboard-cards">

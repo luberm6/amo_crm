@@ -376,8 +376,8 @@ export default function KnowledgeBasePage() {
           <p className="eyebrow">Слой знаний</p>
           <h3>Данные компании и документы базы знаний</h3>
           <p>
-            Здесь knowledge layer разделена на три части: company profile, knowledge documents и bindings к
-            агентам. Документы управляются отдельно и потом могут перейти в более серьёзный retrieval без
+            Здесь слой знаний разделён на три части: профиль компании, документы базы знаний и привязки к
+            агентам. Документы управляются отдельно и потом могут перейти к более серьёзному поиску без
             переписывания модели.
           </p>
         </div>
@@ -429,7 +429,7 @@ export default function KnowledgeBasePage() {
               <div className="empty-state">Загружаем документы базы знаний…</div>
             ) : documents.length === 0 ? (
               <div className="empty-state">
-                Под текущий фильтр документов нет. Можно создать первую knowledge entry вручную.
+                Под текущий фильтр документов нет. Можно вручную создать первую запись базы знаний.
               </div>
             ) : (
               <div className="data-table-wrap">
@@ -674,12 +674,12 @@ export default function KnowledgeBasePage() {
             <div className="panel-header">
               <div>
                 <p className="eyebrow">Контролируемая сборка</p>
-                <h4>Заметка о runtime</h4>
+                <h4>Заметка о рантайме</h4>
               </div>
             </div>
             <p className="sidebar-copy compact-copy">
-              На этом этапе knowledge layer хранится и привязывается отдельно. Runtime получает подготовленный
-              structured context, но мы не пихаем всю базу знаний слепо в system prompt.
+              На этом этапе слой знаний хранится и привязывается отдельно. Рантайм получает подготовленный
+              структурированный контекст, но мы не вставляем всю базу знаний слепо в системный промпт.
             </p>
           </section>
         </aside>

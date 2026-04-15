@@ -38,7 +38,7 @@ describe('admin panel smoke', () => {
     }))
 
     renderWithProviders('/login')
-    expect(screen.getByRole('heading', { name: /AMO CRM Voice Admin/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Панель управления AMO CRM Voice/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Войти/i })).toBeInTheDocument()
   })
 
@@ -50,7 +50,7 @@ describe('admin panel smoke', () => {
 
     renderWithProviders('/')
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /AMO CRM Voice Admin/i })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: /Панель управления AMO CRM Voice/i })).toBeInTheDocument()
     })
   })
 
@@ -80,7 +80,7 @@ describe('admin panel smoke', () => {
 
     renderWithProviders('/login')
 
-    await user.type(screen.getByLabelText(/Email/i), 'admin@example.com')
+    await user.type(screen.getByLabelText(/Электронная почта/i), 'admin@example.com')
     await user.type(screen.getByLabelText(/Пароль/i), 'password123')
     await user.click(screen.getByRole('button', { name: /Войти/i }))
 

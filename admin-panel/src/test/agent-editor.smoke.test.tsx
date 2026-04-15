@@ -25,7 +25,7 @@ function renderEditor(initialEntry = '/agents/agent-1') {
 }
 
 function getBoundLineCard() {
-  const match = screen.getAllByText(/Bound to agent/i).find((node) => node.closest('.binding-cta-card'))
+  const match = screen.getAllByText(/Назначено агенту/i).find((node) => node.closest('.binding-cta-card'))
   return match?.closest('.binding-cta-card') ?? null
 }
 
@@ -209,22 +209,22 @@ describe('agent editor telephony smoke', () => {
     const view = renderEditor()
 
     await waitFor(() => {
-      expect(screen.getByText(/Sync numbers from Mango/i)).toBeInTheDocument()
+      expect(screen.getByText(/Синхронизировать номера из Mango/i)).toBeInTheDocument()
     })
 
     const user = userEvent.setup()
 
-    expect(screen.getByText(/Inbound webhook verification not configured/i)).toBeInTheDocument()
-    expect(screen.getByText(/Outbound calling not configured/i)).toBeInTheDocument()
-    expect(screen.getByText(/Mango extensions not configured in this tenant/i)).toBeInTheDocument()
+    expect(screen.getByText(/Проверка входящего вебхука не настроена/i)).toBeInTheDocument()
+    expect(screen.getByText(/Исходящие звонки не настроены/i)).toBeInTheDocument()
+    expect(screen.getByText(/В этом tenant Mango не настроены внутренние номера/i)).toBeInTheDocument()
 
-    await user.click(screen.getByText(/Sync numbers from Mango/i))
+    await user.click(screen.getByText(/Синхронизировать номера из Mango/i))
 
     await waitFor(() => {
       expect(screen.getByText(/Mango sync завершён/i)).toBeInTheDocument()
     })
 
-    const lineSelect = screen.getByLabelText(/Select Mango number/i)
+    const lineSelect = screen.getByLabelText(/Выберите номер Mango/i)
     expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\)/i })).toBeInTheDocument()
 
     await user.selectOptions(lineSelect, '405622036')
@@ -249,11 +249,11 @@ describe('agent editor telephony smoke', () => {
     renderEditor()
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Select Mango number/i)).toHaveValue('405622036')
+      expect(screen.getByLabelText(/Выберите номер Mango/i)).toHaveValue('405622036')
     })
     expect(getBoundLineCard()).toHaveTextContent('ДЛЯ ИИ менеджера (+79300350609)')
-    expect(getBoundLineCard()).toHaveTextContent('Bound')
-    expect(screen.queryByText(/Assign number to agent to enable calls/i)).not.toBeInTheDocument()
+    expect(getBoundLineCard()).toHaveTextContent('Назначено агенту')
+    expect(screen.queryByText(/Назначьте номер агенту, чтобы включить звонки/i)).not.toBeInTheDocument()
   })
 
   it('shows deep-link back to providers for the focused Mango line', async () => {
@@ -363,10 +363,10 @@ describe('agent editor telephony smoke', () => {
     renderEditor('/agents/agent-1?mango_line=405622036&from=providers')
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Back to Providers for this line/i })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: /Назад к Mango для этой линии/i })).toBeInTheDocument()
     })
 
-    expect(screen.getByRole('link', { name: /Back to Providers for this line/i })).toHaveAttribute('href', '/providers?line=405622036')
+    expect(screen.getByRole('link', { name: /Назад к Mango для этой линии/i })).toHaveAttribute('href', '/providers?line=405622036')
     expect(getBoundLineCard()).toHaveTextContent('ДЛЯ ИИ менеджера (+79300350609)')
   })
 
@@ -473,11 +473,11 @@ describe('agent editor telephony smoke', () => {
     renderEditor()
 
     await waitFor(() => {
-      expect(screen.getByText(/Inbound webhook verification not configured/i)).toBeInTheDocument()
+      expect(screen.getByText(/Проверка входящего вебхука не настроена/i)).toBeInTheDocument()
     })
 
-    expect(screen.getByText(/Outbound calling not configured/i)).toBeInTheDocument()
-    expect(screen.getByText(/Mango extensions not configured in this tenant/i)).toBeInTheDocument()
+    expect(screen.getByText(/Исходящие звонки не настроены/i)).toBeInTheDocument()
+    expect(screen.getByText(/В этом tenant Mango не настроены внутренние номера/i)).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\)/i })).toBeInTheDocument()
   })
 
@@ -589,7 +589,7 @@ describe('agent editor telephony smoke', () => {
     renderEditor()
 
     await waitFor(() => {
-      expect(screen.getByText(/Mango временно ограничил extensions API по rate limit/i)).toBeInTheDocument()
+      expect(screen.getByText(/Mango временно ограничил API внутренних номеров по лимиту запросов/i)).toBeInTheDocument()
     })
     expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\)/i })).toBeInTheDocument()
   })
@@ -698,10 +698,10 @@ describe('agent editor telephony smoke', () => {
     renderEditor()
 
     await waitFor(() => {
-      expect(screen.getByText(/auto-discovered Mango extension/i)).toBeInTheDocument()
+      expect(screen.getByText(/автоматически найденный внутренний номер Mango/i)).toBeInTheDocument()
     })
 
-    expect(screen.queryByText(/Outbound calling not configured/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Исходящие звонки не настроены/i)).not.toBeInTheDocument()
   })
 
   it('shows a friendly inactive-line error instead of raw backend codes', async () => {
@@ -817,11 +817,11 @@ describe('agent editor telephony smoke', () => {
     renderEditor()
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Select Mango number/i)).toBeInTheDocument()
+      expect(screen.getByLabelText(/Выберите номер Mango/i)).toBeInTheDocument()
     })
 
     const user = userEvent.setup()
-    await user.selectOptions(screen.getByLabelText(/Select Mango number/i), '405622036')
+    await user.selectOptions(screen.getByLabelText(/Выберите номер Mango/i), '405622036')
     await user.click(screen.getByRole('button', { name: /Сохранить настройки агента/i }))
 
     await waitFor(() => {

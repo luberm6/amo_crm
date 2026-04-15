@@ -148,58 +148,58 @@ type ProviderDefinition = {
 const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
   {
     provider: 'mango',
-    description: 'Хранит Mango credentials как settings layer. Не включает маршрутизацию AI и не трогает номера amoCRM.',
+    description: 'Хранит учётные данные Mango как слой настроек. Не включает AI-маршрутизацию и не трогает номера amoCRM.',
     configFields: [
       {
         key: 'from_ext',
-        label: 'Default extension',
+        label: 'Исходный внутренний номер',
         kind: 'text',
-        help: 'Сохраняется как reference setting. Не включает исходящий маршрут автоматически.',
+        help: 'Сохраняется как опорная настройка. Сам по себе не включает исходящий маршрут.',
       },
       {
         key: 'webhook_ip_allowlist',
-        label: 'Webhook IP allowlist',
+        label: 'Список IP для вебхука',
         kind: 'textarea',
-        help: 'CIDR/IP список для будущей webhook-конфигурации.',
+        help: 'Список CIDR/IP для будущей конфигурации вебхука.',
       },
     ],
     secretFields: [
-      { key: 'api_key', label: 'API key', kind: 'text' },
-      { key: 'api_salt', label: 'API salt', kind: 'text' },
-      { key: 'webhook_secret', label: 'Webhook signature secret', kind: 'text' },
-      { key: 'webhook_shared_secret', label: 'Webhook shared secret', kind: 'text' },
+      { key: 'api_key', label: 'API-ключ', kind: 'text' },
+      { key: 'api_salt', label: 'Соль API-подписи', kind: 'text' },
+      { key: 'webhook_secret', label: 'Секрет подписи вебхука', kind: 'text' },
+      { key: 'webhook_shared_secret', label: 'Общий секрет вебхука', kind: 'text' },
     ],
   },
   {
     provider: 'gemini',
-    description: 'Gemini model/API settings для Direct runtime и Browser Call. Сохранение не переключает runtime автоматически.',
+    description: 'Настройки модели и API Gemini для direct-runtime контура и браузерного звонка. Сохранение не переключает рантайм автоматически.',
     configFields: [
-      { key: 'model_id', label: 'Model ID', kind: 'text' },
-      { key: 'api_version', label: 'API version', kind: 'text' },
+      { key: 'model_id', label: 'Идентификатор модели', kind: 'text' },
+      { key: 'api_version', label: 'Версия API', kind: 'text' },
     ],
-    secretFields: [{ key: 'api_key', label: 'API key', kind: 'text' }],
+    secretFields: [{ key: 'api_key', label: 'API-ключ', kind: 'text' }],
   },
   {
     provider: 'elevenlabs',
-    description: 'TTS provider settings. Сохранение не делает ElevenLabs активным голосовым путём само по себе.',
+    description: 'Настройки TTS-провайдера. Сохранение само по себе не делает ElevenLabs активным голосовым путём.',
     configFields: [
-      { key: 'voice_id', label: 'Voice ID', kind: 'text' },
-      { key: 'enabled', label: 'Provider enabled', kind: 'boolean', help: 'Флаг хранится отдельно как operator intent.' },
+      { key: 'voice_id', label: 'Идентификатор голоса', kind: 'text' },
+      { key: 'enabled', label: 'Провайдер включён', kind: 'boolean', help: 'Флаг хранится отдельно как операторское намерение.' },
     ],
-    secretFields: [{ key: 'api_key', label: 'API key', kind: 'text' }],
+    secretFields: [{ key: 'api_key', label: 'API-ключ', kind: 'text' }],
   },
   {
     provider: 'vapi',
-    description: 'Optional route provider settings. Сохранение не меняет активный route и не затрагивает browser/direct runtime без явной wiring.',
+    description: 'Дополнительные настройки маршрутного провайдера. Сохранение не меняет активный маршрут и не затрагивает браузерный или direct-runtime контур без явной связки.',
     configFields: [
-      { key: 'assistant_id', label: 'Assistant ID', kind: 'text' },
-      { key: 'phone_number_id', label: 'Phone Number ID', kind: 'text' },
-      { key: 'base_url', label: 'Base URL', kind: 'text' },
-      { key: 'server_url', label: 'Server URL', kind: 'text' },
+      { key: 'assistant_id', label: 'Идентификатор ассистента', kind: 'text' },
+      { key: 'phone_number_id', label: 'Идентификатор номера', kind: 'text' },
+      { key: 'base_url', label: 'Базовый URL', kind: 'text' },
+      { key: 'server_url', label: 'Серверный URL', kind: 'text' },
     ],
     secretFields: [
-      { key: 'api_key', label: 'API key', kind: 'text' },
-      { key: 'webhook_secret', label: 'Webhook secret', kind: 'text' },
+      { key: 'api_key', label: 'API-ключ', kind: 'text' },
+      { key: 'webhook_secret', label: 'Секрет вебхука', kind: 'text' },
     ],
   },
 ]
@@ -218,7 +218,7 @@ function buildInitialForm(setting: ProviderSetting): ProviderFormState {
 
 function formatTimestamp(value?: string | null) {
   if (!value) {
-    return 'Ещё не проверялось'
+    return 'Проверка ещё не запускалась'
   }
   return new Date(value).toLocaleString()
 }
@@ -230,37 +230,37 @@ function formatMangoLineLabel(line: Pick<TelephonyLine, 'schema_name' | 'label' 
 
 function summarizeMangoIssue(readiness: MangoReadiness | null, linesCount: number, extensionsCount = 0) {
   if (!readiness?.api_configured) {
-    return 'API credentials missing'
+    return 'Не заданы API-учётные данные'
   }
   if (linesCount === 0) {
-    return 'No lines synced yet'
+    return 'Линии ещё не синхронизированы'
   }
   if (!readiness.webhook_secret_configured) {
-    return 'Webhook missing'
+    return 'Не настроен вебхук'
   }
   if (!readiness.from_ext_configured && !readiness.from_ext_auto_discoverable) {
-    return 'FROM_EXT missing'
+    return 'Не задан исходный внутренний номер'
   }
   if (extensionsCount === 0) {
-    return 'Extensions missing'
+    return 'Нет внутренних номеров'
   }
-  return 'No blocking issues detected'
+  return 'Критичных блокеров не найдено'
 }
 
 function formatIssueLabel(issue: string) {
   switch (issue) {
     case 'API credentials missing':
-      return 'API credentials missing'
+      return 'Не заданы API-учётные данные'
     case 'No synced numbers':
-      return 'No numbers synced'
+      return 'Номера не синхронизированы'
     case 'Webhook missing':
-      return 'Webhook missing'
+      return 'Не настроен вебхук'
     case 'FROM_EXT missing':
-      return 'FROM_EXT missing'
+      return 'Не задан исходный внутренний номер'
     case 'FROM_EXT auto-discovered':
-      return 'FROM_EXT auto-discovered'
+      return 'Исходный номер найден автоматически'
     case 'No agent binding yet':
-      return 'Agent binding missing'
+      return 'Номер ещё не назначен агенту'
     default:
       return issue
   }
@@ -269,21 +269,21 @@ function formatIssueLabel(issue: string) {
 function mapMangoRequirementLabel(requirement: string) {
   switch (requirement) {
     case 'mango_api_credentials_missing':
-      return 'Mango API credentials are missing.'
+      return 'Не заданы Mango API-учётные данные.'
     case 'mango_webhook_secret_missing':
-      return 'Webhook secret is missing, so inbound webhook verification is not secured.'
+      return 'Не задан секрет вебхука, поэтому входящий вебхук не защищён.'
     case 'backend_url_not_public':
-      return 'BACKEND_URL is not public, so Mango cannot reach this Render backend.'
+      return 'BACKEND_URL не является публичным, поэтому Mango не сможет достучаться до этого backend на Render.'
     case 'mango_from_ext_missing':
-      return 'FROM_EXT is not configured and no stable fallback is available.'
+      return 'Не задан MANGO_FROM_EXT, и стабильный fallback не найден.'
     case 'telephony_runtime_not_real':
-      return 'Runtime telephony provider is not a real Mango route yet.'
+      return 'Рантайм телефонии ещё не переключён на реальный маршрут Mango.'
     case 'media_gateway_disabled':
-      return 'MEDIA_GATEWAY_ENABLED=false, so inbound AI call routing is blocked.'
+      return 'MEDIA_GATEWAY_ENABLED=false, поэтому входящий AI-маршрут заблокирован.'
     case 'media_gateway_provider_not_freeswitch':
-      return 'Inbound AI expects MEDIA_GATEWAY_PROVIDER=freeswitch.'
+      return 'Для входящего AI-маршрута ожидается MEDIA_GATEWAY_PROVIDER=freeswitch.'
     case 'media_gateway_mode_not_supported':
-      return 'Inbound AI expects MEDIA_GATEWAY_MODE=mock or esl_rtp.'
+      return 'Для входящего AI-маршрута ожидается MEDIA_GATEWAY_MODE=mock или esl_rtp.'
     default:
       return requirement
   }
@@ -291,7 +291,7 @@ function mapMangoRequirementLabel(requirement: string) {
 
 function collectReadinessBlockers(readiness: MangoReadiness | null, scope: 'webhook' | 'outbound' | 'inbound_ai') {
   if (!readiness) {
-    return ['Readiness data is unavailable.']
+    return ['Данные о готовности недоступны.']
   }
   const scopeKey = scope === 'webhook' ? 'inbound_webhook' : scope === 'outbound' ? 'outbound_originate' : 'inbound_ai_runtime'
   const routeScope = readiness.route_readiness?.[scopeKey]
@@ -325,33 +325,80 @@ function collectReadinessBlockers(readiness: MangoReadiness | null, scope: 'webh
 
 function mapMangoReadinessWarning(warning: string) {
   if (warning.includes('MANGO_WEBHOOK_SECRET')) {
-    return 'Inbound webhook verification not configured. Входящий webhook-path ещё не защищён.'
+    return 'Проверка входящего вебхука не настроена. Входящий путь вебхука пока не защищён.'
   }
   if (warning.includes('BACKEND_URL')) {
-    return 'BACKEND_URL не является публичным. Mango не сможет доставить live webhook в этот backend, пока URL не станет внешне доступным.'
+    return 'BACKEND_URL не является публичным. Mango не сможет доставить боевой вебхук в этот backend, пока URL не станет внешне доступным.'
   }
   if (warning.includes('auto-discovered Mango extension')) {
-    return 'Outbound source extension будет auto-discovered. Для фиксированного originate лучше явно задать MANGO_FROM_EXT.'
+    return 'Исходный внутренний номер будет найден автоматически. Для предсказуемого исходящего вызова всё равно лучше явно задать MANGO_FROM_EXT.'
   }
   if (warning.includes('MANGO_FROM_EXT')) {
-    return 'Outbound calling not ready: не задан MANGO_FROM_EXT и нет auto-discovery fallback.'
+    return 'Исходящие звонки не готовы: не задан MANGO_FROM_EXT и нет автоматического fallback-подбора.'
   }
   if (warning.includes('telephony provider')) {
-    return 'Direct runtime сейчас не смотрит в реальный telephony route. PSTN originate smoke пока упрётся не в Mango, а в non-real provider.'
+    return 'Direct-runtime контур сейчас не смотрит в реальный маршрут телефонии. Smoke-проверка PSTN пока упрётся не в Mango, а в тестовый провайдер.'
   }
   if (warning.includes('MEDIA_GATEWAY_ENABLED=false')) {
-    return 'Inbound AI runtime заблокирован: MEDIA_GATEWAY_ENABLED=false.'
+    return 'Входящий AI-рантайм заблокирован: MEDIA_GATEWAY_ENABLED=false.'
   }
   if (warning.includes('MEDIA_GATEWAY_PROVIDER=freeswitch')) {
-    return 'Inbound AI runtime ожидает MEDIA_GATEWAY_PROVIDER=freeswitch.'
+    return 'Входящий AI-рантайм ожидает MEDIA_GATEWAY_PROVIDER=freeswitch.'
   }
   if (warning.includes('MEDIA_GATEWAY_MODE=mock or esl_rtp')) {
-    return 'Inbound AI runtime ожидает MEDIA_GATEWAY_MODE=mock или esl_rtp.'
+    return 'Входящий AI-рантайм ожидает MEDIA_GATEWAY_MODE=mock или esl_rtp.'
   }
   if (warning.includes('MANGO_API_KEY') || warning.includes('MANGO_API_SALT')) {
-    return 'Mango API credentials missing. Inventory sync и live routing недоступны.'
+    return 'Не заданы учётные данные Mango API. Синхронизация инвентаря и боевая маршрутизация недоступны.'
   }
   return warning
+}
+
+function formatProviderStatus(status: ProviderSetting['status']) {
+  switch (status) {
+    case 'configured':
+      return 'настроен'
+    case 'invalid':
+      return 'ошибка'
+    case 'not_tested':
+      return 'не проверен'
+    default:
+      return status
+  }
+}
+
+function formatActivationStatus(status: ProviderSetting['activation_status']) {
+  return status === 'active' ? 'активен' : 'неактивен'
+}
+
+function formatSafeModeNote(note: string) {
+  switch (note) {
+    case 'Saving Mango credentials does not activate AI routing.':
+      return 'Сохранение учётных данных Mango само по себе не включает AI-маршрутизацию.'
+    case 'Saving Gemini settings does not switch runtime automatically.':
+      return 'Сохранение настроек Gemini не переключает рантайм автоматически.'
+    case 'Saving ElevenLabs settings does not make it the active voice path automatically.':
+      return 'Сохранение настроек ElevenLabs не делает его активным голосовым путём автоматически.'
+    case 'Saving Vapi settings does not activate the route automatically.':
+      return 'Сохранение настроек Vapi не активирует этот маршрут автоматически.'
+    default:
+      return note
+  }
+}
+
+function formatSetupStageTitle(title: SetupStage['title']) {
+  switch (title) {
+    case 'Connected':
+      return 'Подключено'
+    case 'Synced':
+      return 'Синхронизировано'
+    case 'Bound':
+      return 'Назначено'
+    case 'Live-ready':
+      return 'Готово к боевой проверке'
+    default:
+      return title
+  }
 }
 
 type SetupStage = {
@@ -506,35 +553,35 @@ export default function ProvidersPage() {
     [mangoReadiness],
   )
   const inboundWebhookSummary = mangoReadiness?.route_readiness?.inbound_webhook?.summary
-    || 'Mango webhook to Render backend'
+    || 'Webhook Mango в backend на Render'
   const outboundOriginateSummary = mangoReadiness?.route_readiness?.outbound_originate?.summary
-    || 'Agent-bound Mango line to outbound smoke'
+    || 'Линия Mango, назначенная агенту, для исходящего smoke'
   const inboundAiSummary = mangoReadiness?.route_readiness?.inbound_ai_runtime?.summary
-    || 'Webhook to bound agent to AI runtime'
+    || 'Вебхук -> назначенный агент -> AI-рантайм'
   const nextStep = mangoReadiness?.actionable_next_step || null
   const setupStages = useMemo<SetupStage[]>(() => [
     {
       key: 'connected',
-      title: 'Connected',
-      description: 'Mango credentials are saved and the API can be used.',
+      title: 'Подключено',
+      description: 'Учётные данные Mango сохранены, API можно использовать.',
       ready: Boolean(mangoReadiness?.api_configured),
     },
     {
       key: 'synced',
-      title: 'Synced',
-      description: 'Mango numbers are visible in inventory.',
+      title: 'Синхронизировано',
+      description: 'Номера Mango уже видны в инвентаре.',
       ready: mangoLines.length > 0,
     },
     {
       key: 'bound',
-      title: 'Bound',
-      description: 'At least one Mango line is assigned to an agent.',
+      title: 'Назначено',
+      description: 'Хотя бы одна линия уже назначена агенту.',
       ready: boundLineCount > 0,
     },
     {
       key: 'live_ready',
-      title: 'Live-ready',
-      description: 'Render-side webhook/originate path is ready for honest smoke.',
+      title: 'Готово к live',
+      description: 'Путь входящего вебхука и исходящего вызова на Render готов к честной smoke-проверке.',
       ready: mangoReadiness?.render_summary?.overall_status === 'ready',
     },
   ], [boundLineCount, mangoLines.length, mangoReadiness?.api_configured, mangoReadiness?.render_summary?.overall_status])
@@ -542,23 +589,23 @@ export default function ProvidersPage() {
   const inventoryNextStep = useMemo<LocalNextStep>(() => {
     if (!mangoReadiness?.api_configured) {
       return {
-        title: 'Save Mango credentials first',
-        description: 'Connection must be configured before inventory sync can fetch numbers from Mango.',
-        ctaLabel: 'Save credentials below',
+        title: 'Сначала сохраните учётные данные Mango',
+        description: 'Пока подключение не настроено, синхронизация не сможет подтянуть номера из Mango.',
+        ctaLabel: 'Сохранить учётные данные ниже',
       }
     }
     if (mangoLines.length === 0) {
       return {
-        title: 'Sync numbers from Mango',
-        description: 'Pull the current tenant inventory so operators can see real numbers and bind them.',
-        ctaLabel: 'Sync numbers from Mango',
+        title: 'Синхронизируйте номера из Mango',
+        description: 'Подтяните актуальный инвентарь аккаунта, чтобы операторы увидели реальные номера и могли их назначать.',
+        ctaLabel: 'Синхронизировать номера из Mango',
         buttonAction: 'sync',
       }
     }
     return {
-      title: 'Inventory is visible',
-      description: 'Numbers are already synced. Refresh when the Mango tenant changes or after provider edits.',
-      ctaLabel: 'Refresh inventory',
+      title: 'Инвентарь уже виден',
+      description: 'Номера уже синхронизированы. Обновляйте список после изменений в Mango или после правок провайдера.',
+      ctaLabel: 'Обновить инвентарь',
       buttonAction: 'sync',
     }
   }, [mangoLines.length, mangoReadiness?.api_configured])
@@ -566,32 +613,32 @@ export default function ProvidersPage() {
   const bindingNextStep = useMemo<LocalNextStep>(() => {
     if (mangoLines.length === 0) {
       return {
-        title: 'Sync numbers before binding',
-        description: 'An agent cannot be assigned until Mango inventory is visible on this page.',
-        ctaLabel: 'Sync numbers first',
+        title: 'Сначала синхронизируйте номера',
+        description: 'Пока инвентарь Mango не виден на этой странице, назначить номер агенту нельзя.',
+        ctaLabel: 'Сначала синхронизировать номера',
         buttonAction: 'sync',
       }
     }
     if (boundLineCount === 0 && recommendedLine) {
       return {
-        title: 'Bind the recommended AI line now',
-        description: `Open Agent settings and bind ${formatMangoLineLabel(recommendedLine)} so inbound/outbound control can target a real line.`,
-        ctaLabel: 'Go bind the recommended line',
+        title: 'Назначьте рекомендованную AI-линию',
+        description: `Откройте настройки агента и привяжите ${formatMangoLineLabel(recommendedLine)}, чтобы входящий и исходящий маршруты смотрели в реальную линию.`,
+        ctaLabel: 'Назначить рекомендованную линию',
         href: `/agents?source=mango&line=${recommendedLine.remote_line_id}`,
       }
     }
     if (boundLineCount === 0) {
       return {
-        title: 'Bind a synced line to an agent',
-        description: 'The numbers are visible, but no agent owns a line yet. Pick one line and assign it.',
-        ctaLabel: 'Go bind a line now',
+        title: 'Назначьте синхронизированную линию агенту',
+        description: 'Номера уже видны, но ни один агент пока не привязан к линии. Выберите линию и назначьте её.',
+        ctaLabel: 'Назначить линию агенту',
         href: '/agents?source=mango',
       }
     }
     return {
-      title: 'Review current agent binding',
-      description: 'At least one line is already assigned. Open the bound agent to confirm telephony, voice, and prompt settings.',
-      ctaLabel: 'Open bound agent',
+      title: 'Проверьте текущее назначение агента',
+      description: 'Хотя бы одна линия уже назначена. Откройте привязанного агента и проверьте телефонию, голос и промпт.',
+      ctaLabel: 'Открыть привязанного агента',
       href: boundRoutingItems[0]?.agent_id ? `/agents/${boundRoutingItems[0].agent_id}?mango_line=${boundRoutingItems[0].remote_line_id}&from=providers` : '/agents',
     }
   }, [boundLineCount, boundRoutingItems, mangoLines.length, recommendedLine])
@@ -802,7 +849,7 @@ export default function ProvidersPage() {
       }
       setProviderMessages((current) => ({
         ...current,
-        [provider]: `${validation.message}${validation.remote_checked ? '' : ' Удалённое подключение намеренно не проверялось.'}`,
+        [provider]: `${validation.message}${validation.remote_checked ? '' : ' Удалённая проверка намеренно не выполнялась.'}`,
       }))
     } catch (err) {
       setProviderErrors((current) => ({
@@ -830,7 +877,7 @@ export default function ProvidersPage() {
       )
       setMangoLines(response.items)
       setLastSyncResponse(response)
-      setMangoSyncMessage(`Sync completed: ${response.synced_count} lines updated, ${response.deactivated_count} deactivated.`)
+      setMangoSyncMessage(`Синхронизация завершена: обновлено ${response.synced_count} линий, деактивировано ${response.deactivated_count}.`)
       await loadMangoOverview()
     } catch (err) {
       setMangoInventoryError(err instanceof ApiError ? err.message : 'Не удалось синхронизировать Mango inventory.')
@@ -871,10 +918,10 @@ export default function ProvidersPage() {
         </div>
         <div className="status-strip">
           <span className={`status-pill${mangoReadiness?.api_configured ? ' live' : ''}`}>
-            {mangoReadiness?.api_configured ? 'Mango connected' : 'Mango not connected'}
+            {mangoReadiness?.api_configured ? 'Mango подключён' : 'Mango не подключён'}
           </span>
-          <span className="status-pill">Numbers visible</span>
-          <span className="status-pill">Agent binding separate</span>
+          <span className="status-pill">Номера видны</span>
+          <span className="status-pill">Назначение агенту отдельно</span>
         </div>
       </article>
 
@@ -896,15 +943,15 @@ export default function ProvidersPage() {
               </div>
               <div className="status-strip provider-status-strip">
                 <span className={`status-pill${setting.status === 'configured' ? ' live' : setting.status === 'invalid' ? ' error' : ''}`}>
-                  {setting.status}
+                  {formatProviderStatus(setting.status)}
                 </span>
                 <span className={`status-pill${setting.activation_status === 'active' ? ' live' : ''}`}>
-                  {setting.activation_status}
+                  {formatActivationStatus(setting.activation_status)}
                 </span>
               </div>
             </div>
 
-            <div className="provider-note">{setting.safe_mode_note}</div>
+            <div className="provider-note">{formatSafeModeNote(setting.safe_mode_note)}</div>
             {setting.last_validation_message ? (
               <div className="provider-validation-copy">
                 <strong>Последняя проверка:</strong> {setting.last_validation_message}
@@ -919,41 +966,41 @@ export default function ProvidersPage() {
                 <section className="provider-subpanel">
                   <div className="panel-header">
                     <div>
-                      <p className="eyebrow">1. Connection</p>
-                      <h4>Mango Status</h4>
+                      <p className="eyebrow">1. Подключение</p>
+                      <h4>Статус Mango</h4>
                     </div>
                   </div>
                   <div className="saas-summary-grid">
                     <div className="saas-summary-card">
-                      <span>Connected</span>
-                      <strong>{mangoReadiness?.api_configured ? 'YES' : 'NO'}</strong>
+                      <span>Подключение</span>
+                      <strong>{mangoReadiness?.api_configured ? 'Да' : 'Нет'}</strong>
                     </div>
                     <div className="saas-summary-card">
-                      <span>API key status</span>
-                      <strong>{setting.secrets.api_key?.is_set ? 'Stored' : 'Missing'}</strong>
+                      <span>Статус API-ключа</span>
+                      <strong>{setting.secrets.api_key?.is_set ? 'Сохранён' : 'Отсутствует'}</strong>
                     </div>
                     <div className="saas-summary-card">
-                      <span>Readiness</span>
-                      <strong>{mangoReadiness?.api_configured ? 'Ready to sync' : 'Configure first'}</strong>
+                      <span>Готовность</span>
+                      <strong>{mangoReadiness?.api_configured ? 'Готово к синхронизации' : 'Сначала настройте подключение'}</strong>
                     </div>
                     <div className="saas-summary-card">
-                      <span>Lines found</span>
+                      <span>Найдено линий</span>
                       <strong>{mangoInventoryLoading ? '…' : mangoLines.length}</strong>
                     </div>
                     <div className="saas-summary-card">
-                      <span>Last sync</span>
-                      <strong>{latestMangoSyncAt ? formatTimestamp(latestMangoSyncAt) : 'Not synced'}</strong>
+                      <span>Последняя синхронизация</span>
+                      <strong>{latestMangoSyncAt ? formatTimestamp(latestMangoSyncAt) : 'Ещё не синхронизировано'}</strong>
                     </div>
                     <div className="saas-summary-card">
-                      <span>Issues</span>
+                      <span>Проблемы</span>
                       <strong>{summarizeMangoIssue(mangoReadiness, mangoLines.length)}</strong>
                     </div>
                   </div>
                   <div className="setup-progress-card">
                     <div className="panel-header">
                       <div>
-                        <p className="eyebrow">Setup progress</p>
-                        <h4>Connected → Synced → Bound → Live-ready</h4>
+                        <p className="eyebrow">Прогресс настройки</p>
+                        <h4>Подключено → Синхронизировано → Назначено → Готово к live</h4>
                       </div>
                     </div>
                     <div className="setup-progress-grid">
@@ -961,7 +1008,7 @@ export default function ProvidersPage() {
                         <div key={stage.key} className={`setup-progress-step${stage.ready ? ' ready' : ''}`}>
                           <div className="setup-progress-badge">{stage.ready ? '✓' : stage.key === 'live_ready' ? '4' : stage.key === 'bound' ? '3' : stage.key === 'synced' ? '2' : '1'}</div>
                           <div>
-                            <strong>{stage.title}</strong>
+                            <strong>{formatSetupStageTitle(stage.title)}</strong>
                             <div className="table-secondary">{stage.description}</div>
                           </div>
                         </div>
@@ -978,28 +1025,28 @@ export default function ProvidersPage() {
                     </div>
                   ) : null}
                   <div className="info-banner">
-                    <strong>What happens here:</strong> сначала вы подключаете Mango и синхронизируете номера здесь,
+                    <strong>Что происходит на этой странице:</strong> сначала вы подключаете Mango и синхронизируете номера здесь,
                     потом назначаете конкретный номер в карточке агента.
                   </div>
                   <div className="journey-card">
                     <div className="journey-step">
                       <span className="journey-step-index">1</span>
                       <div>
-                        <strong>Save credentials</strong>
-                        <div className="table-secondary">API key, salt и readiness статусы остаются на этой странице.</div>
+                        <strong>Сохраните учётные данные</strong>
+                        <div className="table-secondary">API-ключ, salt и статусы готовности остаются на этой странице.</div>
                       </div>
                     </div>
                     <div className="journey-step">
                       <span className="journey-step-index">2</span>
                       <div>
-                        <strong>Sync numbers from Mango</strong>
-                        <div className="table-secondary">После sync ниже появляется inventory линий и recommended AI number.</div>
+                        <strong>Синхронизируйте номера из Mango</strong>
+                        <div className="table-secondary">После синхронизации ниже появляется список линий и рекомендованный AI-номер.</div>
                       </div>
                     </div>
                     <div className="journey-step">
                       <span className="journey-step-index">3</span>
                       <div>
-                        <strong>Bind number in Agent settings</strong>
+                        <strong>Назначьте номер в карточке агента</strong>
                         <div className="table-secondary">Привязка номера сохраняется на уровне конкретного агента.</div>
                       </div>
                     </div>
@@ -1007,18 +1054,18 @@ export default function ProvidersPage() {
                 </section>
 
                 <div className="provider-note">
-                  <strong>This page stores credentials and shows Mango inventory.</strong> Номера назначаются не здесь, а в карточке агента.
+                  <strong>Эта страница хранит учётные данные и показывает инвентарь Mango.</strong> Номера назначаются не здесь, а в карточке агента.
                   {' '}
-                  <Link to="/agents" className="inline-link">Go to Agent settings to bind a number</Link>
+                  <Link to="/agents" className="inline-link">Перейти в настройки агента и назначить номер</Link>
                 </div>
 
                 {focusedLine ? (
                   <div className="info-banner">
-                    <strong>Focused line:</strong> {formatMangoLineLabel(focusedLine)}
+                    <strong>Линия в фокусе:</strong> {formatMangoLineLabel(focusedLine)}
                     <div className="table-secondary">remote_line_id: {focusedLine.remote_line_id}</div>
                     <div className="button-row">
                       <button type="button" className="ghost-button" onClick={clearFocusedLine}>
-                        Clear line focus
+                        Сбросить фокус линии
                       </button>
                     </div>
                   </div>
@@ -1031,7 +1078,7 @@ export default function ProvidersPage() {
                     onClick={() => void handleSyncMangoInventory()}
                     disabled={mangoSyncing}
                   >
-                    {mangoSyncing ? 'Syncing…' : 'Sync numbers from Mango'}
+                    {mangoSyncing ? 'Синхронизация…' : 'Синхронизировать номера из Mango'}
                   </button>
                   <button
                     type="button"
@@ -1039,24 +1086,24 @@ export default function ProvidersPage() {
                     onClick={() => void loadMangoOverview()}
                     disabled={mangoInventoryLoading}
                   >
-                    {mangoInventoryLoading ? 'Refreshing…' : 'Refresh inventory'}
+                    {mangoInventoryLoading ? 'Обновление…' : 'Обновить инвентарь'}
                   </button>
                 </div>
 
                 {mangoIssues.length > 0 ? (
                   <div className="warning-banner">
-                    <strong>Issues:</strong> {mangoIssues.join(' • ')}
+                    <strong>Проблемы:</strong> {mangoIssues.join(' • ')}
                   </div>
                 ) : null}
 
                 {mangoLines.length > 0 ? (
                   <div className="info-banner">
-                    <strong>Numbers are synced from Mango.</strong> Теперь перейдите в карточку агента и назначьте номер,
-                    чтобы включить inbound/outbound routing foundation.
+                    <strong>Номера уже синхронизированы из Mango.</strong> Теперь перейдите в карточку агента и назначьте номер,
+                    чтобы включить основу входящей и исходящей маршрутизации.
                   </div>
                   ) : (
                     <div className="info-banner">
-                      <strong>No numbers synced yet.</strong> Нажмите <strong>Sync numbers from Mango</strong>, чтобы подтянуть номера кабинета.
+                      <strong>Номера ещё не синхронизированы.</strong> Нажмите <strong>Синхронизировать номера из Mango</strong>, чтобы подтянуть номера кабинета.
                     </div>
                   )}
 
@@ -1070,49 +1117,49 @@ export default function ProvidersPage() {
                       className={`ghost-button${inventoryFilter === 'all' ? ' active-filter' : ''}`}
                       onClick={() => selectInventoryFilter('all')}
                     >
-                      All lines
+                      Все линии
                     </button>
                     <button
                       type="button"
                       className={`ghost-button${inventoryFilter === 'recommended_only' ? ' active-filter' : ''}`}
                       onClick={() => selectInventoryFilter('recommended_only')}
                     >
-                      AI recommended
+                      Рекомендовано для AI
                     </button>
                     <button
                       type="button"
                       className={`ghost-button${inventoryFilter === 'unbound_only' ? ' active-filter' : ''}`}
                       onClick={() => selectInventoryFilter('unbound_only')}
                     >
-                      Unbound only
+                      Только неназначенные
                     </button>
                   </div>
                 </div>
 
                 <div className="debug-list compact-debug">
                   <div className="debug-row">
-                    <span>readiness</span>
-                    <strong>{mangoReadiness?.api_configured ? 'configured' : 'not configured'}</strong>
+                    <span>готовность</span>
+                    <strong>{mangoReadiness?.api_configured ? 'настроено' : 'не настроено'}</strong>
                   </div>
                   <div className="debug-row">
-                    <span>numbers found</span>
-                    <strong>{mangoInventoryLoading ? 'loading…' : mangoLines.length}</strong>
+                    <span>найдено номеров</span>
+                    <strong>{mangoInventoryLoading ? 'загрузка…' : mangoLines.length}</strong>
                   </div>
                   <div className="debug-row">
-                    <span>bound lines</span>
+                    <span>назначено линий</span>
                     <strong>{mangoRoutingMap.filter((item) => item.agent_id).length}</strong>
                   </div>
                   <div className="debug-row">
-                    <span>last sync</span>
-                    <strong>{latestMangoSyncAt ? formatTimestamp(latestMangoSyncAt) : 'not synced yet'}</strong>
+                    <span>последняя синхронизация</span>
+                    <strong>{latestMangoSyncAt ? formatTimestamp(latestMangoSyncAt) : 'ещё не синхронизировано'}</strong>
                   </div>
                 </div>
 
                 <section className="provider-subpanel">
                   <div className="panel-header">
                     <div>
-                      <p className="eyebrow">2. Lines</p>
-                      <h4>Mango Lines</h4>
+                      <p className="eyebrow">2. Номера</p>
+                      <h4>Линии Mango</h4>
                     </div>
                   </div>
                   <div className="binding-cta-card">
@@ -1131,34 +1178,34 @@ export default function ProvidersPage() {
                         onClick={() => void handleSyncMangoInventory()}
                         disabled={mangoSyncing}
                       >
-                        {mangoSyncing && inventoryNextStep.buttonAction === 'sync' ? 'Syncing…' : inventoryNextStep.ctaLabel}
+                        {mangoSyncing && inventoryNextStep.buttonAction === 'sync' ? 'Синхронизация…' : inventoryNextStep.ctaLabel}
                       </button>
                     )}
                   </div>
                   <div className="provider-note">
-                    <strong>Last sync status</strong>
+                    <strong>Статус последней синхронизации</strong>
                     <div className="table-secondary">
                       {mangoSyncMessage
                         ? mangoSyncMessage
                         : latestMangoSyncAt
-                          ? `Inventory already synced. Latest known sync: ${formatTimestamp(latestMangoSyncAt)}.`
-                          : 'Sync has not been run from this page yet.'}
+                          ? `Инвентарь уже синхронизирован. Последняя известная синхронизация: ${formatTimestamp(latestMangoSyncAt)}.`
+                          : 'С этой страницы синхронизация ещё не запускалась.'}
                     </div>
                     <div className="sync-summary-grid">
                       <div className="sync-summary-item">
-                        <span>active</span>
+                        <span >активные</span>
                         <strong>{activeLineCount}</strong>
                       </div>
                       <div className="sync-summary-item">
-                        <span>inactive</span>
+                        <span >неактивные</span>
                         <strong>{inactiveLineCount}</strong>
                       </div>
                       <div className="sync-summary-item">
-                        <span>bound</span>
+                        <span >назначенные</span>
                         <strong>{boundLineCount}</strong>
                       </div>
                       <div className="sync-summary-item">
-                        <span>unbound</span>
+                        <span >свободные</span>
                         <strong>{unboundLineCount}</strong>
                       </div>
                     </div>
@@ -1166,7 +1213,7 @@ export default function ProvidersPage() {
 
                   {filteredMangoLines.length === 0 ? (
                     <div className="empty-state-card">
-                      <strong>No numbers synced yet</strong>
+                      <strong>Номера ещё не синхронизированы</strong>
                       <p>Подтяните номера из Mango и система сразу покажет, какие линии можно назначать агентам.</p>
                       <button
                         type="button"
@@ -1174,7 +1221,7 @@ export default function ProvidersPage() {
                         onClick={() => void handleSyncMangoInventory()}
                         disabled={mangoSyncing}
                       >
-                        {mangoSyncing ? 'Syncing…' : 'Sync numbers from Mango'}
+                        {mangoSyncing ? 'Синхронизация…' : 'Синхронизировать номера из Mango'}
                       </button>
                     </div>
                   ) : (
@@ -1192,30 +1239,30 @@ export default function ProvidersPage() {
                                 <p className="inventory-card-phone">{line.phone_number}</p>
                               </div>
                               <div className="status-strip">
-                                <span className={`status-pill${line.is_active ? ' live' : ' error'}`}>{line.is_active ? 'Active' : 'Inactive'}</span>
+                                <span className={`status-pill${line.is_active ? ' live' : ' error'}`}>{line.is_active ? 'Активна' : 'Неактивна'}</span>
                                 {recommendedMangoRemoteLineId === line.remote_line_id ? (
-                                  <span className="status-pill live">Recommended for AI</span>
+                                  <span className="status-pill live" >Рекомендуется для AI</span>
                                 ) : null}
                               </div>
                             </div>
                             <div className="inventory-card-meta">
-                              <div><span>Line ID</span><strong>{line.remote_line_id}</strong></div>
-                              <div><span>Provider</span><strong>{line.provider}</strong></div>
-                              <div><span>Binding</span><strong>{boundAgent ? boundAgent.agent_name || 'Bound' : 'Not assigned'}</strong></div>
+                              <div><span>ID линии</span><strong>{line.remote_line_id}</strong></div>
+                              <div><span >Провайдер</span><strong>{line.provider}</strong></div>
+                              <div><span >Назначение</span><strong>{boundAgent ? boundAgent.agent_name || 'Назначено' : 'Не назначено'}</strong></div>
                             </div>
                             <div className="inventory-card-actions">
                               {boundAgent?.agent_id ? (
                                 <Link to={`/agents/${boundAgent.agent_id}?mango_line=${line.remote_line_id}&from=providers`} className="primary-link-button">
-                                  Open bound agent
+                                  Открыть привязанного агента
                                 </Link>
                               ) : (
                                 <Link to={`/agents?source=mango&line=${line.remote_line_id}`} className="primary-link-button">
-                                  Go bind this line now
+                                  Назначить эту линию сейчас
                                 </Link>
                               )}
                               {focusedRemoteLineId !== line.remote_line_id ? (
                                 <button type="button" className="ghost-button" onClick={() => setFocusedLine(line.remote_line_id)}>
-                                  Focus this line
+                                  Показать эту линию
                                 </button>
                               ) : null}
                             </div>
@@ -1229,33 +1276,33 @@ export default function ProvidersPage() {
                 <section className="provider-subpanel">
                   <div className="panel-header">
                     <div>
-                      <p className="eyebrow">3. Live Readiness</p>
-                      <h4>Render-side routing readiness</h4>
+                      <p className="eyebrow">3. Боевая готовность</p>
+                      <h4>Готовность маршрутизации на Render</h4>
                     </div>
                   </div>
                   <div className="info-banner">
                     <strong>Честный статус боевого контура.</strong> Этот блок показывает не общую “готовность интеграции”, а можно ли
-                    уже идти в live webhook/outbound smoke на Render.
+                    уже идти в боевую smoke-проверку вебхука и исходящего вызова на Render.
                   </div>
                   {mangoReadiness?.render_summary ? (
                     <div className="provider-note">
                       <strong>
                         {mangoReadiness.render_summary.overall_status === 'ready'
-                          ? 'Render routing is ready'
+                          ? 'Маршрутизация на Render готова'
                           : mangoReadiness.render_summary.overall_status === 'partial'
-                            ? 'Render routing is partially ready'
-                            : 'Render routing is blocked'}
+                            ? 'Маршрутизация на Render частично готова'
+                            : 'Маршрутизация на Render заблокирована'}
                       </strong>
                       <div className="table-secondary">{mangoReadiness.render_summary.operator_summary}</div>
                       <div className="table-secondary">
-                        ready: {mangoReadiness.render_summary.ready_count} / blocked: {mangoReadiness.render_summary.blocked_count}
+                        готово: {mangoReadiness.render_summary.ready_count} / заблокировано: {mangoReadiness.render_summary.blocked_count}
                       </div>
                     </div>
                   ) : null}
                   {nextStep ? (
                     <div className={`next-step-banner${mangoReadiness?.render_summary?.overall_status === 'ready' ? ' success' : ''}`}>
                       <div>
-                        <p className="eyebrow">Main next step</p>
+                        <p className="eyebrow" >Главный следующий шаг</p>
                         <strong>{nextStep.title}</strong>
                         <div className="table-secondary">{nextStep.description}</div>
                       </div>
@@ -1266,15 +1313,15 @@ export default function ProvidersPage() {
                     <article className={`readiness-card${inboundWebhookSmokeReady ? ' ready' : ' blocked'}`}>
                       <div className="readiness-card-header">
                         <div>
-                          <p className="readiness-card-title">Inbound webhook</p>
+                          <p className="readiness-card-title" >Входящий вебхук</p>
                           <p className="readiness-card-copy">{inboundWebhookSummary}</p>
                         </div>
                         <span className={`status-pill${inboundWebhookSmokeReady ? ' live' : ' error'}`}>
-                          {inboundWebhookSmokeReady ? 'Ready' : 'Blocked'}
+                          {inboundWebhookSmokeReady ? 'Готово' : 'Заблокировано'}
                         </span>
                       </div>
                       <ul className="readiness-list">
-                        {(webhookBlockers.length > 0 ? webhookBlockers : ['Webhook path is ready for a smoke delivery test.']).map((item) => (
+                        {(webhookBlockers.length > 0 ? webhookBlockers : ['Путь вебхука готов к smoke-проверке доставки.']).map((item) => (
                           <li key={item}>{item}</li>
                         ))}
                       </ul>
@@ -1283,15 +1330,15 @@ export default function ProvidersPage() {
                     <article className={`readiness-card${outboundOriginateSmokeReady ? ' ready' : ' blocked'}`}>
                       <div className="readiness-card-header">
                         <div>
-                          <p className="readiness-card-title">Outbound originate</p>
+                          <p className="readiness-card-title" >Исходящий вызов</p>
                           <p className="readiness-card-copy">{outboundOriginateSummary}</p>
                         </div>
                         <span className={`status-pill${outboundOriginateSmokeReady ? ' live' : ' error'}`}>
-                          {outboundOriginateSmokeReady ? 'Ready' : 'Blocked'}
+                          {outboundOriginateSmokeReady ? 'Готово' : 'Заблокировано'}
                         </span>
                       </div>
                       <ul className="readiness-list">
-                        {(outboundBlockers.length > 0 ? outboundBlockers : ['Outbound smoke path is ready from the current Render setup.']).map((item) => (
+                        {(outboundBlockers.length > 0 ? outboundBlockers : ['Путь исходящей smoke-проверки уже готов в текущей конфигурации Render.']).map((item) => (
                           <li key={item}>{item}</li>
                         ))}
                       </ul>
@@ -1300,32 +1347,32 @@ export default function ProvidersPage() {
                     <article className={`readiness-card${inboundAiRuntimeReady ? ' ready' : ' blocked'}`}>
                       <div className="readiness-card-header">
                         <div>
-                          <p className="readiness-card-title">Inbound AI runtime</p>
+                          <p className="readiness-card-title" >Входящий AI-рантайм</p>
                           <p className="readiness-card-copy">{inboundAiSummary}</p>
                         </div>
                         <span className={`status-pill${inboundAiRuntimeReady ? ' live' : ' error'}`}>
-                          {inboundAiRuntimeReady ? 'Ready' : 'Blocked'}
+                          {inboundAiRuntimeReady ? 'Готово' : 'Заблокировано'}
                         </span>
                       </div>
                       <ul className="readiness-list">
-                        {(inboundAiBlockers.length > 0 ? inboundAiBlockers : ['Inbound AI runtime path is ready for a live webhook smoke.']).map((item) => (
+                        {(inboundAiBlockers.length > 0 ? inboundAiBlockers : ['Путь входящего AI-рантайма готов к боевой smoke-проверке через вебхук.']).map((item) => (
                           <li key={item}>{item}</li>
                         ))}
                       </ul>
                     </article>
                   </div>
                   <div className="provider-note">
-                    <strong>Render URLs in use</strong>
-                    <div className="table-secondary">backend_url: {mangoReadiness?.backend_url || 'n/a'}</div>
-                    <div className="table-secondary">webhook_url: {mangoReadiness?.webhook_url || 'n/a'}</div>
+                    <strong>Используемые Render URL</strong>
+                    <div className="table-secondary">backend_url: {mangoReadiness?.backend_url || 'н/д'}</div>
+                    <div className="table-secondary">URL вебхука: {mangoReadiness?.webhook_url || 'н/д'}</div>
                   </div>
                 </section>
 
                 <section className="provider-subpanel">
                   <div className="panel-header">
                     <div>
-                      <p className="eyebrow">4. Agent Binding</p>
-                      <h4>Where number assignment happens</h4>
+                      <p className="eyebrow">4. Привязка агента</p>
+                      <h4>Где назначается номер</h4>
                     </div>
                   </div>
                   <div className="binding-cta-card">
@@ -1344,45 +1391,45 @@ export default function ProvidersPage() {
                         onClick={() => void handleSyncMangoInventory()}
                         disabled={mangoSyncing}
                       >
-                        {mangoSyncing && bindingNextStep.buttonAction === 'sync' ? 'Syncing…' : bindingNextStep.ctaLabel}
+                        {mangoSyncing && bindingNextStep.buttonAction === 'sync' ? 'Синхронизация…' : bindingNextStep.ctaLabel}
                       </button>
                     )}
                   </div>
                   <div className="info-banner">
-                    <strong>Assign number to agent to enable calls.</strong> Откройте карточку агента, выберите Mango number в блоке
+                    <strong>Назначьте номер агенту, чтобы включить звонки.</strong> Откройте карточку агента, выберите номер Mango в блоке
                     <strong> Telephony</strong> и сохраните настройки.
                   </div>
                   <div className="journey-card">
                     <div className="journey-step">
                       <span className="journey-step-index">A</span>
                       <div>
-                        <strong>Open agent</strong>
+                        <strong>Откройте агента</strong>
                         <div className="table-secondary">Можно перейти прямо из карточки линии или из routing map ниже.</div>
                       </div>
                     </div>
                     <div className="journey-step">
                       <span className="journey-step-index">B</span>
                       <div>
-                        <strong>Select Mango number</strong>
-                        <div className="table-secondary">UI покажет human-friendly label вроде “ДЛЯ ИИ менеджера (+79300350609)”.</div>
+                        <strong>Выберите номер Mango</strong>
+                        <div className="table-secondary">Интерфейс покажет понятную подпись вроде “ДЛЯ ИИ менеджера (+79300350609)”.</div>
                       </div>
                     </div>
                     <div className="journey-step">
                       <span className="journey-step-index">C</span>
                       <div>
-                        <strong>Save and verify binding</strong>
-                        <div className="table-secondary">После reload привязка читается обратно и попадает в routing map.</div>
+                        <strong>Сохраните и проверьте привязку</strong>
+                        <div className="table-secondary">После перезагрузки привязка читается обратно и попадает в карту маршрутизации.</div>
                       </div>
                     </div>
                   </div>
                   {recommendedLine ? (
                     <div className="binding-cta-card">
                       <div>
-                        <p className="binding-cta-title">Suggested AI line</p>
+                        <p className="binding-cta-title">Рекомендуемая AI-линия</p>
                         <p className="binding-cta-copy">{formatMangoLineLabel(recommendedLine)}</p>
                       </div>
                       <Link to={`/agents?source=mango&line=${recommendedLine.remote_line_id}`} className="primary-link-button">
-                        Open agents and bind
+                        Открыть агентов и назначить
                       </Link>
                     </div>
                   ) : null}
@@ -1391,12 +1438,12 @@ export default function ProvidersPage() {
                 <section className="provider-subpanel">
                   <div className="panel-header">
                     <div>
-                      <p className="eyebrow">Routing map</p>
+                      <p className="eyebrow" >Карта маршрутизации</p>
                       <h4>Какая линия привязана к какому агенту</h4>
                     </div>
                   </div>
                   {filteredRoutingMap.length === 0 ? (
-                    <div className="info-banner">Routing map is empty. Sync inventory first, then assign a line in Agent settings.</div>
+                    <div className="info-banner">Карта маршрутизации пока пуста. Сначала синхронизируйте инвентарь, потом назначьте линию в настройках агента.</div>
                   ) : (
                     <div className="inventory-list">
                       {filteredRoutingMap.map((item) => (
@@ -1411,18 +1458,18 @@ export default function ProvidersPage() {
                           <div className="inventory-binding-copy">
                             {item.agent_id ? (
                               <>
-                                <strong>Bound agent:</strong> {item.agent_name || item.agent_id}
+                                <strong>Привязанный агент:</strong> {item.agent_name || item.agent_id}
                                 <div>
                                   <Link
                                     to={`/agents/${item.agent_id}?mango_line=${item.remote_line_id}&from=providers`}
                                     className="inline-link"
                                   >
-                                    Open bound agent
+                                    Открыть привязанного агента
                                   </Link>
                                 </div>
                               </>
                             ) : (
-                              <>Bound agent: not linked</>
+                              <>Привязанный агент: не назначен</>
                             )}
                           </div>
                         </article>
@@ -1434,30 +1481,30 @@ export default function ProvidersPage() {
                 <section className="provider-subpanel">
                   <div className="panel-header">
                     <div>
-                      <p className="eyebrow">Dev Debug</p>
-                      <h4>Operational details</h4>
+                      <p className="eyebrow" >Отладка</p>
+                      <h4>Операционные детали</h4>
                     </div>
                   </div>
                   <div className="table-secondary">
-                    Этот блок нужен для быстрой диагностики. Он специально вынесен вниз, чтобы не мешать основному UX.
+                    Этот блок нужен для быстрой диагностики. Он специально вынесен вниз, чтобы не мешать основному пользовательскому сценарию.
                   </div>
                   <div className="debug-list compact-debug">
                     <div className="debug-row">
-                      <span>raw lines count</span>
+                      <span >число сырых линий</span>
                       <strong>{mangoLines.length}</strong>
                     </div>
                     <div className="debug-row">
-                      <span>last sync response</span>
-                      <strong>{lastSyncResponse ? `${lastSyncResponse.synced_count} synced / ${lastSyncResponse.deactivated_count} deactivated` : 'none yet'}</strong>
+                      <span >последний ответ синхронизации</span>
+                      <strong>{lastSyncResponse ? `${lastSyncResponse.synced_count} синхронизировано / ${lastSyncResponse.deactivated_count} деактивировано` : 'пока нет'}</strong>
                     </div>
                     <div className="debug-row">
-                      <span>readiness flags</span>
+                      <span >флаги готовности</span>
                       <strong>
                         {[
                           mangoReadiness?.api_configured ? 'api' : null,
                           mangoReadiness?.webhook_secret_configured ? 'webhook' : null,
                           mangoReadiness?.from_ext_configured ? 'from_ext' : mangoReadiness?.from_ext_auto_discoverable ? 'auto_from_ext' : null,
-                        ].filter(Boolean).join(', ') || 'none'}
+                        ].filter(Boolean).join(', ') || 'нет'}
                       </strong>
                     </div>
                   </div>

@@ -4,7 +4,7 @@ export default function PromptsPage() {
       <article className="info-card">
         <p className="eyebrow">Следующий этап</p>
         <h3>Промпты</h3>
-        <p>Подготовлено место под prompt config, системные инструкции и версионирование изменений.</p>
+        <p>Здесь будут жить конфигурация промптов, системные инструкции и история изменений.</p>
       </article>
     </section>
   )

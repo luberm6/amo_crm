@@ -353,7 +353,7 @@ describe('browser call page smoke', () => {
     expect(screen.getByLabelText(/Устройство вывода|Output device/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Начать тестовый звонок|Start Test Call/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Завершить звонок|Stop Test Call/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Тест микрофона.*loopback|Test Mic Loopback/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Тест микрофона.*аудиопетля/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Тестовый тон с backend|Play Test Tone from Backend/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Тест TTS|Test TTS/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Громкий тестовый тон|Play Loud Test Tone/i })).toBeInTheDocument()
@@ -408,15 +408,15 @@ describe('browser call page smoke', () => {
       expect(context.bufferSourceStarts.length).toBeGreaterThan(0)
     })
 
-    expect(screen.getByText(/websocket/i)).toBeInTheDocument()
+    expect(screen.getByText(/веб-сокет/i)).toBeInTheDocument()
     expect(screen.getByText(/исходящих/i)).toBeInTheDocument()
     expect(screen.getByText(/входящих/i)).toBeInTheDocument()
-    expect(screen.getByText(/playback starts/i)).toBeInTheDocument()
+    expect(screen.getByText(/стартов playback/i)).toBeInTheDocument()
     expect(screen.getByText(/RMS/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/Устройство вывода|Output device/i)).toBeInTheDocument()
     expect(screen.getByText(/вход SR/i)).toBeInTheDocument()
     expect(screen.getAllByText(/здоровье/i).length).toBeGreaterThan(0)
-    expect(screen.getByText(/wav valid/i)).toBeInTheDocument()
+    expect(screen.getByText(/wav валиден/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/Форма входящего аудио/i)).toBeInTheDocument()
   })
 
@@ -575,10 +575,10 @@ describe('browser call page smoke', () => {
     renderBrowserCallPage()
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Тест микрофона.*loopback|Test Mic Loopback/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Тест микрофона.*аудиопетля/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('button', { name: /Тест микрофона.*loopback|Test Mic Loopback/i }))
+    await user.click(screen.getByRole('button', { name: /Тест микрофона.*аудиопетля/i }))
 
     await waitFor(() => {
       expect(FakeAudioContext.instances.length).toBeGreaterThan(0)
@@ -589,7 +589,7 @@ describe('browser call page smoke', () => {
       return path.includes('/v1/browser-calls') && init?.method === 'POST'
     })
     expect(browserCreateCalls).toHaveLength(0)
-    expect(screen.getByRole('button', { name: /Остановить loopback/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /Остановить аудиопетлю/i })).toBeEnabled()
   })
 
   it('calls backend test tone and test tts actions on active session', async () => {

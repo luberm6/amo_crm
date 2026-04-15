@@ -200,13 +200,13 @@ function formatTelephonyLineLabel(line: TelephonyLine): string {
 
 function mapMangoWarning(warning: string): string {
   if (warning.includes('MANGO_WEBHOOK_SECRET')) {
-    return 'Inbound webhook verification not configured. Задайте MANGO_WEBHOOK_SECRET перед боевым inbound routing.'
+    return 'Проверка входящего вебхука не настроена. Задайте MANGO_WEBHOOK_SECRET перед боевой маршрутизацией входящих звонков.'
   }
   if (warning.includes('auto-discovered Mango extension')) {
-    return 'Outbound calling will use an auto-discovered Mango extension. Для предсказуемого боевого originate всё ещё лучше явно задать MANGO_FROM_EXT.'
+    return 'Для исходящих звонков будет использован автоматически найденный внутренний номер Mango. Для предсказуемого боевого исходящего вызова всё ещё лучше явно задать MANGO_FROM_EXT.'
   }
   if (warning.includes('MANGO_FROM_EXT')) {
-    return 'Outbound calling not configured. Задайте MANGO_FROM_EXT перед боевым originate/callback.'
+    return 'Исходящие звонки не настроены. Задайте MANGO_FROM_EXT перед боевым исходящим вызовом.'
   }
   return warning
 }
@@ -228,25 +228,25 @@ function mapTelephonyApiError(err: unknown, fallback: string): string {
 
   const code = getApiErrorCode(err)
   if (code === 'mango_not_configured') {
-    return 'Mango не настроен. Задайте MANGO_API_KEY и MANGO_API_SALT в backend environment.'
+    return 'Mango не настроен. Задайте MANGO_API_KEY и MANGO_API_SALT в окружении backend.'
   }
   if (code === 'mango_api_unavailable') {
     if (getNestedHttpStatus(err) === 429) {
-      return 'Mango временно ограничил extensions API по rate limit. Привязка линии остаётся доступной, повторите попытку позже.'
+      return 'Mango временно ограничил API внутренних номеров по лимиту запросов. Привязка линии остаётся доступной, повторите попытку позже.'
     }
-    return 'Mango API временно недоступен. Проверьте доступность tenant и попробуйте ещё раз.'
+    return 'Mango API временно недоступен. Проверьте доступность аккаунта и попробуйте ещё раз.'
   }
   if (code === 'mango_sync_failed') {
-    return 'Не удалось синхронизировать линии Mango. Проверьте live API ответ и повторите sync.'
+    return 'Не удалось синхронизировать линии Mango. Проверьте ответ API и повторите синхронизацию.'
   }
   if (code === 'telephony_line_not_found') {
-    return 'Выбранная линия Mango не найдена. Сначала обновите inventory и выберите существующую линию.'
+    return 'Выбранная линия Mango не найдена. Сначала обновите инвентарь и выберите существующую линию.'
   }
   if (code === 'telephony_line_inactive') {
     return 'Выбранная линия Mango неактивна. Сохранение заблокировано, пока вы не выберете активную линию.'
   }
   if (code === 'invalid_voice_provider') {
-    return 'Выбран неподдерживаемый voice provider. Используйте Gemini или ElevenLabs.'
+    return 'Выбран неподдерживаемый голосовой провайдер. Используйте Gemini или ElevenLabs.'
   }
 
   return err.message || fallback
@@ -288,7 +288,7 @@ export default function AgentEditorPage() {
       const response = await apiFetch<KnowledgeDocumentListResponse>('/v1/knowledge-documents?active_only=true', {}, token)
       setKnowledgeDocuments(response.items)
     } catch (err) {
-      setKnowledgeError(err instanceof ApiError ? err.message : 'Не удалось загрузить knowledge base.')
+      setKnowledgeError(err instanceof ApiError ? err.message : 'Не удалось загрузить базу знаний.')
     } finally {
       setKnowledgeLoading(false)
     }
@@ -385,7 +385,7 @@ export default function AgentEditorPage() {
     if (settings) {
       return settings.assembled_prompt_preview
     }
-    return 'Preview появится после первого сохранения. Backend собирает runtime prompt централизованно и отдельно подключает knowledge base.'
+    return 'Предпросмотр появится после первого сохранения. Backend централизованно собирает рантайм-промпт и отдельно подключает базу знаний.'
   }, [settings])
 
   const selectedKnowledgeIds = useMemo(() => new Set(form.knowledgeDocumentIds), [form.knowledgeDocumentIds])
@@ -593,7 +593,7 @@ export default function AgentEditorPage() {
       )
       setSettings(response)
       setForm(toFormState(response))
-      setTelephonySuccess('Настройки агента сохранены. Привязка Mango и voice/runtime поля обновлены.')
+      setTelephonySuccess('Настройки агента сохранены. Привязка Mango и голосовые поля рантайма обновлены.')
     } catch (err) {
       setError(mapTelephonyApiError(err, 'Не удалось сохранить настройки агента.'))
     } finally {
@@ -608,8 +608,8 @@ export default function AgentEditorPage() {
           <p className="eyebrow">Редактор агента</p>
           <h3>{isCreateMode ? 'Создать агента' : form.name || 'Редактировать агента'}</h3>
           <p>
-            Здесь собираются реальные настройки runtime: voice provider, prompt/rules, knowledge base и привязка к Mango
-            номеру. Browser sandbox остаётся отдельным путём и не ломается, а PSTN-binding сохраняется на уровне
+            Здесь собираются реальные настройки рантайма: голосовой провайдер, промпт и правила, база знаний и привязка к Mango
+            номеру. Браузерная песочница остаётся отдельным путём и не ломается, а PSTN-привязка сохраняется на уровне
             конкретного агента.
           </p>
         </div>
@@ -619,7 +619,7 @@ export default function AgentEditorPage() {
           </Link>
           {(cameFromProviders || focusedRemoteLineId || form.telephonyRemoteLineId) ? (
             <Link to={providersDeepLink} className="ghost-link-button">
-              Back to Providers for this line
+              Назад к Mango для этой линии
             </Link>
           ) : null}
         </div>
@@ -660,59 +660,59 @@ export default function AgentEditorPage() {
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Telephony / Mango</p>
+                  <p className="eyebrow">Телефония / Mango</p>
                   <h4>Привязка номера</h4>
                   <p className="compact-copy">Здесь агент получает конкретный Mango number для inbound/outbound routing foundation.</p>
                 </div>
                 <button type="button" className="ghost-link-button" onClick={() => void handleSyncNumbers()} disabled={syncingTelephony}>
-                  {syncingTelephony ? 'Синхронизация…' : 'Sync numbers from Mango'}
+                  {syncingTelephony ? 'Синхронизация…' : 'Синхронизировать номера из Mango'}
                 </button>
               </div>
 
               <div className="saas-summary-grid telephony-summary-grid">
                 <div className="saas-summary-card">
-                  <span>Telephony provider</span>
+                  <span>Провайдер телефонии</span>
                   <strong>Mango</strong>
                 </div>
                 <div className="saas-summary-card">
-                  <span>Numbers available</span>
+                  <span>Доступно номеров</span>
                   <strong>{telephonyLoading ? '…' : telephonyLines.length}</strong>
                 </div>
                 <div className="saas-summary-card">
-                  <span>Extensions</span>
+                  <span>Внутренние номера</span>
                   <strong>{telephonyLoading ? '…' : telephonyExtensions.length}</strong>
                 </div>
                 <div className="saas-summary-card">
-                  <span>Binding status</span>
-                  <strong>{form.telephonyRemoteLineId ? 'Bound to agent' : 'Not bound'}</strong>
+                  <span>Статус привязки</span>
+                  <strong>{form.telephonyRemoteLineId ? 'Назначен агенту' : 'Не назначен'}</strong>
                 </div>
               </div>
 
               {selectedTelephonyLine ? (
                 <div className="binding-cta-card">
                   <div>
-                    <p className="binding-cta-title">Bound to agent</p>
+                    <p className="binding-cta-title">Назначено агенту</p>
                     <p className="binding-cta-copy">{formatTelephonyLineLabel(selectedTelephonyLine)}</p>
                     <div className="table-secondary">remote_line_id: {selectedTelephonyLine.remote_line_id}</div>
                   </div>
-                  <span className="status-pill live">Bound</span>
+                  <span className="status-pill live">Назначено</span>
                 </div>
               ) : null}
 
               {!selectedTelephonyLine && focusedRemoteLineId ? (
                 <div className="info-banner">
-                  Providers requested focus for Mango line <strong>{focusedRemoteLineId}</strong>. Sync inventory or reselect the line if it is missing.
+                  Страница Mango передала фокус на линию <strong>{focusedRemoteLineId}</strong>. Синхронизируйте инвентарь или выберите линию заново, если её пока нет в списке.
                 </div>
               ) : null}
 
               {!selectedTelephonyLine && telephonyLines.length > 0 ? (
                 <div className="info-banner">
-                  <strong>Assign number to agent to enable calls.</strong> Выберите линию ниже и сохраните настройки агента.
+                  <strong>Назначьте номер агенту, чтобы включить звонки.</strong> Выберите линию ниже и сохраните настройки агента.
                 </div>
               ) : null}
 
               <label>
-                Select Mango number
+                Выберите номер Mango
                 <select
                   value={form.telephonyRemoteLineId}
                   onChange={(event) => {
@@ -729,7 +729,7 @@ export default function AgentEditorPage() {
                   {orderedTelephonyLines.map((line) => (
                     <option key={line.remote_line_id} value={line.remote_line_id} disabled={!line.is_active}>
                       {formatTelephonyLineLabel(line)}
-                      {suggestedLineId === line.remote_line_id ? ' — suggested' : ''}
+                      {suggestedLineId === line.remote_line_id ? ' — рекомендовано' : ''}
                       {!line.is_active ? ' — неактивна' : ''}
                     </option>
                   ))}
@@ -738,7 +738,7 @@ export default function AgentEditorPage() {
 
               {suggestedLineId ? (
                 <div className="info-banner">
-                  <strong>Suggested for AI:</strong> найдена линия “ДЛЯ ИИ менеджера”.{' '}
+                  <strong>Рекомендовано для AI:</strong> найдена линия “ДЛЯ ИИ менеджера”.{' '}
                   <button
                     type="button"
                     className="ghost-link-button"
@@ -757,7 +757,7 @@ export default function AgentEditorPage() {
 
               {!telephonyLoading && telephonyExtensions.length === 0 ? (
                 <div className="info-banner">
-                  Mango extensions not configured in this tenant. Line binding remains available without extension binding.
+                  В этом tenant Mango не настроены внутренние номера. Привязка линии всё равно доступна и без выбора extension.
                 </div>
               ) : null}
 
@@ -787,8 +787,8 @@ export default function AgentEditorPage() {
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Voice</p>
-                  <h4>Voice provider</h4>
+                  <p className="eyebrow">Голос</p>
+                  <h4>Голосовой провайдер</h4>
                 </div>
               </div>
 
@@ -801,8 +801,8 @@ export default function AgentEditorPage() {
                     onClick={() => updateField('voiceProvider', 'gemini')}
                   >
                     <span className="voice-toggle-icon">🤖</span>
-                    <span className="voice-toggle-title">Gemini voice</span>
-                    <span className="voice-toggle-desc">Gemini native audio / gemini_primary</span>
+                    <span className="voice-toggle-title">Голос Gemini</span>
+                    <span className="voice-toggle-desc">Нативное аудио Gemini / `gemini_primary`</span>
                   </button>
                   <button
                     type="button"
@@ -810,8 +810,8 @@ export default function AgentEditorPage() {
                     onClick={() => updateField('voiceProvider', 'elevenlabs')}
                   >
                     <span className="voice-toggle-icon">🎙️</span>
-                    <span className="voice-toggle-title">ElevenLabs voice</span>
-                    <span className="voice-toggle-desc">Gemini text + ElevenLabs / tts_primary</span>
+                    <span className="voice-toggle-title">Голос ElevenLabs</span>
+                    <span className="voice-toggle-desc">Текст Gemini + ElevenLabs / `tts_primary`</span>
                   </button>
                 </div>
 
@@ -916,8 +916,8 @@ export default function AgentEditorPage() {
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">User settings</p>
-                  <h4>JSON настройки runtime</h4>
+                  <p className="eyebrow">Пользовательские настройки</p>
+                  <h4>JSON-настройки рантайма</h4>
                 </div>
               </div>
               <label>
@@ -934,7 +934,7 @@ export default function AgentEditorPage() {
             <section className="panel-card form-section">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Knowledge Base</p>
+                  <p className="eyebrow">База знаний</p>
                   <h4>Контролируемый контекст агента</h4>
                 </div>
               </div>
@@ -942,7 +942,7 @@ export default function AgentEditorPage() {
               {knowledgeLoading ? (
                 <div className="empty-state">Загружаем доступные документы…</div>
               ) : knowledgeDocuments.length === 0 ? (
-                <div className="empty-state">В knowledge base пока нет активных документов.</div>
+                <div className="empty-state">В базе знаний пока нет активных документов.</div>
               ) : (
                 <div className="knowledge-binding-list">
                   {knowledgeDocuments.map((document) => (
@@ -1000,7 +1000,7 @@ export default function AgentEditorPage() {
                 </div>
               </div>
               {selectedKnowledgeDocuments.length === 0 ? (
-                <div className="empty-state">Для этого агента пока не выбраны knowledge documents.</div>
+                <div className="empty-state">Для этого агента пока не выбраны документы базы знаний.</div>
               ) : (
                 <div className="binding-summary-list">
                   {selectedKnowledgeDocuments.map((document) => (
@@ -1022,11 +1022,11 @@ export default function AgentEditorPage() {
               </div>
               <div className="debug-list compact-debug">
                 <div className="debug-row">
-                  <span>provider</span>
+                  <span>провайдер</span>
                   <strong>{form.telephonyRemoteLineId ? 'mango' : '—'}</strong>
                 </div>
                 <div className="debug-row">
-                  <span>selected line</span>
+                  <span>выбранная линия</span>
                   <strong>{selectedTelephonyLine ? formatTelephonyLineLabel(selectedTelephonyLine) : 'не привязан'}</strong>
                 </div>
                 <div className="debug-row">
@@ -1038,16 +1038,16 @@ export default function AgentEditorPage() {
                   <strong>{selectedTelephonyLine?.phone_number || 'не привязан'}</strong>
                 </div>
                 <div className="debug-row">
-                  <span>extension</span>
+                  <span>внутренний номер</span>
                   <strong>{form.telephonyExtension || '—'}</strong>
                 </div>
                 <div className="debug-row">
-                  <span>inbound</span>
-                  <strong>{selectedTelephonyLine ? (selectedTelephonyLine.is_inbound_enabled ? 'yes' : 'no') : '—'}</strong>
+                  <span>входящие</span>
+                  <strong>{selectedTelephonyLine ? (selectedTelephonyLine.is_inbound_enabled ? 'да' : 'нет') : '—'}</strong>
                 </div>
                 <div className="debug-row">
-                  <span>outbound</span>
-                  <strong>{selectedTelephonyLine ? (selectedTelephonyLine.is_outbound_enabled ? 'yes' : 'no') : '—'}</strong>
+                  <span>исходящие</span>
+                  <strong>{selectedTelephonyLine ? (selectedTelephonyLine.is_outbound_enabled ? 'да' : 'нет') : '—'}</strong>
                 </div>
               </div>
             </section>

@@ -145,7 +145,9 @@ Legend for `Required`:
 |---|---|---|---|---|---|
 | `GEMINI_API_KEY` | Contextual | empty | Direct runtime, preflight, Browser Call | Gemini API access | Browser voice / Direct runtime responses |
 | `GEMINI_MODEL_ID` | No | `gemini-2.0-flash-live-001` | Direct runtime | Gemini model selection | Model selection only |
+| `GEMINI_TTS_MODEL_ID` | No | empty | `tts_primary` Direct runtime | Отдельная Gemini-модель для text->TTS пути; пусто = использовать `GEMINI_MODEL_ID` | Только выбор модели для `tts_primary` |
 | `GEMINI_API_VERSION` | No | `v1beta` | Direct runtime | Gemini API version | Gemini connection only |
+| `GEMINI_TTS_API_VERSION` | No | empty | `tts_primary` Direct runtime | Отдельная версия Gemini API для TTS-модели; пусто = использовать `GEMINI_API_VERSION` | Только выбор версии API для `tts_primary` |
 | `GEMINI_SYSTEM_PROMPT` | No | built-in Russian sales prompt | Direct runtime fallback | Default system prompt when no agent profile is supplied | Prompt quality only |
 | `GEMINI_SETUP_TIMEOUT` | No | `5.0` | Direct runtime | Setup timeout | Runtime timing only |
 | `DIRECT_MAX_SESSIONS` | No | `10` | Direct runtime | In-process session cap | Concurrency cap only |
