@@ -38,8 +38,12 @@ services:
           property: connectionString
       - key: BACKEND_URL
         sync: false
+      - key: RENDER_EXTERNAL_URL
+        sync: false
       - key: ADMIN_CORS_ORIGINS
         value: "*"
+      - key: DEFAULT_PHONE_COUNTRY
+        value: RU
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD
@@ -48,8 +52,24 @@ services:
         sync: false
       - key: PROVIDER_SETTINGS_SECRET
         sync: false
+      - key: ADMIN_TOKEN_TTL_SECONDS
+        value: "28800"
       - key: API_KEY
         generateValue: true
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: VAPI_API_KEY
+        sync: false
+      - key: VAPI_ASSISTANT_ID
+        sync: false
+      - key: VAPI_PHONE_NUMBER_ID
+        sync: false
+      - key: VAPI_SERVER_URL
+        sync: false
+      - key: VAPI_WEBHOOK_SECRET
+        sync: false
+      - key: VAPI_BASE_URL
+        value: https://api.vapi.ai
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL_ID
@@ -60,8 +80,12 @@ services:
         value: v1beta
       - key: GEMINI_TTS_API_VERSION
         value: ""
+      - key: GEMINI_SYSTEM_PROMPT
+        value: "Ты — AI ассистент по продажам. Отвечай по-русски. Будь кратким и вежливым."
       - key: GEMINI_SETUP_TIMEOUT
         value: "15.0"
+      - key: DIRECT_MAX_SESSIONS
+        value: "10"
       - key: DIRECT_VOICE_STRATEGY
         value: gemini_primary
       - key: DIRECT_VOICE_ALLOW_TTS_FALLBACK
@@ -72,8 +96,12 @@ services:
         value: "true"
       - key: DIRECT_INITIAL_GREETING_ENABLED
         value: "true"
+      - key: DIRECT_INITIAL_GREETING_TEXT
+        value: "Здравствуйте! Это AI-ассистент. Чем могу помочь?"
       - key: DIRECT_MODEL_RESPONSE_TIMEOUT_SECONDS
         value: "8.0"
+      - key: SUMMARY_LLM_PROVIDER
+        value: ""
       - key: ELEVENLABS_ENABLED
         value: "false"
       - key: ELEVENLABS_API_KEY
@@ -81,21 +109,109 @@ services:
       - key: ELEVENLABS_VOICE_ID
         sync: false
       - key: TELEPHONY_PROVIDER
-        sync: false
+        value: auto
       - key: MEDIA_GATEWAY_ENABLED
-        sync: false
+        value: "false"
       - key: MEDIA_GATEWAY_PROVIDER
         value: freeswitch
       - key: MEDIA_GATEWAY_MODE
-        sync: false
+        value: disabled
       - key: FREESWITCH_ESL_HOST
         sync: false
       - key: FREESWITCH_ESL_PORT
         value: "8021"
       - key: FREESWITCH_ESL_PASSWORD
         sync: false
+      - key: FREESWITCH_SIP_PROFILE
+        value: external
+      - key: FREESWITCH_SIP_DOMAIN
+        value: localhost
+      - key: FREESWITCH_RTP_IP
+        sync: false
+      - key: FREESWITCH_RTP_PORT_START
+        value: "16384"
+      - key: FREESWITCH_RTP_PORT_END
+        value: "32768"
+      - key: FREESWITCH_SESSION_TIMEOUT_SECONDS
+        value: "120"
+      - key: FREESWITCH_RTP_PAYLOAD_TYPE
+        value: "96"
+      - key: FREESWITCH_ATTACH_COMMAND_TEMPLATE
+        value: "uuid_media_reneg {uuid} ={rtp_ip}:{rtp_port}"
+      - key: FREESWITCH_HANGUP_COMMAND_TEMPLATE
+        value: "uuid_kill {uuid}"
+      - key: FREESWITCH_ESL_EVENTS
+        value: "CHANNEL_HANGUP_COMPLETE CUSTOM HEARTBEAT"
+      - key: FREESWITCH_ESL_CONNECT_TIMEOUT_SECONDS
+        value: "5.0"
+      - key: FREESWITCH_ESL_RECONNECT_ENABLED
+        value: "true"
+      - key: FREESWITCH_ESL_RECONNECT_INITIAL_DELAY_SECONDS
+        value: "0.5"
+      - key: FREESWITCH_ESL_RECONNECT_MAX_DELAY_SECONDS
+        value: "5.0"
+      - key: FREESWITCH_ESL_RECONNECT_MAX_ATTEMPTS
+        value: "0"
+      - key: FREESWITCH_RTP_INBOUND_CODEC
+        value: pcm16
+      - key: FREESWITCH_RTP_OUTBOUND_CODEC
+        value: pcm16
+      - key: FREESWITCH_RTP_SAMPLE_RATE_HZ
+        value: "16000"
+      - key: FREESWITCH_RTP_FRAME_BYTES
+        value: "640"
+      - key: FREESWITCH_RTP_INBOUND_TIMEOUT_SECONDS
+        value: "15"
+      - key: FREESWITCH_RTP_OUTBOUND_BUFFER_MAX_FRAMES
+        value: "50"
+      - key: FREESWITCH_EVENT_QUEUE_MAX
+        value: "512"
+      - key: METRICS_ENABLED
+        value: "true"
+      - key: AUDIO_DEBUG_DUMP_ENABLED
+        value: "false"
+      - key: AUDIO_DEBUG_DUMP_DIR
+        value: /tmp/amo_crm_audio_debug
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: RATE_LIMIT_GLOBAL_PER_IP_PER_MINUTE
+        value: "60"
+      - key: RATE_LIMIT_CALLS_PER_MINUTE
+        value: "10"
+      - key: RATE_LIMIT_STEER_PER_CALL_PER_MINUTE
+        value: "20"
+      - key: RATE_LIMIT_TRANSFER_PER_CALL
+        value: "3"
+      - key: RATE_LIMIT_TRANSFER_COOLDOWN_SECONDS
+        value: "60"
+      - key: RATE_LIMIT_CALLS_PER_PHONE_PER_DAY
+        value: "5"
+      - key: RATE_LIMIT_MAX_CONCURRENT_CALLS
+        value: "50"
+      - key: RATE_LIMIT_PHONE_REPEAT_COOLDOWN_SECONDS
+        value: "300"
       - key: ENFORCE_QUIET_HOURS
         value: "true"
+      - key: CALLING_HOUR_START
+        value: "9"
+      - key: CALLING_HOUR_END
+        value: "21"
+      - key: CALLING_TIMEZONE
+        value: Europe/Moscow
+      - key: TRANSFER_MANAGER_ANSWER_TIMEOUT
+        value: "30"
+      - key: TRANSFER_BRIEFING_TIMEOUT
+        value: "15"
+      - key: TRANSFER_BRIDGE_TIMEOUT
+        value: "10"
+      - key: TRANSFER_MAX_MANAGER_ATTEMPTS
+        value: "3"
+      - key: TRANSFER_MANAGER_COOLDOWN_SECONDS
+        value: "300"
+      - key: TRANSFER_MANAGER_RESTORE_ENABLED
+        value: "true"
+      - key: TRANSFER_MANAGER_RESTORE_INTERVAL_SECONDS
+        value: "30"
       # Mango telephony — set these in Render dashboard when deploying PSTN/Mango
       - key: MANGO_API_BASE_URL
         value: https://app.mango-office.ru/vpbx
@@ -109,6 +225,14 @@ services:
         sync: false
       - key: MANGO_WEBHOOK_SHARED_SECRET
         sync: false
+      - key: MANGO_WEBHOOK_IP_ALLOWLIST
+        value: ""
+      - key: MANGO_ANSWER_WAIT_TIMEOUT_SECONDS
+        value: "30"
+      - key: MANGO_BRIDGE_CONFIRM_TIMEOUT_SECONDS
+        value: "12"
+      - key: MANGO_WHISPER_CONFIRM_TIMEOUT_SECONDS
+        value: "15"
 
   - type: web
     name: amo-crm-admin
