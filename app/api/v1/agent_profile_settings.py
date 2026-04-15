@@ -58,6 +58,7 @@ def _to_read(snapshot: AgentSettingsSnapshot) -> AgentProfileSettingsRead:
             if snapshot.telephony_line is not None
             else None
         ),
+        suggested_telephony_remote_line_id=snapshot.suggested_telephony_remote_line_id,
         user_settings=dict(agent.config or {}),
         knowledge_document_ids=list(snapshot.knowledge_document_ids),
         version=agent.version,

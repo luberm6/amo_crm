@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, NotFoundError
@@ -38,6 +39,7 @@ class AgentSettingsSnapshot:
     agent: AgentProfile
     telephony_line: Optional[TelephonyLine]
     knowledge_document_ids: list[uuid.UUID]
+    suggested_telephony_remote_line_id: Optional[str] = field(default=None)
 
 
 class AgentSettingsService:
@@ -53,10 +55,22 @@ class AgentSettingsService:
         if agent is None:
             raise NotFoundError(f"Agent profile {agent_id} not found")
         bindings = await self.binding_repo.list_for_agent(agent_id)
+        suggested_remote_line_id: Optional[str] = None
+        if agent.telephony_line_id is None:
+            # No line bound — suggest the canonical AI line if synced.
+            result = await self.session.execute(
+                select(TelephonyLine)
+                .where(TelephonyLine.provider == "mango", TelephonyLine.is_active.is_(True))
+            )
+            lines = result.scalars().all()
+            ai_line = next((ln for ln in lines if ln.is_recommended_for_ai), None)
+            if ai_line:
+                suggested_remote_line_id = ai_line.provider_resource_id
         return AgentSettingsSnapshot(
             agent=agent,
             telephony_line=agent.telephony_line,
             knowledge_document_ids=[binding.knowledge_document_id for binding in bindings],
+            suggested_telephony_remote_line_id=suggested_remote_line_id,
         )
 
     async def update_settings(

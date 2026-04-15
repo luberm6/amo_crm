@@ -57,6 +57,7 @@ type TelephonyLine = {
   is_inbound_enabled: boolean
   is_outbound_enabled: boolean
   synced_at?: string | null
+  is_recommended_for_ai?: boolean
 }
 
 type TelephonyLineListResponse = {
@@ -406,8 +407,13 @@ export default function ProvidersPage() {
   }, [mangoLines])
 
   const recommendedMangoRemoteLineId = useMemo(() => {
-    const match = mangoLines.find((line) => (line.schema_name || '').trim() === 'ДЛЯ ИИ менеджера')
-    return match?.remote_line_id || null
+    // Priority: is_recommended_for_ai flag from API → schema_name → canonical ID fallback
+    const byFlag = mangoLines.find((line) => line.is_recommended_for_ai)
+    if (byFlag) return byFlag.remote_line_id
+    const byName = mangoLines.find((line) => (line.schema_name || '').trim() === 'ДЛЯ ИИ менеджера')
+    if (byName) return byName.remote_line_id
+    const byId = mangoLines.find((line) => line.remote_line_id === '405622036')
+    return byId?.remote_line_id || null
   }, [mangoLines])
 
   const recommendedLine = useMemo(

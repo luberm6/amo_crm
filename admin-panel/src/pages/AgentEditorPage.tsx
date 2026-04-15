@@ -37,6 +37,7 @@ type TelephonyLine = {
   is_inbound_enabled: boolean
   is_outbound_enabled: boolean
   synced_at?: string | null
+  is_recommended_for_ai?: boolean
 }
 
 type TelephonyLineListResponse = {
@@ -101,6 +102,7 @@ type AgentSettingsRead = {
   telephony_remote_line_id?: string | null
   telephony_extension?: string | null
   telephony_line?: TelephonyLine | null
+  suggested_telephony_remote_line_id?: string | null
   user_settings: Record<string, unknown>
   knowledge_document_ids: string[]
   version: number
@@ -345,6 +347,39 @@ export default function AgentEditorPage() {
     void loadTelephonyState()
     void loadAgentSettings()
   }, [loadAgentSettings, loadKnowledgeDocuments, loadTelephonyState])
+
+  // Auto-select AI-recommended line when agent has no binding and inventory is loaded.
+  // Runs once after both agent settings and telephony lines are ready.
+  useEffect(() => {
+    if (isCreateMode || loading || telephonyLoading) return
+    if (form.telephonyRemoteLineId) return  // already bound — don't override
+
+    // Priority: backend suggestion → is_recommended_for_ai flag → schema_name → ID fallback
+    const suggestionFromApi = settings?.suggested_telephony_remote_line_id ?? null
+    const byFlag = telephonyLines.find((l) => l.is_active && l.is_recommended_for_ai)
+    const bySchema = telephonyLines.find(
+      (l) => l.is_active && (l.schema_name || '').trim() === 'ДЛЯ ИИ менеджера',
+    )
+    const byId = telephonyLines.find((l) => l.is_active && l.remote_line_id === '405622036')
+    const candidateId =
+      (suggestionFromApi && telephonyLines.find((l) => l.remote_line_id === suggestionFromApi)
+        ? suggestionFromApi
+        : null)
+      ?? byFlag?.remote_line_id
+      ?? bySchema?.remote_line_id
+      ?? byId?.remote_line_id
+      ?? null
+
+    if (!candidateId) return
+    const candidateLine = telephonyLines.find((l) => l.remote_line_id === candidateId)
+    setForm((prev) => ({
+      ...prev,
+      telephonyRemoteLineId: candidateId,
+      telephonyExtension: prev.telephonyExtension || candidateLine?.extension || '',
+    }))
+  // form.telephonyRemoteLineId intentionally excluded from deps — effect runs once after data loads
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCreateMode, loading, telephonyLoading, settings, telephonyLines])
 
   const previewText = useMemo(() => {
     if (settings) {

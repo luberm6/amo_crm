@@ -53,7 +53,7 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL_ID
-        value: gemini-3.1-flash-live-preview
+        value: gemini-2.0-flash-live-001
       - key: GEMINI_TTS_MODEL_ID
         value: ""
       - key: GEMINI_API_VERSION
@@ -75,17 +75,28 @@ services:
       - key: DIRECT_MODEL_RESPONSE_TIMEOUT_SECONDS
         value: "8.0"
       - key: ELEVENLABS_ENABLED
-        value: "true"
+        value: "false"
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: ELEVENLABS_VOICE_ID
         sync: false
       - key: TELEPHONY_PROVIDER
-        value: stub
+        sync: false
       - key: MEDIA_GATEWAY_ENABLED
-        value: "false"
+        sync: false
       - key: ENFORCE_QUIET_HOURS
         value: "true"
+      # Mango telephony — set these in Render dashboard when deploying PSTN/Mango
+      - key: MANGO_API_KEY
+        sync: false
+      - key: MANGO_API_SALT
+        sync: false
+      - key: MANGO_FROM_EXT
+        sync: false
+      - key: MANGO_WEBHOOK_SECRET
+        sync: false
+      - key: MANGO_WEBHOOK_SHARED_SECRET
+        sync: false
 
   - type: web
     name: amo-crm-admin

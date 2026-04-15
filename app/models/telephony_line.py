@@ -12,6 +12,10 @@ from app.db.base import Base, TimestampMixin, UUIDMixin
 if TYPE_CHECKING:
     from app.models.agent_profile import AgentProfile
 
+# Canonical AI line identifiers — single source of truth for model logic, API, and frontend.
+_AI_CANONICAL_LINE_ID = "405622036"
+_AI_CANONICAL_LINE_NAME = "ДЛЯ ИИ менеджера"
+
 
 class TelephonyLine(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "telephony_lines"
@@ -57,4 +61,12 @@ class TelephonyLine(UUIDMixin, TimestampMixin, Base):
             (self.schema_name or "").strip()
             or (self.display_name or "").strip()
             or (self.phone_number or "").strip()
+        )
+
+    @property
+    def is_recommended_for_ai(self) -> bool:
+        """True if this is the canonical default AI line (+79300350609, ДЛЯ ИИ менеджера)."""
+        return (
+            self.provider_resource_id == _AI_CANONICAL_LINE_ID
+            or (self.schema_name or "").strip() == _AI_CANONICAL_LINE_NAME
         )
