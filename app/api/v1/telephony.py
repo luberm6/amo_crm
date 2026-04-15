@@ -70,6 +70,21 @@ def _is_public_backend_url(url: str) -> bool:
     return not any(ip in net for net in private_ranges)
 
 
+def _has_real_freeswitch_host(value: str) -> bool:
+    host = (value or "").strip().lower()
+    return bool(host and host not in {"127.0.0.1", "localhost", "::1"})
+
+
+def _has_real_freeswitch_password(value: str) -> bool:
+    password = (value or "").strip()
+    return bool(password and password != "ClueCon")
+
+
+def _has_real_freeswitch_rtp_ip(value: str) -> bool:
+    host = (value or "").strip().lower()
+    return bool(host and host not in {"127.0.0.1", "localhost", "::1"})
+
+
 def _resolve_direct_runtime_provider() -> tuple[str, bool]:
     preferred = (settings.telephony_provider or "auto").strip().lower() or "auto"
     if (
@@ -101,6 +116,9 @@ def _requirements_to_blockers(
         "media_gateway_disabled": "MEDIA_GATEWAY_ENABLED=false.",
         "media_gateway_provider_not_freeswitch": "MEDIA_GATEWAY_PROVIDER must be freeswitch.",
         "media_gateway_mode_not_supported": "MEDIA_GATEWAY_MODE must be mock or esl_rtp.",
+        "freeswitch_esl_host_missing": "FREESWITCH_ESL_HOST is missing or local-only.",
+        "freeswitch_esl_password_missing": "FREESWITCH_ESL_PASSWORD is missing or still default.",
+        "freeswitch_rtp_ip_missing": "FREESWITCH_RTP_IP is missing or local-only.",
     }
     return [mapping[key] for key in requirement_keys if key in present]
 
@@ -167,6 +185,9 @@ def _build_route_readiness(
                     "media_gateway_disabled",
                     "media_gateway_provider_not_freeswitch",
                     "media_gateway_mode_not_supported",
+                    "freeswitch_esl_host_missing",
+                    "freeswitch_esl_password_missing",
+                    "freeswitch_rtp_ip_missing",
                 ],
                 present,
             ),
@@ -274,6 +295,36 @@ def _build_actionable_next_step(
                 scope="inbound_ai_runtime",
             ),
         ),
+        (
+            "freeswitch_esl_host_missing",
+            MangoActionableNextStep(
+                key="set_freeswitch_esl_host",
+                title="Set FreeSWITCH ESL host",
+                description="Inbound AI runtime cannot attach to a real media gateway until FREESWITCH_ESL_HOST points to your reachable FreeSWITCH instance.",
+                cta_label="Set FREESWITCH_ESL_HOST",
+                scope="inbound_ai_runtime",
+            ),
+        ),
+        (
+            "freeswitch_esl_password_missing",
+            MangoActionableNextStep(
+                key="set_freeswitch_esl_password",
+                title="Set FreeSWITCH ESL password",
+                description="Inbound AI runtime still uses a missing or default ESL password. Replace it with the real FreeSWITCH event socket password.",
+                cta_label="Set FREESWITCH_ESL_PASSWORD",
+                scope="inbound_ai_runtime",
+            ),
+        ),
+        (
+            "freeswitch_rtp_ip_missing",
+            MangoActionableNextStep(
+                key="set_freeswitch_rtp_ip",
+                title="Set FreeSWITCH RTP IP",
+                description="Inbound AI runtime still points RTP at a local-only address. Set FREESWITCH_RTP_IP to the reachable media IP.",
+                cta_label="Set FREESWITCH_RTP_IP",
+                scope="inbound_ai_runtime",
+            ),
+        ),
     ]
     present = set(missing_requirements)
     for requirement, step in priorities:
@@ -307,6 +358,14 @@ async def mango_readiness() -> MangoReadinessRead:
     backend_url = settings.effective_backend_url
     webhook_url = f"{backend_url}/v1/webhooks/mango" if backend_url else "/v1/webhooks/mango"
     webhook_url_public = _is_public_backend_url(backend_url)
+    freeswitch_esl_host_configured = _has_real_freeswitch_host(settings.freeswitch_esl_host)
+    freeswitch_esl_password_configured = _has_real_freeswitch_password(settings.freeswitch_esl_password)
+    freeswitch_rtp_ip_configured = _has_real_freeswitch_rtp_ip(settings.freeswitch_rtp_ip)
+    media_gateway_transport_enabled = bool(
+        settings.media_gateway_enabled
+        and settings.media_gateway_provider == "freeswitch"
+        and settings.media_gateway_mode in {"mock", "esl_rtp"}
+    )
     from_ext_auto_discoverable = False
     if api_configured and not from_ext_configured:
         resolved = await resolve_mango_from_ext()
@@ -340,6 +399,15 @@ async def mango_readiness() -> MangoReadinessRead:
     if settings.media_gateway_mode not in {"mock", "esl_rtp"}:
         warnings.append("Inbound AI runtime currently expects MEDIA_GATEWAY_MODE=mock or esl_rtp.")
         missing_requirements.append("media_gateway_mode_not_supported")
+    if media_gateway_transport_enabled and not freeswitch_esl_host_configured:
+        warnings.append("Inbound AI runtime is blocked because FREESWITCH_ESL_HOST is missing or still local-only.")
+        missing_requirements.append("freeswitch_esl_host_missing")
+    if media_gateway_transport_enabled and not freeswitch_esl_password_configured:
+        warnings.append("Inbound AI runtime is blocked because FREESWITCH_ESL_PASSWORD is missing or still using the default value.")
+        missing_requirements.append("freeswitch_esl_password_missing")
+    if media_gateway_transport_enabled and not freeswitch_rtp_ip_configured:
+        warnings.append("Inbound AI runtime is blocked because FREESWITCH_RTP_IP is missing or still local-only.")
+        missing_requirements.append("freeswitch_rtp_ip_missing")
 
     inbound_webhook_smoke_ready = bool(api_configured and webhook_secret_configured and webhook_url_public)
     outbound_originate_smoke_ready = bool(
@@ -353,6 +421,9 @@ async def mango_readiness() -> MangoReadinessRead:
         and settings.media_gateway_enabled
         and settings.media_gateway_provider == "freeswitch"
         and settings.media_gateway_mode in {"mock", "esl_rtp"}
+        and freeswitch_esl_host_configured
+        and freeswitch_esl_password_configured
+        and freeswitch_rtp_ip_configured
     )
     route_readiness, render_summary = _build_route_readiness(
         inbound_webhook_smoke_ready=inbound_webhook_smoke_ready,

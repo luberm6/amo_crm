@@ -682,6 +682,9 @@ async def test_mango_readiness_reports_direct_override_to_mango(
         patch.object(cfg.settings, "media_gateway_enabled", True),
         patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
         patch.object(cfg.settings, "media_gateway_mode", "esl_rtp"),
+        patch.object(cfg.settings, "freeswitch_esl_host", "fs.example.com"),
+        patch.object(cfg.settings, "freeswitch_esl_password", "super-secret"),
+        patch.object(cfg.settings, "freeswitch_rtp_ip", "34.120.10.20"),
         patch("app.api.v1.telephony.resolve_mango_from_ext", AsyncMock(return_value=type("_Resolved", (), {"value": "10"})())),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -703,6 +706,47 @@ async def test_mango_readiness_reports_direct_override_to_mango(
     assert body["render_summary"]["overall_status"] == "ready"
     assert body["actionable_next_step"]["key"] == "run_live_smoke"
     assert body["actionable_next_step"]["scope"] == "global"
+
+
+@pytest.mark.anyio
+async def test_mango_readiness_blocks_inbound_ai_runtime_when_freeswitch_runtime_settings_are_local_defaults(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    app = _make_app(session)
+    with (
+        patch.object(cfg.settings, "mango_api_key", "api-key"),
+        patch.object(cfg.settings, "mango_api_salt", "api-salt"),
+        patch.object(cfg.settings, "gemini_api_key", "gemini-key"),
+        patch.object(cfg.settings, "environment", "development"),
+        patch.object(cfg.settings, "telephony_provider", "mango"),
+        patch.object(cfg.settings, "backend_url", "https://voice.example.com"),
+        patch.object(cfg.settings, "mango_webhook_secret", "whsec"),
+        patch.object(cfg.settings, "mango_from_ext", "101"),
+        patch.object(cfg.settings, "media_gateway_enabled", True),
+        patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
+        patch.object(cfg.settings, "media_gateway_mode", "esl_rtp"),
+        patch.object(cfg.settings, "freeswitch_esl_host", "127.0.0.1"),
+        patch.object(cfg.settings, "freeswitch_esl_password", "ClueCon"),
+        patch.object(cfg.settings, "freeswitch_rtp_ip", "127.0.0.1"),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            token = await _admin_login(ac)
+            resp = await ac.get(
+                "/v1/telephony/mango/readiness",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["inbound_webhook_smoke_ready"] is True
+    assert body["outbound_originate_smoke_ready"] is True
+    assert body["inbound_ai_runtime_ready"] is False
+    assert "freeswitch_esl_host_missing" in body["missing_requirements"]
+    assert "freeswitch_esl_password_missing" in body["missing_requirements"]
+    assert "freeswitch_rtp_ip_missing" in body["missing_requirements"]
+    assert body["route_readiness"]["inbound_ai_runtime"]["status"] == "blocked"
+    assert "FREESWITCH_ESL_HOST is missing or local-only." in body["route_readiness"]["inbound_ai_runtime"]["blockers"]
 
 
 @pytest.mark.anyio
