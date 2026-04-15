@@ -245,6 +245,58 @@ function formatIssueLabel(issue: string) {
   }
 }
 
+function mapMangoRequirementLabel(requirement: string) {
+  switch (requirement) {
+    case 'mango_api_credentials_missing':
+      return 'Mango API credentials are missing.'
+    case 'mango_webhook_secret_missing':
+      return 'Webhook secret is missing, so inbound webhook verification is not secured.'
+    case 'backend_url_not_public':
+      return 'BACKEND_URL is not public, so Mango cannot reach this Render backend.'
+    case 'mango_from_ext_missing':
+      return 'FROM_EXT is not configured and no stable fallback is available.'
+    case 'telephony_runtime_not_real':
+      return 'Runtime telephony provider is not a real Mango route yet.'
+    case 'media_gateway_disabled':
+      return 'MEDIA_GATEWAY_ENABLED=false, so inbound AI call routing is blocked.'
+    case 'media_gateway_provider_not_freeswitch':
+      return 'Inbound AI expects MEDIA_GATEWAY_PROVIDER=freeswitch.'
+    case 'media_gateway_mode_not_supported':
+      return 'Inbound AI expects MEDIA_GATEWAY_MODE=mock or esl_rtp.'
+    default:
+      return requirement
+  }
+}
+
+function collectReadinessBlockers(readiness: MangoReadiness | null, scope: 'webhook' | 'outbound' | 'inbound_ai') {
+  if (!readiness) {
+    return ['Readiness data is unavailable.']
+  }
+  const requirements = new Set(readiness.missing_requirements || [])
+  if (scope === 'webhook') {
+    return [
+      requirements.has('mango_api_credentials_missing') ? mapMangoRequirementLabel('mango_api_credentials_missing') : null,
+      requirements.has('mango_webhook_secret_missing') ? mapMangoRequirementLabel('mango_webhook_secret_missing') : null,
+      requirements.has('backend_url_not_public') ? mapMangoRequirementLabel('backend_url_not_public') : null,
+    ].filter(Boolean) as string[]
+  }
+  if (scope === 'outbound') {
+    return [
+      requirements.has('mango_api_credentials_missing') ? mapMangoRequirementLabel('mango_api_credentials_missing') : null,
+      requirements.has('mango_from_ext_missing') ? mapMangoRequirementLabel('mango_from_ext_missing') : null,
+      requirements.has('telephony_runtime_not_real') ? mapMangoRequirementLabel('telephony_runtime_not_real') : null,
+    ].filter(Boolean) as string[]
+  }
+  return [
+    requirements.has('mango_api_credentials_missing') ? mapMangoRequirementLabel('mango_api_credentials_missing') : null,
+    requirements.has('mango_webhook_secret_missing') ? mapMangoRequirementLabel('mango_webhook_secret_missing') : null,
+    requirements.has('backend_url_not_public') ? mapMangoRequirementLabel('backend_url_not_public') : null,
+    requirements.has('media_gateway_disabled') ? mapMangoRequirementLabel('media_gateway_disabled') : null,
+    requirements.has('media_gateway_provider_not_freeswitch') ? mapMangoRequirementLabel('media_gateway_provider_not_freeswitch') : null,
+    requirements.has('media_gateway_mode_not_supported') ? mapMangoRequirementLabel('media_gateway_mode_not_supported') : null,
+  ].filter(Boolean) as string[]
+}
+
 function mapMangoReadinessWarning(warning: string) {
   if (warning.includes('MANGO_WEBHOOK_SECRET')) {
     return 'Inbound webhook verification not configured. Входящий webhook-path ещё не защищён.'
@@ -393,6 +445,19 @@ export default function ProvidersPage() {
 
   const inboundAiRuntimeReady = Boolean(
     mangoReadiness?.inbound_ai_runtime_ready && boundLineCount > 0,
+  )
+
+  const webhookBlockers = useMemo(
+    () => collectReadinessBlockers(mangoReadiness, 'webhook'),
+    [mangoReadiness],
+  )
+  const outboundBlockers = useMemo(
+    () => collectReadinessBlockers(mangoReadiness, 'outbound'),
+    [mangoReadiness],
+  )
+  const inboundAiBlockers = useMemo(
+    () => collectReadinessBlockers(mangoReadiness, 'inbound_ai'),
+    [mangoReadiness],
   )
 
   const unboundRemoteLineIds = useMemo(() => {
@@ -978,7 +1043,77 @@ export default function ProvidersPage() {
                 <section className="provider-subpanel">
                   <div className="panel-header">
                     <div>
-                      <p className="eyebrow">3. Agent Binding</p>
+                      <p className="eyebrow">3. Live Readiness</p>
+                      <h4>Render-side routing readiness</h4>
+                    </div>
+                  </div>
+                  <div className="info-banner">
+                    <strong>Честный статус боевого контура.</strong> Этот блок показывает не общую “готовность интеграции”, а можно ли
+                    уже идти в live webhook/outbound smoke на Render.
+                  </div>
+                  <div className="readiness-card-grid">
+                    <article className={`readiness-card${inboundWebhookSmokeReady ? ' ready' : ' blocked'}`}>
+                      <div className="readiness-card-header">
+                        <div>
+                          <p className="readiness-card-title">Inbound webhook</p>
+                          <p className="readiness-card-copy">Mango webhook to Render backend</p>
+                        </div>
+                        <span className={`status-pill${inboundWebhookSmokeReady ? ' live' : ' error'}`}>
+                          {inboundWebhookSmokeReady ? 'Ready' : 'Blocked'}
+                        </span>
+                      </div>
+                      <ul className="readiness-list">
+                        {(webhookBlockers.length > 0 ? webhookBlockers : ['Webhook path is ready for a smoke delivery test.']).map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </article>
+
+                    <article className={`readiness-card${outboundOriginateSmokeReady ? ' ready' : ' blocked'}`}>
+                      <div className="readiness-card-header">
+                        <div>
+                          <p className="readiness-card-title">Outbound originate</p>
+                          <p className="readiness-card-copy">Agent-bound Mango line to outbound smoke</p>
+                        </div>
+                        <span className={`status-pill${outboundOriginateSmokeReady ? ' live' : ' error'}`}>
+                          {outboundOriginateSmokeReady ? 'Ready' : 'Blocked'}
+                        </span>
+                      </div>
+                      <ul className="readiness-list">
+                        {(outboundBlockers.length > 0 ? outboundBlockers : ['Outbound smoke path is ready from the current Render setup.']).map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </article>
+
+                    <article className={`readiness-card${inboundAiRuntimeReady ? ' ready' : ' blocked'}`}>
+                      <div className="readiness-card-header">
+                        <div>
+                          <p className="readiness-card-title">Inbound AI runtime</p>
+                          <p className="readiness-card-copy">Webhook to bound agent to AI runtime</p>
+                        </div>
+                        <span className={`status-pill${inboundAiRuntimeReady ? ' live' : ' error'}`}>
+                          {inboundAiRuntimeReady ? 'Ready' : 'Blocked'}
+                        </span>
+                      </div>
+                      <ul className="readiness-list">
+                        {(inboundAiBlockers.length > 0 ? inboundAiBlockers : ['Inbound AI runtime path is ready for a live webhook smoke.']).map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </article>
+                  </div>
+                  <div className="provider-note">
+                    <strong>Render URLs in use</strong>
+                    <div className="table-secondary">backend_url: {mangoReadiness?.backend_url || 'n/a'}</div>
+                    <div className="table-secondary">webhook_url: {mangoReadiness?.webhook_url || 'n/a'}</div>
+                  </div>
+                </section>
+
+                <section className="provider-subpanel">
+                  <div className="panel-header">
+                    <div>
+                      <p className="eyebrow">4. Agent Binding</p>
                       <h4>Where number assignment happens</h4>
                     </div>
                   </div>
