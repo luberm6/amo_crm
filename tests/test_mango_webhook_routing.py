@@ -656,6 +656,9 @@ async def test_mango_readiness_reports_local_backend_as_blocker(
     assert body["webhook_url_public"] is False
     assert body["inbound_webhook_smoke_ready"] is False
     assert "backend_url_not_public" in body["missing_requirements"]
+    assert body["route_readiness"]["inbound_webhook"]["ready"] is False
+    assert "BACKEND_URL is not public." in body["route_readiness"]["inbound_webhook"]["blockers"]
+    assert body["render_summary"]["overall_status"] == "blocked"
 
 
 @pytest.mark.anyio
@@ -692,6 +695,9 @@ async def test_mango_readiness_reports_direct_override_to_mango(
     assert body["outbound_originate_smoke_ready"] is True
     assert body["inbound_webhook_smoke_ready"] is True
     assert body["inbound_ai_runtime_ready"] is True
+    assert body["route_readiness"]["outbound_originate"]["ready"] is True
+    assert body["route_readiness"]["inbound_ai_runtime"]["status"] == "ready"
+    assert body["render_summary"]["overall_status"] == "ready"
 
 
 @pytest.mark.anyio
@@ -722,3 +728,4 @@ async def test_mango_readiness_uses_render_external_url_when_backend_url_is_loca
     assert body["webhook_url"] == "https://amo-crm-api.onrender.com/v1/webhooks/mango"
     assert body["webhook_url_public"] is True
     assert "backend_url_not_public" not in body["missing_requirements"]
+    assert body["route_readiness"]["inbound_webhook"]["ready"] is True

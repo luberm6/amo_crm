@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 import uuid
 
 from pydantic import BaseModel, Field, field_validator
@@ -72,6 +72,23 @@ class MangoReadinessRead(BaseModel):
     inbound_ai_runtime_ready: bool
     missing_requirements: list[str] = Field(default_factory=list)
     warnings: list[str]
+    route_readiness: dict[str, "MangoRouteReadinessScope"] = Field(default_factory=dict)
+    render_summary: "MangoRenderReadinessSummary"
+
+
+class MangoRouteReadinessScope(BaseModel):
+    key: Literal["inbound_webhook", "outbound_originate", "inbound_ai_runtime"]
+    ready: bool
+    status: Literal["ready", "blocked"]
+    summary: str
+    blockers: list[str] = Field(default_factory=list)
+
+
+class MangoRenderReadinessSummary(BaseModel):
+    ready_count: int = 0
+    blocked_count: int = 0
+    overall_status: Literal["ready", "partial", "blocked"]
+    operator_summary: str
 
 
 class MangoRoutingMapItem(BaseModel):

@@ -113,6 +113,35 @@ describe('providers page smoke', () => {
             'Outbound calling will use an auto-discovered Mango extension because MANGO_FROM_EXT is empty.',
             'Inbound AI runtime is blocked because MEDIA_GATEWAY_ENABLED=false.',
           ],
+          route_readiness: {
+            inbound_webhook: {
+              key: 'inbound_webhook',
+              ready: false,
+              status: 'blocked',
+              summary: 'Render webhook delivery is not ready yet.',
+              blockers: ['Webhook secret is missing.', 'BACKEND_URL is not public.'],
+            },
+            outbound_originate: {
+              key: 'outbound_originate',
+              ready: true,
+              status: 'ready',
+              summary: 'Agent-bound Mango lines can run an outbound originate smoke.',
+              blockers: [],
+            },
+            inbound_ai_runtime: {
+              key: 'inbound_ai_runtime',
+              ready: false,
+              status: 'blocked',
+              summary: 'Inbound AI runtime is still blocked.',
+              blockers: ['Webhook secret is missing.', 'BACKEND_URL is not public.', 'MEDIA_GATEWAY_ENABLED=false.'],
+            },
+          },
+          render_summary: {
+            ready_count: 1,
+            blocked_count: 2,
+            overall_status: 'partial',
+            operator_summary: 'Render-side Mango routing is partially ready. Check the blocked cards before live smoke.',
+          },
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -240,12 +269,14 @@ describe('providers page smoke', () => {
     expect(screen.getByText(/Last sync status/i)).toBeInTheDocument()
     expect(screen.getByText(/Focused line:/i)).toBeInTheDocument()
     expect(screen.getByText(/Render-side routing readiness/i)).toBeInTheDocument()
+    expect(screen.getByText(/Render routing is partially ready/i)).toBeInTheDocument()
+    expect(screen.getByText(/Render-side Mango routing is partially ready/i)).toBeInTheDocument()
     expect(screen.getAllByText(/^Inbound webhook$/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText(/^Outbound originate$/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText(/^Inbound AI runtime$/i).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText(/Mango webhook to Render backend/i)).toBeInTheDocument()
-    expect(screen.getByText(/Agent-bound Mango line to outbound smoke/i)).toBeInTheDocument()
-    expect(screen.getByText(/Webhook to bound agent to AI runtime/i)).toBeInTheDocument()
+    expect(screen.getByText(/Render webhook delivery is not ready yet/i)).toBeInTheDocument()
+    expect(screen.getByText(/Agent-bound Mango lines can run an outbound originate smoke/i)).toBeInTheDocument()
+    expect(screen.getByText(/Inbound AI runtime is still blocked/i)).toBeInTheDocument()
     expect(screen.getAllByText(/Webhook secret is missing/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText(/BACKEND_URL is not public/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText(/MEDIA_GATEWAY_ENABLED=false/i).length).toBeGreaterThanOrEqual(1)

@@ -86,6 +86,19 @@ type MangoReadiness = {
   inbound_ai_runtime_ready: boolean
   missing_requirements: string[]
   warnings: string[]
+  route_readiness?: Record<string, {
+    key: 'inbound_webhook' | 'outbound_originate' | 'inbound_ai_runtime'
+    ready: boolean
+    status: 'ready' | 'blocked'
+    summary: string
+    blockers: string[]
+  }>
+  render_summary?: {
+    ready_count: number
+    blocked_count: number
+    overall_status: 'ready' | 'partial' | 'blocked'
+    operator_summary: string
+  }
 }
 
 type MangoRoutingMapItem = {
@@ -272,6 +285,11 @@ function collectReadinessBlockers(readiness: MangoReadiness | null, scope: 'webh
   if (!readiness) {
     return ['Readiness data is unavailable.']
   }
+  const scopeKey = scope === 'webhook' ? 'inbound_webhook' : scope === 'outbound' ? 'outbound_originate' : 'inbound_ai_runtime'
+  const routeScope = readiness.route_readiness?.[scopeKey]
+  if (routeScope?.blockers?.length) {
+    return routeScope.blockers
+  }
   const requirements = new Set(readiness.missing_requirements || [])
   if (scope === 'webhook') {
     return [
@@ -430,7 +448,7 @@ export default function ProvidersPage() {
   )
 
   const inboundWebhookSmokeReady = Boolean(
-    mangoReadiness?.inbound_webhook_smoke_ready && mangoLines.length > 0 && boundLineCount > 0,
+    (mangoReadiness?.route_readiness?.inbound_webhook?.ready ?? mangoReadiness?.inbound_webhook_smoke_ready) && mangoLines.length > 0 && boundLineCount > 0,
   )
 
   const controlPlaneOutboundReady = Boolean(
@@ -440,11 +458,11 @@ export default function ProvidersPage() {
   )
 
   const outboundOriginateSmokeReady = Boolean(
-    mangoReadiness?.outbound_originate_smoke_ready && mangoLines.length > 0,
+    (mangoReadiness?.route_readiness?.outbound_originate?.ready ?? mangoReadiness?.outbound_originate_smoke_ready) && mangoLines.length > 0,
   )
 
   const inboundAiRuntimeReady = Boolean(
-    mangoReadiness?.inbound_ai_runtime_ready && boundLineCount > 0,
+    (mangoReadiness?.route_readiness?.inbound_ai_runtime?.ready ?? mangoReadiness?.inbound_ai_runtime_ready) && boundLineCount > 0,
   )
 
   const webhookBlockers = useMemo(
@@ -459,6 +477,12 @@ export default function ProvidersPage() {
     () => collectReadinessBlockers(mangoReadiness, 'inbound_ai'),
     [mangoReadiness],
   )
+  const inboundWebhookSummary = mangoReadiness?.route_readiness?.inbound_webhook?.summary
+    || 'Mango webhook to Render backend'
+  const outboundOriginateSummary = mangoReadiness?.route_readiness?.outbound_originate?.summary
+    || 'Agent-bound Mango line to outbound smoke'
+  const inboundAiSummary = mangoReadiness?.route_readiness?.inbound_ai_runtime?.summary
+    || 'Webhook to bound agent to AI runtime'
 
   const unboundRemoteLineIds = useMemo(() => {
     const boundIds = new Set(
@@ -1051,12 +1075,27 @@ export default function ProvidersPage() {
                     <strong>Честный статус боевого контура.</strong> Этот блок показывает не общую “готовность интеграции”, а можно ли
                     уже идти в live webhook/outbound smoke на Render.
                   </div>
+                  {mangoReadiness?.render_summary ? (
+                    <div className="provider-note">
+                      <strong>
+                        {mangoReadiness.render_summary.overall_status === 'ready'
+                          ? 'Render routing is ready'
+                          : mangoReadiness.render_summary.overall_status === 'partial'
+                            ? 'Render routing is partially ready'
+                            : 'Render routing is blocked'}
+                      </strong>
+                      <div className="table-secondary">{mangoReadiness.render_summary.operator_summary}</div>
+                      <div className="table-secondary">
+                        ready: {mangoReadiness.render_summary.ready_count} / blocked: {mangoReadiness.render_summary.blocked_count}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="readiness-card-grid">
                     <article className={`readiness-card${inboundWebhookSmokeReady ? ' ready' : ' blocked'}`}>
                       <div className="readiness-card-header">
                         <div>
                           <p className="readiness-card-title">Inbound webhook</p>
-                          <p className="readiness-card-copy">Mango webhook to Render backend</p>
+                          <p className="readiness-card-copy">{inboundWebhookSummary}</p>
                         </div>
                         <span className={`status-pill${inboundWebhookSmokeReady ? ' live' : ' error'}`}>
                           {inboundWebhookSmokeReady ? 'Ready' : 'Blocked'}
@@ -1073,7 +1112,7 @@ export default function ProvidersPage() {
                       <div className="readiness-card-header">
                         <div>
                           <p className="readiness-card-title">Outbound originate</p>
-                          <p className="readiness-card-copy">Agent-bound Mango line to outbound smoke</p>
+                          <p className="readiness-card-copy">{outboundOriginateSummary}</p>
                         </div>
                         <span className={`status-pill${outboundOriginateSmokeReady ? ' live' : ' error'}`}>
                           {outboundOriginateSmokeReady ? 'Ready' : 'Blocked'}
@@ -1090,7 +1129,7 @@ export default function ProvidersPage() {
                       <div className="readiness-card-header">
                         <div>
                           <p className="readiness-card-title">Inbound AI runtime</p>
-                          <p className="readiness-card-copy">Webhook to bound agent to AI runtime</p>
+                          <p className="readiness-card-copy">{inboundAiSummary}</p>
                         </div>
                         <span className={`status-pill${inboundAiRuntimeReady ? ' live' : ' error'}`}>
                           {inboundAiRuntimeReady ? 'Ready' : 'Blocked'}

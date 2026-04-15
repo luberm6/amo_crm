@@ -17,7 +17,9 @@ from app.models.telephony_line import TelephonyLine
 from app.repositories.agent_profile_repo import AgentProfileRepository
 from app.repositories.telephony_line_repo import TelephonyLineRepository
 from app.schemas.telephony import (
+    MangoRenderReadinessSummary,
     MangoReadinessRead,
+    MangoRouteReadinessScope,
     MangoResolveInboundRequest,
     MangoResolveInboundResult,
     MangoResolveOutboundResult,
@@ -83,6 +85,106 @@ def _resolve_direct_runtime_provider() -> tuple[str, bool]:
     return preferred, preferred not in {"stub", ""}
 
 
+def _requirements_to_blockers(
+    requirement_keys: list[str],
+    present: set[str],
+) -> list[str]:
+    mapping = {
+        "mango_api_credentials_missing": "Mango API credentials are missing.",
+        "mango_webhook_secret_missing": "Webhook secret is missing.",
+        "backend_url_not_public": "BACKEND_URL is not public.",
+        "mango_from_ext_missing": "FROM_EXT is not configured and no stable fallback is available.",
+        "telephony_runtime_not_real": "Telephony runtime is not using a real Mango route.",
+        "media_gateway_disabled": "MEDIA_GATEWAY_ENABLED=false.",
+        "media_gateway_provider_not_freeswitch": "MEDIA_GATEWAY_PROVIDER must be freeswitch.",
+        "media_gateway_mode_not_supported": "MEDIA_GATEWAY_MODE must be mock or esl_rtp.",
+    }
+    return [mapping[key] for key in requirement_keys if key in present]
+
+
+def _build_route_readiness(
+    *,
+    inbound_webhook_smoke_ready: bool,
+    outbound_originate_smoke_ready: bool,
+    inbound_ai_runtime_ready: bool,
+    missing_requirements: list[str],
+) -> tuple[dict[str, MangoRouteReadinessScope], MangoRenderReadinessSummary]:
+    present = set(missing_requirements)
+    route_readiness = {
+        "inbound_webhook": MangoRouteReadinessScope(
+            key="inbound_webhook",
+            ready=inbound_webhook_smoke_ready,
+            status="ready" if inbound_webhook_smoke_ready else "blocked",
+            summary=(
+                "Render can receive and verify Mango webhook delivery."
+                if inbound_webhook_smoke_ready
+                else "Render webhook delivery is not ready yet."
+            ),
+            blockers=_requirements_to_blockers(
+                [
+                    "mango_api_credentials_missing",
+                    "mango_webhook_secret_missing",
+                    "backend_url_not_public",
+                ],
+                present,
+            ),
+        ),
+        "outbound_originate": MangoRouteReadinessScope(
+            key="outbound_originate",
+            ready=outbound_originate_smoke_ready,
+            status="ready" if outbound_originate_smoke_ready else "blocked",
+            summary=(
+                "Agent-bound Mango lines can run an outbound originate smoke."
+                if outbound_originate_smoke_ready
+                else "Outbound originate smoke is still blocked."
+            ),
+            blockers=_requirements_to_blockers(
+                [
+                    "mango_api_credentials_missing",
+                    "mango_from_ext_missing",
+                    "telephony_runtime_not_real",
+                ],
+                present,
+            ),
+        ),
+        "inbound_ai_runtime": MangoRouteReadinessScope(
+            key="inbound_ai_runtime",
+            ready=inbound_ai_runtime_ready,
+            status="ready" if inbound_ai_runtime_ready else "blocked",
+            summary=(
+                "Inbound Mango webhook can reach a bound AI runtime."
+                if inbound_ai_runtime_ready
+                else "Inbound AI runtime is still blocked."
+            ),
+            blockers=_requirements_to_blockers(
+                [
+                    "mango_api_credentials_missing",
+                    "mango_webhook_secret_missing",
+                    "backend_url_not_public",
+                    "media_gateway_disabled",
+                    "media_gateway_provider_not_freeswitch",
+                    "media_gateway_mode_not_supported",
+                ],
+                present,
+            ),
+        ),
+    }
+    ready_count = sum(1 for item in route_readiness.values() if item.ready)
+    blocked_count = len(route_readiness) - ready_count
+    overall_status = "ready" if blocked_count == 0 else "partial" if ready_count > 0 else "blocked"
+    operator_summary = {
+        "ready": "Render-side Mango routing is ready for webhook and originate smoke checks.",
+        "partial": "Render-side Mango routing is partially ready. Check the blocked cards before live smoke.",
+        "blocked": "Render-side Mango routing is blocked. Fix the listed blockers before live smoke.",
+    }[overall_status]
+    return route_readiness, MangoRenderReadinessSummary(
+        ready_count=ready_count,
+        blocked_count=blocked_count,
+        overall_status=overall_status,
+        operator_summary=operator_summary,
+    )
+
+
 @router.get("/mango/readiness", response_model=MangoReadinessRead)
 async def mango_readiness() -> MangoReadinessRead:
     api_configured = bool(settings.mango_api_key and settings.mango_api_salt)
@@ -139,6 +241,12 @@ async def mango_readiness() -> MangoReadinessRead:
         and settings.media_gateway_provider == "freeswitch"
         and settings.media_gateway_mode in {"mock", "esl_rtp"}
     )
+    route_readiness, render_summary = _build_route_readiness(
+        inbound_webhook_smoke_ready=inbound_webhook_smoke_ready,
+        outbound_originate_smoke_ready=outbound_originate_smoke_ready,
+        inbound_ai_runtime_ready=inbound_ai_runtime_ready,
+        missing_requirements=missing_requirements,
+    )
 
     return MangoReadinessRead(
         api_configured=api_configured,
@@ -155,6 +263,8 @@ async def mango_readiness() -> MangoReadinessRead:
         inbound_ai_runtime_ready=inbound_ai_runtime_ready,
         missing_requirements=missing_requirements,
         warnings=warnings,
+        route_readiness=route_readiness,
+        render_summary=render_summary,
     )
 
 
