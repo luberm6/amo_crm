@@ -627,36 +627,40 @@ export default function AgentEditorPage() {
                 <div>
                   <p className="eyebrow">Telephony / Mango</p>
                   <h4>Привязка номера</h4>
+                  <p className="compact-copy">Здесь агент получает конкретный Mango number для inbound/outbound routing foundation.</p>
                 </div>
                 <button type="button" className="ghost-link-button" onClick={() => void handleSyncNumbers()} disabled={syncingTelephony}>
                   {syncingTelephony ? 'Синхронизация…' : 'Sync numbers from Mango'}
                 </button>
               </div>
 
-              <div className="debug-list compact-debug">
-                <div className="debug-row">
-                  <span>provider</span>
+              <div className="saas-summary-grid telephony-summary-grid">
+                <div className="saas-summary-card">
+                  <span>Telephony provider</span>
                   <strong>Mango</strong>
                 </div>
-                <div className="debug-row">
-                  <span>inventory</span>
-                  <strong>{telephonyLoading ? 'загрузка…' : `${telephonyLines.length} линий`}</strong>
+                <div className="saas-summary-card">
+                  <span>Numbers available</span>
+                  <strong>{telephonyLoading ? '…' : telephonyLines.length}</strong>
                 </div>
-                <div className="debug-row">
-                  <span>extensions</span>
-                  <strong>{telephonyLoading ? 'загрузка…' : `${telephonyExtensions.length}`}</strong>
+                <div className="saas-summary-card">
+                  <span>Extensions</span>
+                  <strong>{telephonyLoading ? '…' : telephonyExtensions.length}</strong>
                 </div>
-                <div className="debug-row">
-                  <span>binding</span>
-                  <strong>{form.telephonyRemoteLineId ? 'linked' : 'not linked'}</strong>
+                <div className="saas-summary-card">
+                  <span>Binding status</span>
+                  <strong>{form.telephonyRemoteLineId ? 'Bound to agent' : 'Not bound'}</strong>
                 </div>
               </div>
 
               {selectedTelephonyLine ? (
-                <div className="info-banner">
-                  <strong>Selected line:</strong> {formatTelephonyLineLabel(selectedTelephonyLine)}
-                  <br />
-                  <span>remote_line_id: {selectedTelephonyLine.remote_line_id}</span>
+                <div className="binding-cta-card">
+                  <div>
+                    <p className="binding-cta-title">Bound to agent</p>
+                    <p className="binding-cta-copy">{formatTelephonyLineLabel(selectedTelephonyLine)}</p>
+                    <div className="table-secondary">remote_line_id: {selectedTelephonyLine.remote_line_id}</div>
+                  </div>
+                  <span className="status-pill live">Bound</span>
                 </div>
               ) : null}
 
@@ -666,8 +670,14 @@ export default function AgentEditorPage() {
                 </div>
               ) : null}
 
+              {!selectedTelephonyLine && telephonyLines.length > 0 ? (
+                <div className="info-banner">
+                  <strong>Assign number to agent to enable calls.</strong> Выберите линию ниже и сохраните настройки агента.
+                </div>
+              ) : null}
+
               <label>
-                Номер Mango
+                Select Mango number
                 <select
                   value={form.telephonyRemoteLineId}
                   onChange={(event) => {
@@ -693,7 +703,7 @@ export default function AgentEditorPage() {
 
               {suggestedLineId ? (
                 <div className="info-banner">
-                  Рекомендуемая линия для ИИ-агента найдена.{' '}
+                  <strong>Suggested for AI:</strong> найдена линия “ДЛЯ ИИ менеджера”.{' '}
                   <button
                     type="button"
                     className="ghost-link-button"

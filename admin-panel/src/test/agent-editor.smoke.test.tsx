@@ -24,6 +24,11 @@ function renderEditor(initialEntry = '/agents/agent-1') {
   )
 }
 
+function getBoundLineCard() {
+  const match = screen.getAllByText(/Bound to agent/i).find((node) => node.closest('.binding-cta-card'))
+  return match?.closest('.binding-cta-card') ?? null
+}
+
 describe('agent editor telephony smoke', () => {
   beforeEach(() => {
     window.localStorage.setItem('amo_admin_token', 'token-123')
@@ -219,7 +224,7 @@ describe('agent editor telephony smoke', () => {
       expect(screen.getByText(/Mango sync завершён/i)).toBeInTheDocument()
     })
 
-    const lineSelect = screen.getByLabelText(/Номер Mango/i)
+    const lineSelect = screen.getByLabelText(/Select Mango number/i)
     expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\) — suggested/i })).toBeInTheDocument()
 
     await user.selectOptions(lineSelect, '405622036')
@@ -237,17 +242,18 @@ describe('agent editor telephony smoke', () => {
       voice_provider: 'elevenlabs',
     })
 
-    expect(screen.getByText(/Selected line:/i).closest('.info-banner')).toHaveTextContent('ДЛЯ ИИ менеджера (+79300350609)')
+    expect(getBoundLineCard()).toHaveTextContent('ДЛЯ ИИ менеджера (+79300350609)')
     expect(screen.getByText('405622036')).toBeInTheDocument()
 
     view.unmount()
     renderEditor()
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Номер Mango/i)).toHaveValue('405622036')
+      expect(screen.getByLabelText(/Select Mango number/i)).toHaveValue('405622036')
     })
-    expect(screen.getByText(/Selected line:/i).closest('.info-banner')).toHaveTextContent('ДЛЯ ИИ менеджера (+79300350609)')
-    expect(screen.getByText(/linked/i)).toBeInTheDocument()
+    expect(getBoundLineCard()).toHaveTextContent('ДЛЯ ИИ менеджера (+79300350609)')
+    expect(getBoundLineCard()).toHaveTextContent('Bound')
+    expect(screen.queryByText(/Assign number to agent to enable calls/i)).not.toBeInTheDocument()
   })
 
   it('shows deep-link back to providers for the focused Mango line', async () => {
@@ -361,7 +367,7 @@ describe('agent editor telephony smoke', () => {
     })
 
     expect(screen.getByRole('link', { name: /Back to Providers for this line/i })).toHaveAttribute('href', '/providers?line=405622036')
-    expect(screen.getByText(/Selected line:/i).closest('.info-banner')).toHaveTextContent('ДЛЯ ИИ менеджера (+79300350609)')
+    expect(getBoundLineCard()).toHaveTextContent('ДЛЯ ИИ менеджера (+79300350609)')
   })
 
   it('shows readiness warnings without blocking line selection', async () => {
@@ -811,11 +817,11 @@ describe('agent editor telephony smoke', () => {
     renderEditor()
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Номер Mango/i)).toBeInTheDocument()
+      expect(screen.getByLabelText(/Select Mango number/i)).toBeInTheDocument()
     })
 
     const user = userEvent.setup()
-    await user.selectOptions(screen.getByLabelText(/Номер Mango/i), '405622036')
+    await user.selectOptions(screen.getByLabelText(/Select Mango number/i), '405622036')
     await user.click(screen.getByRole('button', { name: /Сохранить настройки агента/i }))
 
     await waitFor(() => {

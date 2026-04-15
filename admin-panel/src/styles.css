@@ -692,6 +692,175 @@ a.info-card:hover {
   background: rgba(255, 253, 247, 0.72);
 }
 
+.saas-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.saas-summary-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 250, 242, 0.92);
+}
+
+.saas-summary-card span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.saas-summary-card strong {
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.issue-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.issue-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  background: #fff1d6;
+  color: #87520c;
+  border: 1px solid #ecd09b;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.journey-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px dashed #cdbb9f;
+  border-radius: 16px;
+  background: rgba(247, 242, 232, 0.8);
+}
+
+.journey-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.journey-step-index {
+  width: 1.9rem;
+  height: 1.9rem;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.inventory-toolbar {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.inventory-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 0.85rem;
+}
+
+.inventory-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 250, 242, 0.92);
+  box-shadow: 0 6px 18px rgba(58, 43, 21, 0.05);
+}
+
+.inventory-card.focused {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(13, 107, 87, 0.2);
+  background: rgba(220, 239, 231, 0.45);
+}
+
+.inventory-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
+.inventory-card-title,
+.binding-cta-title {
+  margin: 0;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.inventory-card-phone,
+.binding-cta-copy {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.inventory-card-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.inventory-card-meta div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.inventory-card-meta span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.inventory-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.binding-cta-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 18px;
+  border: 1px solid #c7ddd3;
+  background: linear-gradient(180deg, rgba(237, 248, 239, 0.95) 0%, rgba(220, 239, 231, 0.9) 100%);
+}
+
+.empty-state-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.2rem;
+  border-radius: 18px;
+  border: 1px dashed #ccbfa8;
+  background: rgba(255, 250, 242, 0.82);
+}
+
+.telephony-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .inventory-list {
   display: grid;
   gap: 0.75rem;
@@ -783,6 +952,17 @@ a.info-card:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .saas-summary-grid,
+  .telephony-summary-grid,
+  .inventory-card-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .binding-cta-card,
+  .inventory-card-header {
+    flex-direction: column;
+  }
+
   .sidebar {
     border-right: none;
     border-bottom: 1px solid rgba(31, 42, 48, 0.08);
@@ -800,5 +980,11 @@ a.info-card:hover {
   .topbar {
     flex-direction: column;
     align-items: start;
+  }
+
+  .saas-summary-grid,
+  .telephony-summary-grid,
+  .inventory-card-meta {
+    grid-template-columns: 1fr;
   }
 }
