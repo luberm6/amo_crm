@@ -117,7 +117,32 @@ def inspect_voice_strategy(
         return checks
 
     if strategy == "gemini_primary":
-        if not cfg.gemini_audio_output_enabled:
+        can_boot_on_tts_fallback = bool(
+            (not cfg.gemini_audio_output_enabled)
+            and cfg.elevenlabs_configured
+            and cfg.direct_voice_allow_tts_fallback
+        )
+        if cfg.gemini_audio_output_enabled:
+            checks.append(
+                VoiceStrategyCheck(
+                    name="voice_strategy_gemini_output",
+                    status="pass",
+                    message="Gemini native audio is enabled for primary voice.",
+                )
+            )
+        elif can_boot_on_tts_fallback:
+            checks.append(
+                VoiceStrategyCheck(
+                    name="voice_strategy_gemini_output",
+                    status="warn",
+                    message=(
+                        "GEMINI_AUDIO_OUTPUT_ENABLED=false, so gemini_primary will "
+                        "start through ElevenLabs tts_fallback."
+                    ),
+                    details={"degraded_boot_path": "tts_fallback"},
+                )
+            )
+        else:
             checks.append(
                 VoiceStrategyCheck(
                     name="voice_strategy_gemini_output",
@@ -125,14 +150,6 @@ def inspect_voice_strategy(
                     message=(
                         "gemini_primary requires GEMINI_AUDIO_OUTPUT_ENABLED=true."
                     ),
-                )
-            )
-        else:
-            checks.append(
-                VoiceStrategyCheck(
-                    name="voice_strategy_gemini_output",
-                    status="pass",
-                    message="Gemini native audio is enabled for primary voice.",
                 )
             )
 
@@ -252,6 +269,21 @@ def resolve_voice_strategy_definition(
             allow_tts_fallback=False,
         )
     if strategy == "gemini_primary":
+        if (
+            not cfg.gemini_audio_output_enabled
+            and cfg.elevenlabs_configured
+            and cfg.direct_voice_allow_tts_fallback
+        ):
+            return VoiceStrategyDefinition(
+                strategy="gemini_primary",
+                primary_path="tts_fallback",
+                fallback_path=None,
+                initial_greeting_path="tts_fallback",
+                experimental=False,
+                uses_gemini_audio_output=False,
+                needs_tts_provider=True,
+                allow_tts_fallback=False,
+            )
         return VoiceStrategyDefinition(
             strategy="gemini_primary",
             primary_path="gemini_native",

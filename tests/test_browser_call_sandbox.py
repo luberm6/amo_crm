@@ -108,6 +108,54 @@ async def test_create_browser_session(browser_session, browser_session_factory, 
 
 
 @pytest.mark.anyio
+async def test_create_browser_session_uses_tts_fallback_when_gemini_audio_output_is_disabled(
+    browser_session,
+    browser_session_factory,
+):
+    old_values = {
+        "gemini_api_key": settings.gemini_api_key,
+        "direct_voice_strategy": settings.direct_voice_strategy,
+        "direct_voice_allow_tts_fallback": settings.direct_voice_allow_tts_fallback,
+        "gemini_audio_output_enabled": settings.gemini_audio_output_enabled,
+        "gemini_audio_input_enabled": settings.gemini_audio_input_enabled,
+        "direct_initial_greeting_enabled": settings.direct_initial_greeting_enabled,
+        "elevenlabs_enabled": settings.elevenlabs_enabled,
+        "elevenlabs_api_key": settings.elevenlabs_api_key,
+        "elevenlabs_voice_id": settings.elevenlabs_voice_id,
+    }
+    try:
+        settings.gemini_api_key = "test-gemini-key"
+        settings.direct_voice_strategy = "gemini_primary"
+        settings.direct_voice_allow_tts_fallback = True
+        settings.gemini_audio_output_enabled = False
+        settings.gemini_audio_input_enabled = True
+        settings.direct_initial_greeting_enabled = False
+        settings.elevenlabs_enabled = True
+        settings.elevenlabs_api_key = "test-elevenlabs-key"
+        settings.elevenlabs_voice_id = "voice-123"
+
+        service, registry, session_manager = _make_browser_service(browser_session, browser_session_factory)
+        with patch("app.integrations.direct.session_manager.GeminiLiveClient", new=MockGeminiLiveClient):
+            call = await service.create_call(raw_phone="qa-fallback", mode=CallMode.BROWSER)
+            await browser_session.commit()
+
+        assert call.status == CallStatus.IN_PROGRESS
+        bridge = registry.get_bridge(call.id)
+        assert bridge is not None
+        live_session = session_manager.get_session(call.mango_call_id)
+        assert live_session is not None
+        assert live_session.voice_state is not None
+        assert live_session.voice_state.strategy == "gemini_primary"
+        assert live_session.voice_state.active_path == "tts_fallback"
+
+        await service.stop_call(call.id, actor="browser-test")
+        await browser_session.commit()
+    finally:
+        for key, value in old_values.items():
+            setattr(settings, key, value)
+
+
+@pytest.mark.anyio
 async def test_stop_browser_session(browser_session, browser_session_factory, browser_test_env):
     service, _registry, session_manager = _make_browser_service(browser_session, browser_session_factory)
     with patch("app.integrations.direct.session_manager.GeminiLiveClient", new=MockGeminiLiveClient):

@@ -63,6 +63,28 @@ def test_gemini_primary_allows_explicit_tts_fallback() -> None:
         _restore_settings(old)
 
 
+def test_gemini_primary_boots_via_tts_fallback_when_native_audio_is_disabled() -> None:
+    old = _save_settings()
+    try:
+        settings.direct_voice_strategy = "gemini_primary"
+        settings.direct_voice_allow_tts_fallback = True
+        settings.gemini_audio_output_enabled = False
+        settings.elevenlabs_enabled = True
+        settings.elevenlabs_api_key = "k"
+        settings.elevenlabs_voice_id = "v"
+
+        definition = ensure_voice_strategy_valid()
+        state = make_session_voice_state()
+
+        assert definition.primary_path == "tts_fallback"
+        assert definition.initial_greeting_path == "tts_fallback"
+        assert state.active_path == "tts_fallback"
+        assert state.wants_tts_output() is True
+        assert state.wants_gemini_audio_output() is False
+    finally:
+        _restore_settings(old)
+
+
 def test_make_session_voice_state_uses_tts_primary_for_greeting_and_dialog() -> None:
     old = _save_settings()
     try:
