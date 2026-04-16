@@ -178,6 +178,8 @@ describe('providers page smoke', () => {
               is_active: true,
               is_inbound_enabled: true,
               is_outbound_enabled: false,
+              is_recommended_for_ai: true,
+              is_protected: false,
               synced_at: '2030-01-02T00:00:00Z',
             },
             {
@@ -216,6 +218,8 @@ describe('providers page smoke', () => {
               label: 'ДЛЯ ИИ менеджера',
               is_active: true,
               is_inbound_enabled: true,
+              is_recommended_for_ai: true,
+              is_protected: false,
               agent_id: 'agent-1',
               agent_name: 'Sales Alpha',
               agent_is_active: true,
@@ -268,7 +272,7 @@ describe('providers page smoke', () => {
     expect(screen.getByText(/Эта страница хранит учётные данные и показывает инвентарь Mango/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Синхронизировать номера из Mango/i })).toBeInTheDocument()
     expect(screen.getAllByText(/ДЛЯ ИИ менеджера \(\+79300350609\)/i).length).toBeGreaterThanOrEqual(2)
-    expect(screen.getAllByText(/Рекомендуется для AI/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/Основная AI-линия/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText(/Привязанный агент:/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText(/Статус Mango/i)).toBeInTheDocument()
     expect(screen.getByText(/Подключено → Синхронизировано → Назначено → Готово к live/i)).toBeInTheDocument()
@@ -316,6 +320,7 @@ describe('providers page smoke', () => {
     expect(screen.getByText(/флаги готовности/i)).toBeInTheDocument()
     expect(screen.getByText(/защищённая линия:/i)).toBeInTheDocument()
     expect(screen.getAllByText(/\+79585382099/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/Резерв \/ не трогать/i).length).toBeGreaterThanOrEqual(1)
 
     await user.click(screen.getByRole('button', { name: /Только неназначенные/i }))
     expect(screen.queryByText(/По умолчанию \(\+79585382099\)/i)).not.toBeInTheDocument()

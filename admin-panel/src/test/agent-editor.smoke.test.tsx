@@ -77,6 +77,8 @@ describe('agent editor telephony smoke', () => {
       is_inbound_enabled: true,
       is_outbound_enabled: false,
       synced_at: '2026-04-13T10:00:00Z',
+      is_recommended_for_ai: true,
+      is_protected: false,
     }
 
     const backupLine = {
@@ -93,6 +95,8 @@ describe('agent editor telephony smoke', () => {
       is_inbound_enabled: true,
       is_outbound_enabled: false,
       synced_at: '2026-04-13T10:00:00Z',
+      is_recommended_for_ai: false,
+      is_protected: true,
     }
 
     vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
@@ -228,7 +232,7 @@ describe('agent editor telephony smoke', () => {
 
     const lineSelect = screen.getByLabelText(/Выберите номер Mango/i)
     expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\)/i })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /По умолчанию \(\+79585382099\).*защищена/i })).toBeDisabled()
+    expect(screen.getByRole('option', { name: /По умолчанию \(\+79585382099\).*Резерв \/ не трогать/i })).toBeDisabled()
 
     await user.selectOptions(lineSelect, '405622036')
     await user.click(screen.getByLabelText(/Refund policy/i))
@@ -247,6 +251,7 @@ describe('agent editor telephony smoke', () => {
 
     expect(getBoundLineCard()).toHaveTextContent('ДЛЯ ИИ менеджера (+79300350609)')
     expect(screen.getByText('405622036')).toBeInTheDocument()
+    expect(getBoundLineCard()).toHaveTextContent('Основная AI-линия')
 
     view.unmount()
     renderEditor()
@@ -256,6 +261,7 @@ describe('agent editor telephony smoke', () => {
     })
     expect(getBoundLineCard()).toHaveTextContent('ДЛЯ ИИ менеджера (+79300350609)')
     expect(getBoundLineCard()).toHaveTextContent('Назначено агенту')
+    expect(getBoundLineCard()).toHaveTextContent('Основная AI-линия')
     expect(screen.queryByText(/Назначьте номер агенту, чтобы включить звонки/i)).not.toBeInTheDocument()
   })
 
@@ -274,6 +280,8 @@ describe('agent editor telephony smoke', () => {
       is_inbound_enabled: true,
       is_outbound_enabled: false,
       synced_at: '2026-04-13T10:00:00Z',
+      is_recommended_for_ai: true,
+      is_protected: false,
     }
 
     vi.spyOn(window, 'fetch').mockImplementation(async (input) => {

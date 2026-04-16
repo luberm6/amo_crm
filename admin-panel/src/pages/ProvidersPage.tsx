@@ -232,6 +232,16 @@ function formatMangoLineLabel(line: Pick<TelephonyLine, 'schema_name' | 'label' 
   return primary === line.phone_number ? line.phone_number : `${primary} (${line.phone_number})`
 }
 
+function getMangoLineBadge(line: Pick<TelephonyLine, 'is_protected' | 'phone_number' | 'is_recommended_for_ai'>): string | null {
+  if (isProtectedMangoLine(line)) {
+    return 'Резерв / не трогать'
+  }
+  if (line.is_recommended_for_ai) {
+    return 'Основная AI-линия'
+  }
+  return null
+}
+
 function isProtectedMangoLine(line: Pick<TelephonyLine, 'is_protected' | 'phone_number'>) {
   return Boolean(line.is_protected || line.phone_number === '+79585382099')
 }
@@ -1436,11 +1446,8 @@ export default function ProvidersPage() {
                               </div>
                               <div className="status-strip">
                                 <span className={`status-pill${line.is_active ? ' live' : ' error'}`}>{line.is_active ? 'Активна' : 'Неактивна'}</span>
-                                {isProtectedMangoLine(line) ? (
-                                  <span className="status-pill error">Защищена</span>
-                                ) : null}
-                                {recommendedMangoRemoteLineId === line.remote_line_id ? (
-                                  <span className="status-pill live" >Рекомендуется для AI</span>
+                                {getMangoLineBadge(line) ? (
+                                  <span className={`status-pill${isProtectedMangoLine(line) ? ' error' : ' live'}`}>{getMangoLineBadge(line)}</span>
                                 ) : null}
                               </div>
                             </div>

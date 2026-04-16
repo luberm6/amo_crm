@@ -222,6 +222,16 @@ function formatTelephonyLineLabel(line: TelephonyLine): string {
   return primary === line.phone_number ? line.phone_number : `${primary} (${line.phone_number})`
 }
 
+function getTelephonyLineBadge(line: TelephonyLine): string | null {
+  if (isProtectedTelephonyLine(line)) {
+    return 'Резерв / не трогать'
+  }
+  if (line.is_recommended_for_ai) {
+    return 'Основная AI-линия'
+  }
+  return null
+}
+
 function isProtectedTelephonyLine(line: Pick<TelephonyLine, 'is_protected' | 'phone_number'>): boolean {
   return Boolean(line.is_protected || line.phone_number === '+79585382099')
 }
@@ -761,8 +771,16 @@ export default function AgentEditorPage() {
                     <p className="binding-cta-copy">{formatTelephonyLineLabel(selectedTelephonyLine)}</p>
                     <div className="table-secondary">remote_line_id: {selectedTelephonyLine.remote_line_id}</div>
                   </div>
-                  <span className={`status-pill${isProtectedTelephonyLine(selectedTelephonyLine) ? ' error' : ' live'}`}>
-                    {isProtectedTelephonyLine(selectedTelephonyLine) ? 'Защищена' : 'Назначено'}
+                  <span
+                    className={`status-pill${
+                      isProtectedTelephonyLine(selectedTelephonyLine)
+                        ? ' error'
+                        : selectedTelephonyLine.is_recommended_for_ai
+                          ? ' live'
+                          : ''
+                    }`}
+                  >
+                    {getTelephonyLineBadge(selectedTelephonyLine) || 'Назначено'}
                   </span>
                 </div>
               ) : null}
@@ -805,10 +823,9 @@ export default function AgentEditorPage() {
                 >
                   <option value="">Не привязывать номер</option>
                   {orderedTelephonyLines.map((line) => (
-                    <option key={line.remote_line_id} value={line.remote_line_id} disabled={!line.is_active || isProtectedTelephonyLine(line)}>
+                  <option key={line.remote_line_id} value={line.remote_line_id} disabled={!line.is_active || isProtectedTelephonyLine(line)}>
                       {formatTelephonyLineLabel(line)}
-                      {suggestedLineId === line.remote_line_id ? ' — рекомендовано' : ''}
-                      {isProtectedTelephonyLine(line) ? ' — защищена' : ''}
+                      {getTelephonyLineBadge(line) ? ` — ${getTelephonyLineBadge(line)}` : suggestedLineId === line.remote_line_id ? ' — рекомендовано' : ''}
                       {!line.is_active ? ' — неактивна' : ''}
                     </option>
                   ))}
