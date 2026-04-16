@@ -20,6 +20,8 @@ type ProviderSetting = {
   safe_mode_note: string
   config: Record<string, unknown>
   secrets: Record<string, ProviderSecretState>
+  secrets_accessible: boolean
+  storage_warning?: string | null
   last_validated_at?: string | null
   last_validation_message?: string | null
   last_validation_remote_checked: boolean
@@ -952,6 +954,9 @@ export default function ProvidersPage() {
             </div>
 
             <div className="provider-note">{formatSafeModeNote(setting.safe_mode_note)}</div>
+            {setting.storage_warning ? (
+              <div className="warning-banner">{setting.storage_warning}</div>
+            ) : null}
             {setting.last_validation_message ? (
               <div className="provider-validation-copy">
                 <strong>Последняя проверка:</strong> {setting.last_validation_message}

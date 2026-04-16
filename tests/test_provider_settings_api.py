@@ -230,3 +230,99 @@ async def test_save_provider_settings_returns_structured_500_for_unexpected_erro
         "message": "boom-save",
         "provider": "gemini",
     }
+
+
+@pytest.mark.anyio
+async def test_list_provider_settings_survives_secret_rotation(session):
+    with (
+        patch.object(cfg.settings, "provider_settings_secret", "old-provider-secret"),
+        patch.object(cfg.settings, "admin_auth_secret", "signing-secret"),
+    ):
+        service = ProviderSettingsService(session)
+        await service.update_provider(
+            "gemini",
+            is_enabled=True,
+            config={"model_id": "gemini-2.0-flash-live-001", "api_version": "v1beta"},
+            secrets={"api_key": "legacy-gemini-secret"},
+        )
+        await session.commit()
+
+    app = create_app()
+
+    async def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    with (
+        patch.object(cfg.settings, "admin_email", "admin@example.com"),
+        patch.object(cfg.settings, "admin_password", "super-secret"),
+        patch.object(cfg.settings, "admin_auth_secret", "signing-secret"),
+        patch.object(cfg.settings, "provider_settings_secret", "new-provider-secret"),
+        patch.object(cfg.settings, "admin_token_ttl_seconds", 600),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            token = await _login(ac)
+            response = await ac.get(
+                "/v1/providers/settings",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert response.status_code == 200
+    gemini = next(item for item in response.json()["items"] if item["provider"] == "gemini")
+    assert gemini["status"] == "invalid"
+    assert gemini["secrets_accessible"] is False
+    assert "encrypted with a different secret" in gemini["storage_warning"]
+
+
+@pytest.mark.anyio
+async def test_save_provider_settings_can_reencrypt_after_secret_rotation(session):
+    with (
+        patch.object(cfg.settings, "provider_settings_secret", "old-provider-secret"),
+        patch.object(cfg.settings, "admin_auth_secret", "signing-secret"),
+    ):
+        service = ProviderSettingsService(session)
+        await service.update_provider(
+            "gemini",
+            is_enabled=True,
+            config={"model_id": "gemini-2.0-flash-live-001", "api_version": "v1beta"},
+            secrets={"api_key": "legacy-gemini-secret"},
+        )
+        await session.commit()
+
+    app = create_app()
+
+    async def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    with (
+        patch.object(cfg.settings, "admin_email", "admin@example.com"),
+        patch.object(cfg.settings, "admin_password", "super-secret"),
+        patch.object(cfg.settings, "admin_auth_secret", "signing-secret"),
+        patch.object(cfg.settings, "provider_settings_secret", "new-provider-secret"),
+        patch.object(cfg.settings, "admin_token_ttl_seconds", 600),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            token = await _login(ac)
+            save_response = await ac.patch(
+                "/v1/providers/settings/gemini",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "is_enabled": True,
+                    "config": {"model_id": "gemini-2.0-flash-live-001", "api_version": "v1beta"},
+                    "secrets": {"api_key": "reencrypted-gemini-secret"},
+                },
+            )
+            list_response = await ac.get(
+                "/v1/providers/settings",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert save_response.status_code == 200
+    assert list_response.status_code == 200
+    gemini = next(item for item in list_response.json()["items"] if item["provider"] == "gemini")
+    assert gemini["secrets_accessible"] is True
+    assert gemini["storage_warning"] is None
+    assert gemini["secrets"]["api_key"]["is_set"] is True

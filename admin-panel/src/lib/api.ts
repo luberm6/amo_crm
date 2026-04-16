@@ -38,9 +38,12 @@ export async function apiFetch<T>(
     const detail = typeof payload === 'object' && payload && 'detail' in payload
       ? (payload as { detail?: { message?: string } }).detail
       : null
+    const topLevelMessage = typeof payload === 'object' && payload && 'message' in payload
+      ? (payload as { message?: string }).message
+      : null
     const message = detail && typeof detail === 'object' && detail?.message
       ? detail.message
-      : `Request failed with status ${response.status}`
+      : topLevelMessage || `Request failed with status ${response.status}`
     throw new ApiError(message, response.status, payload)
   }
 

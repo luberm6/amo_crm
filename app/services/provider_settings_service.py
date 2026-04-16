@@ -148,7 +148,13 @@ class ProviderSettingsService:
             current_config.update({key: value for key, value in config.items()})
         record.config = self._normalize_config(spec, current_config)
 
-        current_secrets = self._decrypt_secrets(record.secrets_encrypted)
+        current_secrets: dict[str, str] = {}
+        secrets_locked = False
+        try:
+            current_secrets = self._decrypt_secrets(record.secrets_encrypted)
+        except ProviderSettingsEncryptionError:
+            secrets_locked = bool(record.secrets_encrypted)
+            current_secrets = {}
         if secrets:
             unknown_secret_fields = sorted(set(secrets.keys()) - set(spec.secret_fields))
             if unknown_secret_fields:
@@ -163,6 +169,13 @@ class ProviderSettingsService:
                 cleaned = value.strip()
                 if cleaned:
                     current_secrets[key] = cleaned
+        if secrets_locked and not any(
+            isinstance(value, str) and value.strip()
+            for value in (secrets or {}).values()
+        ):
+            raise ProviderSettingsEncryptionError(
+                self._provider_secret_reentry_message(spec)
+            )
         record.secrets_encrypted = self._encrypt_secrets(current_secrets)
         record.validation_status = "not_tested"
         record.last_validation_message = "Settings changed and need explicit validation."
@@ -180,9 +193,24 @@ class ProviderSettingsService:
 
         config = dict(spec.config_defaults)
         config.update(record.config or {})
-        secrets = self._decrypt_secrets(record.secrets_encrypted)
-        missing = self._missing_required_fields(spec, config, secrets)
         checked_at = datetime.now(timezone.utc)
+        try:
+            secrets = self._decrypt_secrets(record.secrets_encrypted)
+        except ProviderSettingsEncryptionError:
+            message = self._provider_secret_reentry_message(spec)
+            record.validation_status = "invalid"
+            record.last_validation_message = message
+            record.last_validation_remote_checked = False
+            record.last_validated_at = checked_at
+            await self.repo.save(record)
+            return ProviderValidationRead(
+                provider=provider,
+                status="invalid",
+                message=message,
+                remote_checked=False,
+                checked_at=checked_at,
+            )
+        missing = self._missing_required_fields(spec, config, secrets)
 
         if missing:
             record.validation_status = "invalid"
@@ -234,25 +262,47 @@ class ProviderSettingsService:
         spec = self._get_spec(provider)
         config = dict(spec.config_defaults)
         secrets: dict[str, str] = {}
+        status = record.validation_status if record is not None else "not_tested"
+        storage_warning: str | None = None
+        secrets_accessible = True
         if record is not None:
             config.update(record.config or {})
-            secrets = self._decrypt_secrets(record.secrets_encrypted)
+            try:
+                secrets = self._decrypt_secrets(record.secrets_encrypted)
+            except ProviderSettingsEncryptionError:
+                secrets = {}
+                secrets_accessible = False
+                status = "invalid"
+                storage_warning = self._provider_secret_reentry_message(spec)
+                log.warning(
+                    "provider_settings.decryption_unavailable",
+                    provider=provider,
+                    hint="reenter_secrets_and_save_again",
+                )
 
         return ProviderSettingRead(
             provider=provider,
             display_name=spec.display_name,
             is_enabled=bool(record.is_enabled) if record is not None else False,
             activation_status="active" if record is not None and record.is_enabled else "inactive",
-            status=(record.validation_status if record is not None else "not_tested"),
+            status=status,
             safe_mode_note=spec.safe_mode_note,
             config=config,
             secrets={
                 key: ProviderSecretRead(is_set=key in secrets and bool(secrets.get(key)), masked_value=_mask_secret(secrets.get(key)))
                 for key in spec.secret_fields
             },
+            secrets_accessible=secrets_accessible,
+            storage_warning=storage_warning,
             last_validated_at=record.last_validated_at if record is not None else None,
             last_validation_message=record.last_validation_message if record is not None else None,
             last_validation_remote_checked=bool(record.last_validation_remote_checked) if record is not None else False,
+        )
+
+    def _provider_secret_reentry_message(self, spec: ProviderSpec) -> str:
+        return (
+            f"Stored {spec.display_name} secrets were encrypted with a different secret. "
+            "Re-enter the secret fields and save again under the current provider settings secret."
         )
 
     async def _run_validation(

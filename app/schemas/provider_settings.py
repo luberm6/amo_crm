@@ -23,6 +23,8 @@ class ProviderSettingRead(BaseModel):
     safe_mode_note: str
     config: dict[str, Any] = Field(default_factory=dict)
     secrets: dict[str, ProviderSecretRead] = Field(default_factory=dict)
+    secrets_accessible: bool = True
+    storage_warning: Optional[str] = None
     last_validated_at: Optional[datetime] = None
     last_validation_message: Optional[str] = None
     last_validation_remote_checked: bool = False
