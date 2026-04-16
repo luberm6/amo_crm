@@ -107,6 +107,16 @@ input {
   color: var(--ink);
 }
 
+input[type='checkbox'] {
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  margin: 0;
+  border-radius: 0.35rem;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+
 select,
 textarea {
   width: 100%;
@@ -295,9 +305,15 @@ a.info-card:hover {
 }
 
 .toggle-row {
-  display: inline-flex;
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 0.6rem;
+  column-gap: 0.6rem;
+  row-gap: 0.2rem;
+}
+
+.toggle-row span {
+  min-width: 0;
 }
 
 .boxed-toggle {
