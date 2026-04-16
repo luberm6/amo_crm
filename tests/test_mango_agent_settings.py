@@ -343,6 +343,61 @@ async def test_agent_settings_api_rejects_missing_telephony_line(
 
 
 @pytest.mark.anyio
+async def test_agent_settings_api_rejects_protected_telephony_line(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    app = create_app()
+
+    async def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    agent = await AgentProfileRepository(AgentProfile, session).save(
+        AgentProfile(
+            name="Sales Mango",
+            is_active=True,
+            system_prompt="Base prompt",
+            voice_strategy="tts_primary",
+            voice_provider="elevenlabs",
+            config={},
+            version=1,
+        )
+    )
+    await session.merge(
+        TelephonyLine(
+            provider="mango",
+            provider_resource_id="405519147",
+            phone_number="+79585382099",
+            schema_name="По умолчанию",
+            display_name="По умолчанию",
+            extension=None,
+            is_active=True,
+            is_inbound_enabled=True,
+            is_outbound_enabled=False,
+            raw_payload={"id": "405519147"},
+            synced_at=datetime.now(timezone.utc),
+        )
+    )
+    await session.flush()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        token = await _login(ac)
+        response = await ac.patch(
+            f"/v1/agent-profiles/{agent.id}/settings",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "telephony_provider": "mango",
+                "telephony_remote_line_id": "405519147",
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["error"] == "telephony_line_protected"
+
+
+@pytest.mark.anyio
 async def test_mango_lines_endpoint_lists_cached_inventory(
     session: AsyncSession,
     admin_auth_settings,

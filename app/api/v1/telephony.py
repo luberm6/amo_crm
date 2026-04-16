@@ -546,6 +546,7 @@ async def mango_routing_map(
                 is_active=line.is_active,
                 is_inbound_enabled=line.is_inbound_enabled,
                 is_recommended_for_ai=line.is_recommended_for_ai,
+                is_protected=line.is_protected,
                 agent_id=agent.id if agent else None,
                 agent_name=agent.name if agent else None,
                 agent_is_active=agent.is_active if agent else None,

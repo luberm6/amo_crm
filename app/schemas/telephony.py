@@ -28,6 +28,7 @@ class TelephonyLineRead(BaseModel):
     is_outbound_enabled: bool
     synced_at: Optional[datetime] = None
     is_recommended_for_ai: bool = False
+    is_protected: bool = False
 
 
 class TelephonyLineListRead(BaseModel):
@@ -113,6 +114,7 @@ class MangoRoutingMapItem(BaseModel):
     is_active: bool
     is_inbound_enabled: bool
     is_recommended_for_ai: bool = False
+    is_protected: bool = False
     agent_id: Optional[uuid.UUID] = None
     agent_name: Optional[str] = None
     agent_is_active: Optional[bool] = None

@@ -60,6 +60,7 @@ type TelephonyLine = {
   is_outbound_enabled: boolean
   synced_at?: string | null
   is_recommended_for_ai?: boolean
+  is_protected?: boolean
 }
 
 type TelephonyLineListResponse = {
@@ -121,6 +122,7 @@ type MangoRoutingMapItem = {
   label: string
   is_active: boolean
   is_inbound_enabled: boolean
+  is_protected?: boolean
   agent_id?: string | null
   agent_name?: string | null
   agent_is_active?: boolean | null
@@ -228,6 +230,10 @@ function formatTimestamp(value?: string | null) {
 function formatMangoLineLabel(line: Pick<TelephonyLine, 'schema_name' | 'label' | 'display_name' | 'phone_number'>) {
   const primary = line.schema_name || line.label || line.display_name || line.phone_number
   return primary === line.phone_number ? line.phone_number : `${primary} (${line.phone_number})`
+}
+
+function isProtectedMangoLine(line: Pick<TelephonyLine, 'is_protected' | 'phone_number'>) {
+  return Boolean(line.is_protected || line.phone_number === '+79585382099')
 }
 
 function summarizeMangoIssue(readiness: MangoReadiness | null, linesCount: number, extensionsCount = 0) {
@@ -614,18 +620,28 @@ export default function ProvidersPage() {
     [mangoRoutingMap],
   )
 
-  const activeLineCount = useMemo(
-    () => mangoLines.filter((line) => line.is_active).length,
+  const protectedMangoLines = useMemo(
+    () => mangoLines.filter((line) => isProtectedMangoLine(line)),
     [mangoLines],
+  )
+
+  const assignableMangoLines = useMemo(
+    () => mangoLines.filter((line) => !isProtectedMangoLine(line)),
+    [mangoLines],
+  )
+
+  const activeLineCount = useMemo(
+    () => assignableMangoLines.filter((line) => line.is_active).length,
+    [assignableMangoLines],
   )
 
   const inactiveLineCount = useMemo(
-    () => mangoLines.filter((line) => !line.is_active).length,
-    [mangoLines],
+    () => assignableMangoLines.filter((line) => !line.is_active).length,
+    [assignableMangoLines],
   )
 
-  const boundLineCount = boundRoutingItems.length
-  const unboundLineCount = Math.max(mangoLines.length - boundLineCount, 0)
+  const boundLineCount = boundRoutingItems.filter((item) => !item.is_protected).length
+  const unboundLineCount = Math.max(assignableMangoLines.length - boundLineCount, 0)
 
   const latestMangoSyncAt = useMemo(() => {
     const values = mangoLines
@@ -637,11 +653,11 @@ export default function ProvidersPage() {
 
   const recommendedMangoRemoteLineId = useMemo(() => {
     // Priority: is_recommended_for_ai flag from API → schema_name → canonical ID fallback
-    const byFlag = mangoLines.find((line) => line.is_recommended_for_ai)
+    const byFlag = mangoLines.find((line) => !isProtectedMangoLine(line) && line.is_recommended_for_ai)
     if (byFlag) return byFlag.remote_line_id
-    const byName = mangoLines.find((line) => (line.schema_name || '').trim() === 'ДЛЯ ИИ менеджера')
+    const byName = mangoLines.find((line) => !isProtectedMangoLine(line) && (line.schema_name || '').trim() === 'ДЛЯ ИИ менеджера')
     if (byName) return byName.remote_line_id
-    const byId = mangoLines.find((line) => line.remote_line_id === '405622036')
+    const byId = mangoLines.find((line) => !isProtectedMangoLine(line) && line.remote_line_id === '405622036')
     return byId?.remote_line_id || null
   }, [mangoLines])
 
@@ -808,9 +824,13 @@ export default function ProvidersPage() {
 
   const unboundRemoteLineIds = useMemo(() => {
     const boundIds = new Set(
-      mangoRoutingMap.filter((item) => item.agent_id).map((item) => item.remote_line_id),
+      mangoRoutingMap.filter((item) => item.agent_id && !item.is_protected).map((item) => item.remote_line_id),
     )
-    return new Set(mangoLines.filter((line) => !boundIds.has(line.remote_line_id)).map((line) => line.remote_line_id))
+    return new Set(
+      mangoLines
+        .filter((line) => !isProtectedMangoLine(line) && !boundIds.has(line.remote_line_id))
+        .map((line) => line.remote_line_id),
+    )
   }, [mangoLines, mangoRoutingMap])
 
   const filteredMangoLines = useMemo(() => {
@@ -818,7 +838,7 @@ export default function ProvidersPage() {
       return mangoLines.filter((line) => line.remote_line_id === recommendedMangoRemoteLineId)
     }
     if (inventoryFilter === 'unbound_only') {
-      return mangoLines.filter((line) => unboundRemoteLineIds.has(line.remote_line_id))
+      return mangoLines.filter((line) => !isProtectedMangoLine(line) && unboundRemoteLineIds.has(line.remote_line_id))
     }
     return mangoLines
   }, [inventoryFilter, mangoLines, recommendedMangoRemoteLineId, unboundRemoteLineIds])
@@ -828,7 +848,7 @@ export default function ProvidersPage() {
       return mangoRoutingMap.filter((item) => item.remote_line_id === recommendedMangoRemoteLineId)
     }
     if (inventoryFilter === 'unbound_only') {
-      return mangoRoutingMap.filter((item) => !item.agent_id)
+      return mangoRoutingMap.filter((item) => !item.agent_id && !item.is_protected)
     }
     return mangoRoutingMap
   }, [inventoryFilter, mangoRoutingMap, recommendedMangoRemoteLineId])
@@ -1374,8 +1394,18 @@ export default function ProvidersPage() {
                         <span >свободные</span>
                         <strong>{unboundLineCount}</strong>
                       </div>
+                      <div className="sync-summary-item">
+                        <span >защищённые</span>
+                        <strong>{protectedMangoLines.length}</strong>
+                      </div>
                     </div>
                   </div>
+
+                  {protectedMangoLines.length > 0 ? (
+                    <div className="warning-banner">
+                      <strong>Защищённая линия:</strong> номер <strong>+79585382099</strong> оставлен только для обзора. Назначение, переназначение и настройка через эту страницу заблокированы.
+                    </div>
+                  ) : null}
 
                   {filteredMangoLines.length === 0 ? (
                     <div className="empty-state-card">
@@ -1406,6 +1436,9 @@ export default function ProvidersPage() {
                               </div>
                               <div className="status-strip">
                                 <span className={`status-pill${line.is_active ? ' live' : ' error'}`}>{line.is_active ? 'Активна' : 'Неактивна'}</span>
+                                {isProtectedMangoLine(line) ? (
+                                  <span className="status-pill error">Защищена</span>
+                                ) : null}
                                 {recommendedMangoRemoteLineId === line.remote_line_id ? (
                                   <span className="status-pill live" >Рекомендуется для AI</span>
                                 ) : null}
@@ -1417,7 +1450,9 @@ export default function ProvidersPage() {
                               <div><span >Назначение</span><strong>{boundAgent ? boundAgent.agent_name || 'Назначено' : 'Не назначено'}</strong></div>
                             </div>
                             <div className="inventory-card-actions">
-                              {boundAgent?.agent_id ? (
+                              {isProtectedMangoLine(line) ? (
+                                <span className="table-secondary">Линия заблокирована для назначения и изменения.</span>
+                              ) : boundAgent?.agent_id ? (
                                 <Link to={`/agents/${boundAgent.agent_id}?mango_line=${line.remote_line_id}&from=providers`} className="primary-link-button">
                                   Открыть привязанного агента
                                 </Link>

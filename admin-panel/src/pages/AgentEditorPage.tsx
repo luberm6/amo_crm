@@ -38,6 +38,7 @@ type TelephonyLine = {
   is_outbound_enabled: boolean
   synced_at?: string | null
   is_recommended_for_ai?: boolean
+  is_protected?: boolean
 }
 
 type TelephonyLineListResponse = {
@@ -221,6 +222,10 @@ function formatTelephonyLineLabel(line: TelephonyLine): string {
   return primary === line.phone_number ? line.phone_number : `${primary} (${line.phone_number})`
 }
 
+function isProtectedTelephonyLine(line: Pick<TelephonyLine, 'is_protected' | 'phone_number'>): boolean {
+  return Boolean(line.is_protected || line.phone_number === '+79585382099')
+}
+
 function mapMangoWarning(warning: string): string {
   if (warning.includes('MANGO_WEBHOOK_SECRET')) {
     return 'Проверка входящего вебхука не настроена. Задайте MANGO_WEBHOOK_SECRET перед боевой маршрутизацией входящих звонков.'
@@ -267,6 +272,9 @@ function mapTelephonyApiError(err: unknown, fallback: string): string {
   }
   if (code === 'telephony_line_inactive') {
     return 'Выбранная линия Mango неактивна. Сохранение заблокировано, пока вы не выберете активную линию.'
+  }
+  if (code === 'telephony_line_protected') {
+    return 'Линия +79585382099 защищена. Её нельзя назначать агентам или менять в настройках.'
   }
   if (code === 'invalid_voice_provider') {
     return 'Выбран неподдерживаемый голосовой провайдер. Используйте Gemini или ElevenLabs.'
@@ -420,11 +428,11 @@ export default function AgentEditorPage() {
     const suggestionFromApi = settings?.suggested_telephony_remote_line_id ?? null
     const byFlag = telephonyLines.find((l) => l.is_active && l.is_recommended_for_ai)
     const bySchema = telephonyLines.find(
-      (l) => l.is_active && (l.schema_name || '').trim() === 'ДЛЯ ИИ менеджера',
+      (l) => l.is_active && !isProtectedTelephonyLine(l) && (l.schema_name || '').trim() === 'ДЛЯ ИИ менеджера',
     )
-    const byId = telephonyLines.find((l) => l.is_active && l.remote_line_id === '405622036')
+    const byId = telephonyLines.find((l) => l.is_active && !isProtectedTelephonyLine(l) && l.remote_line_id === '405622036')
     const candidateId =
-      (suggestionFromApi && telephonyLines.find((l) => l.remote_line_id === suggestionFromApi)
+      (suggestionFromApi && telephonyLines.find((l) => l.remote_line_id === suggestionFromApi && !isProtectedTelephonyLine(l))
         ? suggestionFromApi
         : null)
       ?? byFlag?.remote_line_id
@@ -477,7 +485,7 @@ export default function AgentEditorPage() {
       return null
     }
     const aiLine = telephonyLines.find(
-      (line) => line.is_active && ((line.schema_name || '').trim() === 'ДЛЯ ИИ менеджера'),
+      (line) => line.is_active && !isProtectedTelephonyLine(line) && ((line.schema_name || '').trim() === 'ДЛЯ ИИ менеджера'),
     )
     return aiLine?.remote_line_id ?? null
   }, [form.telephonyRemoteLineId, telephonyLines])
@@ -493,6 +501,9 @@ export default function AgentEditorPage() {
       }
       if (left.is_active !== right.is_active) {
         return left.is_active ? -1 : 1
+      }
+      if (isProtectedTelephonyLine(left) !== isProtectedTelephonyLine(right)) {
+        return isProtectedTelephonyLine(left) ? 1 : -1
       }
       return formatTelephonyLineLabel(left).localeCompare(formatTelephonyLineLabel(right), 'ru')
     })
@@ -750,7 +761,15 @@ export default function AgentEditorPage() {
                     <p className="binding-cta-copy">{formatTelephonyLineLabel(selectedTelephonyLine)}</p>
                     <div className="table-secondary">remote_line_id: {selectedTelephonyLine.remote_line_id}</div>
                   </div>
-                  <span className="status-pill live">Назначено</span>
+                  <span className={`status-pill${isProtectedTelephonyLine(selectedTelephonyLine) ? ' error' : ' live'}`}>
+                    {isProtectedTelephonyLine(selectedTelephonyLine) ? 'Защищена' : 'Назначено'}
+                  </span>
+                </div>
+              ) : null}
+
+              {telephonyLines.some((line) => isProtectedTelephonyLine(line)) ? (
+                <div className="warning-banner">
+                  <strong>Защищённая линия:</strong> номер <strong>+79585382099</strong> зарезервирован. Его нельзя назначать агентам или менять через эту форму.
                 </div>
               ) : null}
 
@@ -773,6 +792,10 @@ export default function AgentEditorPage() {
                   onChange={(event) => {
                     const remoteLineId = event.target.value
                     const matched = telephonyLines.find((line) => line.remote_line_id === remoteLineId)
+                    if (matched && isProtectedTelephonyLine(matched)) {
+                      setTelephonyError('Линия +79585382099 защищена. Её нельзя назначать агентам или менять в настройках.')
+                      return
+                    }
                     updateField('telephonyRemoteLineId', remoteLineId)
                     if (matched && !form.telephonyExtension) {
                       updateField('telephonyExtension', matched.extension || '')
@@ -782,9 +805,10 @@ export default function AgentEditorPage() {
                 >
                   <option value="">Не привязывать номер</option>
                   {orderedTelephonyLines.map((line) => (
-                    <option key={line.remote_line_id} value={line.remote_line_id} disabled={!line.is_active}>
+                    <option key={line.remote_line_id} value={line.remote_line_id} disabled={!line.is_active || isProtectedTelephonyLine(line)}>
                       {formatTelephonyLineLabel(line)}
                       {suggestedLineId === line.remote_line_id ? ' — рекомендовано' : ''}
+                      {isProtectedTelephonyLine(line) ? ' — защищена' : ''}
                       {!line.is_active ? ' — неактивна' : ''}
                     </option>
                   ))}

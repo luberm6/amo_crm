@@ -217,6 +217,8 @@ describe('agent editor telephony smoke', () => {
     expect(screen.getByText(/Проверка входящего вебхука не настроена/i)).toBeInTheDocument()
     expect(screen.getByText(/Исходящие звонки не настроены/i)).toBeInTheDocument()
     expect(screen.getByText(/В этом кабинете Mango не настроены внутренние номера/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/\+79585382099/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText(/защищённая линия/i)).toBeInTheDocument()
 
     await user.click(screen.getByText(/Синхронизировать номера из Mango/i))
 
@@ -226,6 +228,7 @@ describe('agent editor telephony smoke', () => {
 
     const lineSelect = screen.getByLabelText(/Выберите номер Mango/i)
     expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\)/i })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /По умолчанию \(\+79585382099\).*защищена/i })).toBeDisabled()
 
     await user.selectOptions(lineSelect, '405622036')
     await user.click(screen.getByLabelText(/Refund policy/i))

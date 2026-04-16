@@ -29,6 +29,11 @@ class TelephonyLineInactiveError(AppError):
     error_code = "telephony_line_inactive"
 
 
+class TelephonyLineProtectedError(AppError):
+    status_code = 422
+    error_code = "telephony_line_protected"
+
+
 class InvalidVoiceProviderError(AppError):
     status_code = 422
     error_code = "invalid_voice_provider"
@@ -172,6 +177,15 @@ class AgentSettingsService:
             if not line.is_active:
                 raise TelephonyLineInactiveError(
                     f"Telephony line {line.phone_number} is inactive",
+                    detail={
+                        "telephony_line_id": str(line.id),
+                        "telephony_remote_line_id": line.remote_line_id,
+                        "phone_number": line.phone_number,
+                    },
+                )
+            if line.is_protected:
+                raise TelephonyLineProtectedError(
+                    f"Telephony line {line.phone_number} is protected and cannot be assigned.",
                     detail={
                         "telephony_line_id": str(line.id),
                         "telephony_remote_line_id": line.remote_line_id,

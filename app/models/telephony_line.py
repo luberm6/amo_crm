@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 # Canonical AI line identifiers — single source of truth for model logic, API, and frontend.
 _AI_CANONICAL_LINE_ID = "405622036"
 _AI_CANONICAL_LINE_NAME = "ДЛЯ ИИ менеджера"
+_AI_CANONICAL_PHONE = "+79300350609"
+_PROTECTED_LOCKED_PHONE = "+79585382099"
 
 
 class TelephonyLine(UUIDMixin, TimestampMixin, Base):
@@ -68,5 +70,16 @@ class TelephonyLine(UUIDMixin, TimestampMixin, Base):
         """True if this is the canonical default AI line (+79300350609, ДЛЯ ИИ менеджера)."""
         return (
             self.provider_resource_id == _AI_CANONICAL_LINE_ID
+            or (self.phone_number or "").strip() == _AI_CANONICAL_PHONE
             or (self.schema_name or "").strip() == _AI_CANONICAL_LINE_NAME
         )
+
+    @property
+    def is_protected(self) -> bool:
+        """
+        True if this line is reserved and must never be assigned or edited from admin UI.
+
+        Current business rule:
+        - +79585382099 is locked from agent binding/manipulation.
+        """
+        return (self.phone_number or "").strip() == _PROTECTED_LOCKED_PHONE

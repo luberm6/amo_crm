@@ -193,6 +193,7 @@ describe('providers page smoke', () => {
               is_active: true,
               is_inbound_enabled: true,
               is_outbound_enabled: false,
+              is_protected: true,
               synced_at: '2030-01-02T00:00:00Z',
             },
           ],
@@ -229,6 +230,7 @@ describe('providers page smoke', () => {
               label: 'По умолчанию',
               is_active: true,
               is_inbound_enabled: true,
+              is_protected: true,
               agent_id: null,
               agent_name: null,
               agent_is_active: null,
@@ -308,16 +310,20 @@ describe('providers page smoke', () => {
     expect(screen.getAllByText(/^неактивные$/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText(/^назначенные$/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText(/^свободные$/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/^защищённые$/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText(/число сырых линий/i)).toBeInTheDocument()
     expect(screen.getByText(/последний ответ синхронизации/i)).toBeInTheDocument()
     expect(screen.getByText(/флаги готовности/i)).toBeInTheDocument()
+    expect(screen.getByText(/защищённая линия:/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/\+79585382099/i).length).toBeGreaterThanOrEqual(1)
 
     await user.click(screen.getByRole('button', { name: /Только неназначенные/i }))
-    expect(screen.getAllByText(/По умолчанию \(\+79585382099\)/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText(/По умолчанию \(\+79585382099\)/i)).not.toBeInTheDocument()
     expect(screen.queryByText('Sales Alpha')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Назначить эту линию сейчас/i })).toHaveAttribute('href', '/agents?source=mango&line=405519147')
 
     await user.click(screen.getByRole('button', { name: /Рекомендовано для AI/i }))
     expect(screen.getAllByText(/ДЛЯ ИИ менеджера \(\+79300350609\)/i).length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText(/По умолчанию \(\+79585382099\)/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Защищена/i)).not.toBeInTheDocument()
   })
 })
