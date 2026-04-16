@@ -750,6 +750,43 @@ async def test_mango_readiness_blocks_inbound_ai_runtime_when_freeswitch_runtime
 
 
 @pytest.mark.anyio
+async def test_mango_readiness_blocks_private_network_freeswitch_placeholders(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    app = _make_app(session)
+    with (
+        patch.object(cfg.settings, "mango_api_key", "api-key"),
+        patch.object(cfg.settings, "mango_api_salt", "api-salt"),
+        patch.object(cfg.settings, "gemini_api_key", "gemini-key"),
+        patch.object(cfg.settings, "environment", "production"),
+        patch.object(cfg.settings, "telephony_provider", "mango"),
+        patch.object(cfg.settings, "backend_url", "https://voice.example.com"),
+        patch.object(cfg.settings, "mango_webhook_secret", "whsec"),
+        patch.object(cfg.settings, "mango_from_ext", "10"),
+        patch.object(cfg.settings, "media_gateway_enabled", True),
+        patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
+        patch.object(cfg.settings, "media_gateway_mode", "esl_rtp"),
+        patch.object(cfg.settings, "freeswitch_esl_host", "10.0.0.15"),
+        patch.object(cfg.settings, "freeswitch_esl_password", "changeme"),
+        patch.object(cfg.settings, "freeswitch_rtp_ip", "pbx.local"),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            token = await _admin_login(ac)
+            resp = await ac.get(
+                "/v1/telephony/mango/readiness",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["inbound_ai_runtime_ready"] is False
+    assert "freeswitch_esl_host_missing" in body["missing_requirements"]
+    assert "freeswitch_esl_password_missing" in body["missing_requirements"]
+    assert "freeswitch_rtp_ip_missing" in body["missing_requirements"]
+
+
+@pytest.mark.anyio
 async def test_mango_readiness_keeps_mango_override_blocked_without_credentials(
     session: AsyncSession,
     admin_auth_settings,

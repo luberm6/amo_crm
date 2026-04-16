@@ -70,19 +70,42 @@ def _is_public_backend_url(url: str) -> bool:
     return not any(ip in net for net in private_ranges)
 
 
-def _has_real_freeswitch_host(value: str) -> bool:
+def _is_real_network_host(value: str) -> bool:
     host = (value or "").strip().lower()
-    return bool(host and host not in {"127.0.0.1", "localhost", "::1"})
+    if not host:
+        return False
+    if host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".local"):
+        return False
+    try:
+        ip = ip_address(host)
+    except ValueError:
+        return True
+    private_ranges = (
+        ip_network("127.0.0.0/8"),
+        ip_network("10.0.0.0/8"),
+        ip_network("172.16.0.0/12"),
+        ip_network("192.168.0.0/16"),
+        ip_network("169.254.0.0/16"),
+        ip_network("::1/128"),
+        ip_network("fc00::/7"),
+        ip_network("fe80::/10"),
+    )
+    return not any(ip in net for net in private_ranges)
+
+
+def _has_real_freeswitch_host(value: str) -> bool:
+    return _is_real_network_host(value)
 
 
 def _has_real_freeswitch_password(value: str) -> bool:
     password = (value or "").strip()
-    return bool(password and password != "ClueCon")
+    if not password:
+        return False
+    return password not in {"ClueCon", "changeme", "password", "default"}
 
 
 def _has_real_freeswitch_rtp_ip(value: str) -> bool:
-    host = (value or "").strip().lower()
-    return bool(host and host not in {"127.0.0.1", "localhost", "::1"})
+    return _is_real_network_host(value)
 
 
 def _resolve_direct_runtime_provider() -> tuple[str, bool]:
