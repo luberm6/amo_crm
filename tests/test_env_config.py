@@ -210,6 +210,30 @@ class TestRenderDatabaseUrlNormalization:
         s = make(database_url="postgresql+asyncpg://user:pass@render-host:5432/app_db")
         assert s.database_url == "postgresql+asyncpg://user:pass@render-host:5432/app_db"
 
+    def test_uses_render_database_url_when_production_database_url_is_local(self):
+        s = make(
+            environment="production",
+            database_url="postgresql+asyncpg://amo_user:amo_pass@127.0.0.1:5433/amo_crm",
+            render_database_url="postgresql://render_user:render_pass@render-db:5432/app_db",
+        )
+        assert s.database_url == "postgresql+asyncpg://render_user:render_pass@render-db:5432/app_db"
+
+    def test_keeps_explicit_remote_database_url_even_when_render_database_url_exists(self):
+        s = make(
+            environment="production",
+            database_url="postgresql+asyncpg://user:pass@remote-db:5432/app_db",
+            render_database_url="postgresql://render_user:render_pass@render-db:5432/app_db",
+        )
+        assert s.database_url == "postgresql+asyncpg://user:pass@remote-db:5432/app_db"
+
+    def test_uses_render_redis_url_when_production_redis_url_is_local(self):
+        s = make(
+            environment="production",
+            redis_url="redis://127.0.0.1:6379/0",
+            render_redis_url="redis://render-redis:6379/0",
+        )
+        assert s.redis_url == "redis://render-redis:6379/0"
+
 
 class TestAdminCorsOrigins:
     def test_parses_comma_separated_admin_cors_origins(self):

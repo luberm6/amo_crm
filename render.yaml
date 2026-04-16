@@ -31,7 +31,16 @@ services:
         fromDatabase:
           name: amo-crm-db
           property: connectionString
+      - key: RENDER_DATABASE_URL
+        fromDatabase:
+          name: amo-crm-db
+          property: connectionString
       - key: REDIS_URL
+        fromService:
+          type: redis
+          name: amo-crm-cache
+          property: connectionString
+      - key: RENDER_REDIS_URL
         fromService:
           type: redis
           name: amo-crm-cache

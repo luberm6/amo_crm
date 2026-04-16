@@ -18,6 +18,17 @@ def _normalize_database_url(database_url: str) -> str:
     return value
 
 
+def _is_local_database_url(database_url: str) -> bool:
+    value = (database_url or "").strip()
+    if not value:
+        return True
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return True
+    return host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".local")
+
+
 def _is_public_http_url(url: str) -> bool:
     value = (url or "").strip()
     if not value:
@@ -53,6 +64,12 @@ class Settings(BaseSettings):
     # environment, runtime can safely fall back to this value for readiness,
     # callbacks and webhook diagnostics.
     render_external_url: str = ""
+    # Render-managed Postgres URL. This stays empty locally, but on Render we can
+    # bind it from the managed database and use it as a guard against accidental
+    # localhost DATABASE_URL overrides.
+    render_database_url: str = ""
+    # Optional Render-managed Redis URL for the same protection pattern.
+    render_redis_url: str = ""
     # Comma-separated CORS origins for the admin panel or other browser clients.
     # Example:
     #   https://amo-crm-admin.onrender.com,https://staging-admin.example.com
@@ -358,6 +375,14 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def normalize_render_urls(self) -> "Settings":
         self.database_url = _normalize_database_url(self.database_url)
+        self.render_database_url = _normalize_database_url(self.render_database_url)
+        render_like_runtime = self.is_production or _is_public_http_url(self.render_external_url)
+        if render_like_runtime and self.render_database_url and _is_local_database_url(self.database_url):
+            self.database_url = self.render_database_url
+        if render_like_runtime and self.render_redis_url:
+            redis_value = (self.redis_url or "").strip().lower()
+            if not redis_value or redis_value.startswith("redis://localhost") or redis_value.startswith("redis://127.0.0.1"):
+                self.redis_url = self.render_redis_url
         return self
 
 
