@@ -1397,7 +1397,7 @@ export default function ProvidersPage() {
                   </div>
                   <div className="info-banner">
                     <strong>Назначьте номер агенту, чтобы включить звонки.</strong> Откройте карточку агента, выберите номер Mango в блоке
-                    <strong> Telephony</strong> и сохраните настройки.
+                    <strong> «Телефония»</strong> и сохраните настройки.
                   </div>
                   <div className="journey-card">
                     <div className="journey-step">

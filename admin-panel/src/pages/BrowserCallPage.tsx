@@ -2060,7 +2060,7 @@ export default function BrowserCallPage() {
           ['агент', selectedAgentName],
           ['стратегия', debug?.voice_strategy || session?.voice_strategy || '—'],
           ['путь голоса', debug?.active_voice_path || session?.active_voice_path || '—'],
-          ['fallback', debug?.fallback_used ? (debug?.fallback_voice_path || 'да') : 'нет'],
+          ['резервный путь', debug?.fallback_used ? (debug?.fallback_voice_path || 'да') : 'нет'],
           ['статус', status?.status || session?.status || 'ожидание'],
         ],
       },
@@ -2081,9 +2081,9 @@ export default function BrowserCallPage() {
         items: [
           ['исходящих', String(localAudioDebug.outboundChunkCount)],
           ['входящих', String(localAudioDebug.inboundAudioChunkCount)],
-          ['стартов playback', String(localAudioDebug.playbackStarts)],
+          ['стартов воспроизведения', String(localAudioDebug.playbackStarts)],
           ['создано нод', String(localAudioDebug.playbackNodesCreated)],
-          ['завершено playback', String(localAudioDebug.playbackEndedCount)],
+          ['завершено воспроизведения', String(localAudioDebug.playbackEndedCount)],
           ['сервер вход', String(debug?.inbound_chunks_received ?? 0)],
           ['сервер выход', String(debug?.outbound_chunks_played ?? 0)],
           ['сервер tts raw', String(debug?.tts_chunks_in_last ?? 0)],
@@ -2095,7 +2095,7 @@ export default function BrowserCallPage() {
         title: 'Воспроизведение',
         items: [
           ['усиление', String(localAudioDebug.playbackGainValue)],
-          ['SR', localAudioDebug.playbackSampleRate ? `${localAudioDebug.playbackSampleRate} Hz` : '—'],
+          ['частота', localAudioDebug.playbackSampleRate ? `${localAudioDebug.playbackSampleRate} Hz` : '—'],
           ['каналы', String(localAudioDebug.playbackChannels)],
           ['бит', `${localAudioDebug.playbackBitDepth}-bit`],
           ['буфер', String(localAudioDebug.playbackBufferLength)],
@@ -2121,7 +2121,7 @@ export default function BrowserCallPage() {
         items: [
           ['активен', loopbackDebug.active ? 'да' : 'нет'],
           ['чанки микрофона', String(loopbackDebug.micChunks)],
-          ['чанки playback', String(loopbackDebug.playbackChunks)],
+          ['чанки воспроизведения', String(loopbackDebug.playbackChunks)],
           ['задержка', loopbackDebug.estimatedLatencyMs != null ? `${loopbackDebug.estimatedLatencyMs} ms` : '—'],
           ['ошибка', loopbackDebug.lastError || 'нет'],
         ],
@@ -2143,15 +2143,15 @@ export default function BrowserCallPage() {
           ['обрезано в конце', formatMetric(debug?.tts_trailing_silence_trimmed_ms_last)],
           ['frontend: первый чанк', formatMetric(localAudioDebug.firstChunkLatencyMs)],
           ['frontend: первый голос', formatMetric(localAudioDebug.firstNonSilentChunkLatencyMs)],
-          ['latency playback', formatMetric(debug?.outbound_playback_latency_ms_last)],
-          ['turn id', localAudioDebug.lastTurnId || debug?.tts_turn_id_last || '—'],
+          ['задержка воспроизведения', formatMetric(debug?.outbound_playback_latency_ms_last)],
+          ['id хода', localAudioDebug.lastTurnId || debug?.tts_turn_id_last || '—'],
         ],
       },
       {
         title: 'Ошибки',
         items: [
-          ['playback', localAudioDebug.lastPlaybackError || 'нет'],
-          ['transport', localAudioDebug.lastTransportError || 'нет'],
+          ['воспроизведение', localAudioDebug.lastPlaybackError || 'нет'],
+          ['транспорт', localAudioDebug.lastTransportError || 'нет'],
           ['последняя ошибка', debug?.last_error || error || 'нет'],
           ['этап', debug?.last_failure_stage || '—'],
         ],
@@ -2165,7 +2165,7 @@ export default function BrowserCallPage() {
         <div>
           <p className="eyebrow">Внутреннее тестирование</p>
           <h3>Браузерный звонок</h3>
-          <p>Тестовая голосовая сессия идёт мимо Mango и PSTN, но использует тот же direct-runtime контур, транскрипт и стратегию голоса.</p>
+          <p>Тестовая голосовая сессия идёт мимо Mango и PSTN, но использует тот же контур `direct-runtime`, транскрипт и стратегию голоса.</p>
         </div>
         <div className="browser-call-controls">
           <label>
@@ -2289,7 +2289,7 @@ export default function BrowserCallPage() {
           )) : (
             <article className="transcript-bubble empty">
               <div className="transcript-meta">Транскрипт пока пуст</div>
-              <div>Ждём greeting или ответ от агента.</div>
+              <div>Ждём приветствие или ответ от агента.</div>
             </article>
           )}
         </div>

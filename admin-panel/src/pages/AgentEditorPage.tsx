@@ -308,7 +308,7 @@ export default function AgentEditorPage() {
           if (err instanceof ApiError) {
             setTelephonyNotice(mapTelephonyApiError(
               err,
-              'Mango extensions временно недоступны. Привязка линии остаётся доступной.',
+              'Внутренние номера Mango временно недоступны. Привязка линии остаётся доступной.',
             ))
           }
           return { items: [], total: 0, source: 'mango_api' } satisfies TelephonyExtensionListResponse
@@ -319,7 +319,7 @@ export default function AgentEditorPage() {
       setTelephonyExtensions(extensionsResponse.items)
       setMangoReadiness(readinessResponse)
     } catch (err) {
-      setTelephonyError(mapTelephonyApiError(err, 'Не удалось загрузить Mango inventory.'))
+      setTelephonyError(mapTelephonyApiError(err, 'Не удалось загрузить список номеров Mango.'))
     } finally {
       setTelephonyLoading(false)
     }
@@ -505,14 +505,14 @@ export default function AgentEditorPage() {
         token,
       )
       setTelephonyLines(response.items)
-      setTelephonySuccess(`Mango sync завершён: ${response.synced_count} линий обновлено, ${response.deactivated_count} деактивировано.`)
+      setTelephonySuccess(`Синхронизация Mango завершена: ${response.synced_count} линий обновлено, ${response.deactivated_count} деактивировано.`)
       try {
         const extensions = await apiFetch<TelephonyExtensionListResponse>('/v1/telephony/mango/extensions', {}, token)
         setTelephonyExtensions(extensions.items)
       } catch (err) {
         setTelephonyNotice(mapTelephonyApiError(
           err,
-          'Номера обновились, но extensions загрузить не удалось.',
+          'Номера обновились, но внутренние номера загрузить не удалось.',
         ))
       }
     } catch (err) {
@@ -662,7 +662,7 @@ export default function AgentEditorPage() {
                 <div>
                   <p className="eyebrow">Телефония / Mango</p>
                   <h4>Привязка номера</h4>
-                  <p className="compact-copy">Здесь агент получает конкретный Mango number для inbound/outbound routing foundation.</p>
+                  <p className="compact-copy">Здесь агент получает конкретный номер Mango для основы входящей и исходящей маршрутизации.</p>
                 </div>
                 <button type="button" className="ghost-link-button" onClick={() => void handleSyncNumbers()} disabled={syncingTelephony}>
                   {syncingTelephony ? 'Синхронизация…' : 'Синхронизировать номера из Mango'}
@@ -757,12 +757,12 @@ export default function AgentEditorPage() {
 
               {!telephonyLoading && telephonyExtensions.length === 0 ? (
                 <div className="info-banner">
-                  В этом tenant Mango не настроены внутренние номера. Привязка линии всё равно доступна и без выбора extension.
+                  В этом кабинете Mango не настроены внутренние номера. Привязка линии всё равно доступна и без выбора внутреннего номера.
                 </div>
               ) : null}
 
               <label>
-                Extension / сотрудник
+                Внутренний номер / сотрудник
                 <select
                   value={form.telephonyExtension}
                   onChange={(event) => updateField('telephonyExtension', event.target.value)}
@@ -832,7 +832,7 @@ export default function AgentEditorPage() {
                   </div>
                 ) : (
                   <div className="voice-sub-options voice-sub-info">
-                    Для ElevenLabs используется глобальный voice configuration из Providers. На агенте фиксируется сам voice path.
+                    Для ElevenLabs используется глобальная настройка голоса из раздела «Провайдеры». На агенте фиксируется только сам голосовой путь.
                   </div>
                 )}
               </div>
@@ -1069,11 +1069,11 @@ export default function AgentEditorPage() {
                   <strong>{settings ? new Date(settings.updated_at).toLocaleString() : '—'}</strong>
                 </div>
                 <div className="debug-row">
-                  <span>voice path</span>
+                  <span>путь голоса</span>
                   <strong>{voiceStrategyFromProvider(form.voiceProvider)}</strong>
                 </div>
                 <div className="debug-row">
-                  <span>voice provider</span>
+                  <span>голосовой провайдер</span>
                   <strong>{form.voiceProvider}</strong>
                 </div>
                 <div className="debug-row">

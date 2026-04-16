@@ -216,12 +216,12 @@ describe('agent editor telephony smoke', () => {
 
     expect(screen.getByText(/Проверка входящего вебхука не настроена/i)).toBeInTheDocument()
     expect(screen.getByText(/Исходящие звонки не настроены/i)).toBeInTheDocument()
-    expect(screen.getByText(/В этом tenant Mango не настроены внутренние номера/i)).toBeInTheDocument()
+    expect(screen.getByText(/В этом кабинете Mango не настроены внутренние номера/i)).toBeInTheDocument()
 
     await user.click(screen.getByText(/Синхронизировать номера из Mango/i))
 
     await waitFor(() => {
-      expect(screen.getByText(/Mango sync завершён/i)).toBeInTheDocument()
+      expect(screen.getByText(/Синхронизация Mango завершена/i)).toBeInTheDocument()
     })
 
     const lineSelect = screen.getByLabelText(/Выберите номер Mango/i)
@@ -363,9 +363,9 @@ describe('agent editor telephony smoke', () => {
     renderEditor('/agents/agent-1?mango_line=405622036&from=providers')
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Назад к Mango для этой линии/i })).toBeInTheDocument()
+      expect(getBoundLineCard()).not.toBeNull()
     })
-
+    expect(screen.getByRole('link', { name: /Назад к Mango для этой линии/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Назад к Mango для этой линии/i })).toHaveAttribute('href', '/providers?line=405622036')
     expect(getBoundLineCard()).toHaveTextContent('ДЛЯ ИИ менеджера (+79300350609)')
   })
@@ -477,7 +477,7 @@ describe('agent editor telephony smoke', () => {
     })
 
     expect(screen.getByText(/Исходящие звонки не настроены/i)).toBeInTheDocument()
-    expect(screen.getByText(/В этом tenant Mango не настроены внутренние номера/i)).toBeInTheDocument()
+    expect(screen.getByText(/В этом кабинете Mango не настроены внутренние номера/i)).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /ДЛЯ ИИ менеджера \(\+79300350609\)/i })).toBeInTheDocument()
   })
 

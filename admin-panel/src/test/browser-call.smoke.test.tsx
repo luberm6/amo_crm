@@ -411,7 +411,7 @@ describe('browser call page smoke', () => {
     expect(screen.getByText(/веб-сокет/i)).toBeInTheDocument()
     expect(screen.getByText(/исходящих/i)).toBeInTheDocument()
     expect(screen.getByText(/входящих/i)).toBeInTheDocument()
-    expect(screen.getByText(/стартов playback/i)).toBeInTheDocument()
+    expect(screen.getByText(/стартов воспроизведения/i)).toBeInTheDocument()
     expect(screen.getByText(/RMS/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/Устройство вывода|Output device/i)).toBeInTheDocument()
     expect(screen.getByText(/вход SR/i)).toBeInTheDocument()
