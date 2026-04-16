@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
@@ -72,6 +72,10 @@ type MangoReadiness = {
   from_ext_configured: boolean
   from_ext_auto_discoverable?: boolean
   warnings: string[]
+}
+
+function hasMangoInventory(items: TelephonyLine[]) {
+  return items.length > 0
 }
 
 type ApiErrorPayload = {
@@ -277,6 +281,17 @@ export default function AgentEditorPage() {
   const [syncingTelephony, setSyncingTelephony] = useState(false)
   const [telephonySuccess, setTelephonySuccess] = useState<string | null>(null)
   const [mangoReadiness, setMangoReadiness] = useState<MangoReadiness | null>(null)
+  const currentBindingRef = useRef<{ hasLine: boolean; remoteLineId: string | null }>({
+    hasLine: false,
+    remoteLineId: null,
+  })
+
+  useEffect(() => {
+    currentBindingRef.current = {
+      hasLine: Boolean(settings?.telephony_line),
+      remoteLineId: settings?.telephony_remote_line_id ?? null,
+    }
+  }, [settings])
 
   const loadKnowledgeDocuments = useCallback(async () => {
     if (!token) {
@@ -302,22 +317,50 @@ export default function AgentEditorPage() {
     setTelephonyError(null)
     setTelephonyNotice(null)
     try {
-      const [linesResponse, extensionsResponse, readinessResponse] = await Promise.all([
+      const [linesResult, extensionsResult, readinessResult] = await Promise.allSettled([
         apiFetch<TelephonyLineListResponse>('/v1/telephony/mango/lines', {}, token),
-        apiFetch<TelephonyExtensionListResponse>('/v1/telephony/mango/extensions', {}, token).catch((err) => {
-          if (err instanceof ApiError) {
-            setTelephonyNotice(mapTelephonyApiError(
-              err,
-              'Внутренние номера Mango временно недоступны. Привязка линии остаётся доступной.',
-            ))
-          }
-          return { items: [], total: 0, source: 'mango_api' } satisfies TelephonyExtensionListResponse
-        }),
-        apiFetch<MangoReadiness>('/v1/telephony/mango/readiness', {}, token).catch(() => null),
+        apiFetch<TelephonyExtensionListResponse>('/v1/telephony/mango/extensions', {}, token),
+        apiFetch<MangoReadiness>('/v1/telephony/mango/readiness', {}, token),
       ])
-      setTelephonyLines(linesResponse.items)
-      setTelephonyExtensions(extensionsResponse.items)
-      setMangoReadiness(readinessResponse)
+
+      const nextReadiness =
+        readinessResult.status === 'fulfilled'
+          ? readinessResult.value
+          : null
+      const nextLines =
+        linesResult.status === 'fulfilled'
+          ? linesResult.value.items
+          : []
+
+      setMangoReadiness(nextReadiness)
+      setTelephonyLines(nextLines)
+
+      if (extensionsResult.status === 'fulfilled') {
+        setTelephonyExtensions(extensionsResult.value.items)
+      } else if (extensionsResult.reason instanceof ApiError) {
+        setTelephonyNotice(
+          mapTelephonyApiError(
+            extensionsResult.reason,
+            'Внутренние номера Mango временно недоступны. Привязка линии остаётся доступной.',
+          ),
+        )
+        setTelephonyExtensions([])
+      } else {
+        setTelephonyExtensions([])
+      }
+
+      if (linesResult.status === 'rejected') {
+        const nextError = mapTelephonyApiError(linesResult.reason, 'Не удалось загрузить список номеров Mango.')
+        const shouldSuppressHardConfigError =
+          nextReadiness?.api_configured
+          || hasMangoInventory(nextLines)
+          || currentBindingRef.current.hasLine
+          || Boolean(currentBindingRef.current.remoteLineId)
+
+        if (!(shouldSuppressHardConfigError && nextError.includes('Mango не настроен'))) {
+          setTelephonyError(nextError)
+        }
+      }
     } catch (err) {
       setTelephonyError(mapTelephonyApiError(err, 'Не удалось загрузить список номеров Mango.'))
     } finally {

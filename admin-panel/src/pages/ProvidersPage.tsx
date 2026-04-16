@@ -291,6 +291,35 @@ function mapMangoRequirementLabel(requirement: string) {
   }
 }
 
+function mapReadinessBlocker(blocker: string) {
+  switch (blocker) {
+    case 'Mango API credentials are missing.':
+      return 'Не заданы учётные данные Mango API.'
+    case 'Webhook secret is missing.':
+      return 'Не задан секрет вебхука.'
+    case 'BACKEND_URL is not public.':
+      return 'BACKEND_URL не является публичным.'
+    case 'FROM_EXT is not configured and no stable fallback is available.':
+      return 'Не задан FROM_EXT и не найден стабильный fallback.'
+    case 'Telephony runtime is not using a real Mango route.':
+      return 'Рантайм телефонии ещё не использует реальный маршрут Mango.'
+    case 'MEDIA_GATEWAY_ENABLED=false.':
+      return 'MEDIA_GATEWAY_ENABLED=false.'
+    case 'MEDIA_GATEWAY_PROVIDER must be freeswitch.':
+      return 'Ожидается MEDIA_GATEWAY_PROVIDER=freeswitch.'
+    case 'MEDIA_GATEWAY_MODE must be mock or esl_rtp.':
+      return 'Ожидается MEDIA_GATEWAY_MODE=mock или esl_rtp.'
+    case 'FREESWITCH_ESL_HOST is missing or local-only.':
+      return 'FREESWITCH_ESL_HOST не задан или указывает на локальный адрес.'
+    case 'FREESWITCH_ESL_PASSWORD is missing or still default.':
+      return 'FREESWITCH_ESL_PASSWORD не задан или всё ещё равен значению по умолчанию.'
+    case 'FREESWITCH_RTP_IP is missing or local-only.':
+      return 'FREESWITCH_RTP_IP не задан или указывает на локальный адрес.'
+    default:
+      return blocker
+  }
+}
+
 function collectReadinessBlockers(readiness: MangoReadiness | null, scope: 'webhook' | 'outbound' | 'inbound_ai') {
   if (!readiness) {
     return ['Данные о готовности недоступны.']
@@ -298,7 +327,7 @@ function collectReadinessBlockers(readiness: MangoReadiness | null, scope: 'webh
   const scopeKey = scope === 'webhook' ? 'inbound_webhook' : scope === 'outbound' ? 'outbound_originate' : 'inbound_ai_runtime'
   const routeScope = readiness.route_readiness?.[scopeKey]
   if (routeScope?.blockers?.length) {
-    return routeScope.blockers
+    return routeScope.blockers.map(mapReadinessBlocker)
   }
   const requirements = new Set(readiness.missing_requirements || [])
   if (scope === 'webhook') {
@@ -354,6 +383,81 @@ function mapMangoReadinessWarning(warning: string) {
     return 'Не заданы учётные данные Mango API. Синхронизация инвентаря и боевая маршрутизация недоступны.'
   }
   return warning
+}
+
+function mapRouteReadinessSummary(summary: string) {
+  switch (summary) {
+    case 'Render webhook delivery is not ready yet.':
+      return 'Render ещё не готов принимать доставку Mango-вебхука.'
+    case 'Agent-bound Mango lines can run an outbound originate smoke.':
+      return 'Линия Mango, назначенная агенту, уже готова к исходящей smoke-проверке.'
+    case 'Inbound AI runtime is still blocked.':
+      return 'Входящий AI-рантайм пока остаётся заблокированным.'
+    case 'Render can receive and verify Mango webhook delivery.':
+      return 'Render уже может принять и проверить Mango-вебхук.'
+    case 'Inbound Mango webhook can reach a bound AI runtime.':
+      return 'Входящий Mango-вебхук уже может довести событие до назначенного AI-рантайма.'
+    default:
+      return summary
+  }
+}
+
+function mapRenderOperatorSummary(summary: string) {
+  switch (summary) {
+    case 'Render-side Mango routing is ready for webhook and originate smoke checks.':
+      return 'Render-side маршрут Mango готов к честной smoke-проверке вебхука и исходящего вызова.'
+    case 'Render-side Mango routing is partially ready. Check the blocked cards before live smoke.':
+      return 'Render-side маршрут Mango частично готов. Перед live smoke нужно снять блокеры на карточках ниже.'
+    case 'Render-side Mango routing is blocked. Fix the listed blockers before live smoke.':
+      return 'Render-side маршрут Mango заблокирован. Сначала исправьте перечисленные блокеры.'
+    default:
+      return summary
+  }
+}
+
+function mapActionableNextStepTitle(title: string) {
+  switch (title) {
+    case 'Save Mango API credentials':
+      return 'Сохраните учётные данные Mango API'
+    case 'Make BACKEND_URL public':
+      return 'Сделайте BACKEND_URL публичным'
+    case 'Set webhook verification secret':
+      return 'Задайте секрет проверки вебхука'
+    case 'Set outbound source extension':
+      return 'Задайте исходный внутренний номер'
+    default:
+      return title
+  }
+}
+
+function mapActionableNextStepDescription(description: string) {
+  switch (description) {
+    case 'Set MANGO_API_KEY and MANGO_API_SALT before trying to sync lines or run live routing checks.':
+      return 'Сначала задайте MANGO_API_KEY и MANGO_API_SALT, и только потом запускайте синхронизацию линий и live routing checks.'
+    case 'Mango cannot deliver a webhook to a local or private BACKEND_URL. Point it to the public Render backend URL.':
+      return 'Mango не сможет доставить вебхук на локальный или приватный BACKEND_URL. Укажите публичный URL backend-сервиса на Render.'
+    case 'Configure MANGO_WEBHOOK_SECRET or MANGO_WEBHOOK_SHARED_SECRET before testing inbound webhook delivery.':
+      return 'Перед проверкой входящего вебхука задайте MANGO_WEBHOOK_SECRET или MANGO_WEBHOOK_SHARED_SECRET.'
+    case 'Outbound originate still needs a stable source extension when auto-discovery is unavailable.':
+      return 'Для стабильного исходящего вызова всё ещё нужен явный исходный внутренний номер, если автоподбор недоступен.'
+    default:
+      return description
+  }
+}
+
+function mapActionableNextStepCta(label: string) {
+  switch (label) {
+    case 'Set MANGO_API_KEY and MANGO_API_SALT':
+      return 'Задать MANGO_API_KEY и MANGO_API_SALT'
+    case 'Set a public BACKEND_URL':
+      return 'Задать публичный BACKEND_URL'
+    case 'Set MANGO_WEBHOOK_SECRET':
+      return 'Задать MANGO_WEBHOOK_SECRET'
+    case 'Set MANGO_FROM_EXT':
+      return 'Задать MANGO_FROM_EXT'
+    default:
+      return label
+  }
 }
 
 function formatProviderStatus(status: ProviderSetting['status']) {
@@ -554,12 +658,15 @@ export default function ProvidersPage() {
     () => collectReadinessBlockers(mangoReadiness, 'inbound_ai'),
     [mangoReadiness],
   )
-  const inboundWebhookSummary = mangoReadiness?.route_readiness?.inbound_webhook?.summary
+  const inboundWebhookSummary = mapRouteReadinessSummary(mangoReadiness?.route_readiness?.inbound_webhook?.summary
     || 'Webhook Mango в backend на Render'
-  const outboundOriginateSummary = mangoReadiness?.route_readiness?.outbound_originate?.summary
+  )
+  const outboundOriginateSummary = mapRouteReadinessSummary(mangoReadiness?.route_readiness?.outbound_originate?.summary
     || 'Линия Mango, назначенная агенту, для исходящего smoke'
-  const inboundAiSummary = mangoReadiness?.route_readiness?.inbound_ai_runtime?.summary
+  )
+  const inboundAiSummary = mapRouteReadinessSummary(mangoReadiness?.route_readiness?.inbound_ai_runtime?.summary
     || 'Вебхук -> назначенный агент -> AI-рантайм'
+  )
   const nextStep = mangoReadiness?.actionable_next_step || null
   const setupStages = useMemo<SetupStage[]>(() => [
     {
@@ -1298,7 +1405,7 @@ export default function ProvidersPage() {
                             ? 'Маршрутизация на Render частично готова'
                             : 'Маршрутизация на Render заблокирована'}
                       </strong>
-                      <div className="table-secondary">{mangoReadiness.render_summary.operator_summary}</div>
+                      <div className="table-secondary">{mapRenderOperatorSummary(mangoReadiness.render_summary.operator_summary)}</div>
                       <div className="table-secondary">
                         готово: {mangoReadiness.render_summary.ready_count} / заблокировано: {mangoReadiness.render_summary.blocked_count}
                       </div>
@@ -1308,10 +1415,10 @@ export default function ProvidersPage() {
                     <div className={`next-step-banner${mangoReadiness?.render_summary?.overall_status === 'ready' ? ' success' : ''}`}>
                       <div>
                         <p className="eyebrow" >Главный следующий шаг</p>
-                        <strong>{nextStep.title}</strong>
-                        <div className="table-secondary">{nextStep.description}</div>
+                        <strong>{mapActionableNextStepTitle(nextStep.title)}</strong>
+                        <div className="table-secondary">{mapActionableNextStepDescription(nextStep.description)}</div>
                       </div>
-                      <span className="next-step-cta">{nextStep.cta_label}</span>
+                      <span className="next-step-cta">{mapActionableNextStepCta(nextStep.cta_label)}</span>
                     </div>
                   ) : null}
                   <div className="readiness-card-grid">

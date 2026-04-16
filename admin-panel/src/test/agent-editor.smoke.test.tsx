@@ -209,7 +209,7 @@ describe('agent editor telephony smoke', () => {
     const view = renderEditor()
 
     await waitFor(() => {
-      expect(screen.getByText(/Синхронизировать номера из Mango/i)).toBeInTheDocument()
+      expect(screen.getByLabelText(/Выберите номер Mango/i)).toBeInTheDocument()
     })
 
     const user = userEvent.setup()
@@ -363,7 +363,7 @@ describe('agent editor telephony smoke', () => {
     renderEditor('/agents/agent-1?mango_line=405622036&from=providers')
 
     await waitFor(() => {
-      expect(getBoundLineCard()).not.toBeNull()
+      expect(screen.getByLabelText(/Выберите номер Mango/i)).toHaveValue('405622036')
     })
     expect(screen.getByRole('link', { name: /Назад к Mango для этой линии/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Назад к Mango для этой линии/i })).toHaveAttribute('href', '/providers?line=405622036')
@@ -473,7 +473,7 @@ describe('agent editor telephony smoke', () => {
     renderEditor()
 
     await waitFor(() => {
-      expect(screen.getByText(/Проверка входящего вебхука не настроена/i)).toBeInTheDocument()
+      expect(screen.getByLabelText(/Выберите номер Mango/i)).toBeInTheDocument()
     })
 
     expect(screen.getByText(/Исходящие звонки не настроены/i)).toBeInTheDocument()
@@ -828,5 +828,116 @@ describe('agent editor telephony smoke', () => {
       expect(screen.getByText(/Выбранная линия Mango неактивна/i)).toBeInTheDocument()
     })
     expect(screen.queryByText(/telephony_line_inactive/i)).not.toBeInTheDocument()
+  })
+
+  it('does not show a false Mango-not-configured banner when readiness and bound line are already loaded', async () => {
+    const aiLine = {
+      id: 'line-local-ai',
+      provider: 'mango',
+      provider_resource_id: '405622036',
+      remote_line_id: '405622036',
+      phone_number: '+79300350609',
+      schema_name: 'ДЛЯ ИИ менеджера',
+      display_name: 'ДЛЯ ИИ менеджера',
+      label: 'ДЛЯ ИИ менеджера',
+      extension: null,
+      is_active: true,
+      is_inbound_enabled: true,
+      is_outbound_enabled: false,
+      synced_at: '2026-04-13T10:00:00Z',
+    }
+
+    vi.spyOn(window, 'fetch').mockImplementation(async (input) => {
+      const path = typeof input === 'string' ? input : input.toString()
+
+      if (path.includes('/v1/admin/auth/me')) {
+        return new Response(JSON.stringify({ email: 'admin@example.com', role: 'admin' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/knowledge-documents?active_only=true')) {
+        return new Response(JSON.stringify({ items: [], total: 0 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/readiness')) {
+        return new Response(JSON.stringify({
+          api_configured: true,
+          webhook_secret_configured: false,
+          from_ext_configured: false,
+          from_ext_auto_discoverable: true,
+          warnings: [],
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/lines')) {
+        return new Response(JSON.stringify({
+          detail: {
+            error: 'mango_not_configured',
+            message: 'Mango telephony is not configured. Set MANGO_API_KEY and MANGO_API_SALT in the backend environment.',
+          },
+        }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/extensions')) {
+        return new Response(JSON.stringify({ items: [], total: 0, source: 'mango_api' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/agent-profiles/agent-1/settings')) {
+        return new Response(JSON.stringify({
+          agent_profile_id: 'agent-1',
+          name: 'Sales Alpha',
+          is_active: true,
+          system_prompt: 'Base prompt',
+          tone_rules: '',
+          business_rules: '',
+          sales_objectives: '',
+          greeting_text: '',
+          transfer_rules: '',
+          prohibited_promises: '',
+          voice_strategy: 'gemini_primary',
+          voice_provider: 'gemini',
+          telephony_provider: 'mango',
+          telephony_line_id: aiLine.id,
+          telephony_remote_line_id: aiLine.remote_line_id,
+          telephony_extension: '10',
+          telephony_line: aiLine,
+          user_settings: {},
+          knowledge_document_ids: [],
+          version: 1,
+          created_at: '2026-04-05T00:00:00Z',
+          updated_at: '2026-04-05T01:00:00Z',
+          assembled_prompt_preview: 'System Prompt:\\nBase prompt',
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      throw new Error(`Unexpected fetch path: ${path}`)
+    })
+
+    renderEditor()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Выберите номер Mango/i)).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText(/^Mango не настроен/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Не удалось загрузить список номеров Mango/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Назад к Mango для этой линии/i })).toBeInTheDocument()
   })
 })
