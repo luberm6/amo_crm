@@ -124,7 +124,7 @@ async def test_validate_gemini_settings_uses_remote_check(session, admin_and_pro
     app.dependency_overrides[get_db] = override_get_db
 
     async def fake_validate(self, config, secrets):
-        assert config["model_id"] == "gemini-2.0-flash-live-001"
+        assert config["model_id"] == "gemini-2.5-flash-native-audio-preview-12-2025"
         assert secrets["api_key"] == "gemini-secret-key"
         return None
 
@@ -135,7 +135,7 @@ async def test_validate_gemini_settings_uses_remote_check(session, admin_and_pro
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "is_enabled": True,
-                "config": {"model_id": "gemini-2.0-flash-live-001", "api_version": "v1beta"},
+                "config": {"model_id": "gemini-2.5-flash-native-audio-preview-12-2025", "api_version": "v1beta"},
                 "secrets": {"api_key": "gemini-secret-key"},
             },
         )
@@ -219,7 +219,7 @@ async def test_save_provider_settings_returns_structured_500_for_unexpected_erro
                 headers={"Authorization": f"Bearer {token}"},
                 json={
                     "is_enabled": True,
-                    "config": {"model_id": "gemini-2.0-flash-live-001", "api_version": "v1beta"},
+                    "config": {"model_id": "gemini-2.5-flash-native-audio-preview-12-2025", "api_version": "v1beta"},
                     "secrets": {"api_key": "gemini-secret-key"},
                 },
             )
@@ -242,7 +242,7 @@ async def test_list_provider_settings_survives_secret_rotation(session):
         await service.update_provider(
             "gemini",
             is_enabled=True,
-            config={"model_id": "gemini-2.0-flash-live-001", "api_version": "v1beta"},
+            config={"model_id": "gemini-2.5-flash-native-audio-preview-12-2025", "api_version": "v1beta"},
             secrets={"api_key": "legacy-gemini-secret"},
         )
         await session.commit()
@@ -285,7 +285,7 @@ async def test_save_provider_settings_can_reencrypt_after_secret_rotation(sessio
         await service.update_provider(
             "gemini",
             is_enabled=True,
-            config={"model_id": "gemini-2.0-flash-live-001", "api_version": "v1beta"},
+            config={"model_id": "gemini-2.5-flash-native-audio-preview-12-2025", "api_version": "v1beta"},
             secrets={"api_key": "legacy-gemini-secret"},
         )
         await session.commit()
@@ -311,7 +311,7 @@ async def test_save_provider_settings_can_reencrypt_after_secret_rotation(sessio
                 headers={"Authorization": f"Bearer {token}"},
                 json={
                     "is_enabled": True,
-                    "config": {"model_id": "gemini-2.0-flash-live-001", "api_version": "v1beta"},
+                    "config": {"model_id": "gemini-2.5-flash-native-audio-preview-12-2025", "api_version": "v1beta"},
                     "secrets": {"api_key": "reencrypted-gemini-secret"},
                 },
             )

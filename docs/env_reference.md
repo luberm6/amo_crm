@@ -144,7 +144,7 @@ Legend for `Required`:
 | Variable | Required | Default | Used by | Purpose | Blocks what if missing |
 |---|---|---|---|---|---|
 | `GEMINI_API_KEY` | Contextual | empty | Direct runtime, preflight, Browser Call | Gemini API access | Browser voice / Direct runtime responses |
-| `GEMINI_MODEL_ID` | No | `gemini-2.0-flash-live-001` | Direct runtime | Gemini model selection | Model selection only |
+| `GEMINI_MODEL_ID` | No | `gemini-2.5-flash-native-audio-preview-12-2025` | Direct runtime | Gemini model selection | Model selection only |
 | `GEMINI_TTS_MODEL_ID` | No | empty | `tts_primary` Direct runtime | Отдельная Gemini-модель для text->TTS пути; пусто = использовать `GEMINI_MODEL_ID` | Только выбор модели для `tts_primary` |
 | `GEMINI_API_VERSION` | No | `v1beta` | Direct runtime | Gemini API version | Gemini connection only |
 | `GEMINI_TTS_API_VERSION` | No | empty | `tts_primary` Direct runtime | Отдельная версия Gemini API для TTS-модели; пусто = использовать `GEMINI_API_VERSION` | Только выбор версии API для `tts_primary` |

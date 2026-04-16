@@ -53,7 +53,7 @@ describe('providers page smoke', () => {
               activation_status: 'active',
               status: 'configured',
               safe_mode_note: 'Gemini settings are stored independently.',
-              config: { model_id: 'gemini-2.0-flash-live-001', api_version: 'v1beta' },
+              config: { model_id: 'gemini-2.5-flash-native-audio-preview-12-2025', api_version: 'v1beta' },
               secrets: { api_key: { is_set: true, masked_value: 'ge***ey' } },
               secrets_accessible: true,
               storage_warning: null,

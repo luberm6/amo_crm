@@ -218,6 +218,20 @@ class TestRenderDatabaseUrlNormalization:
         )
         assert s.database_url == "postgresql+asyncpg://render_user:render_pass@render-db:5432/app_db"
 
+
+class TestGeminiLiveModelNormalization:
+    def test_rewrites_deprecated_gemini_2_live_model_to_supported_replacement(self):
+        s = make(gemini_model_id="gemini-2.0-flash-live-001")
+        assert s.gemini_model_id == "gemini-2.5-flash-native-audio-preview-12-2025"
+
+    def test_rewrites_legacy_gemini_25_preview_alias_to_supported_replacement(self):
+        s = make(gemini_model_id="gemini-live-2.5-flash-preview")
+        assert s.gemini_model_id == "gemini-2.5-flash-native-audio-preview-12-2025"
+
+    def test_keeps_explicit_supported_live_model_unchanged(self):
+        s = make(gemini_model_id="gemini-2.5-flash-native-audio-preview-12-2025")
+        assert s.gemini_model_id == "gemini-2.5-flash-native-audio-preview-12-2025"
+
     def test_keeps_explicit_remote_database_url_even_when_render_database_url_exists(self):
         s = make(
             environment="production",

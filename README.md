@@ -139,7 +139,7 @@ pytest -v
 | `VAPI_SERVER_URL` | — | Public URL for Vapi webhooks |
 | `VAPI_WEBHOOK_SECRET` | — | HMAC secret for webhook validation |
 | `GEMINI_API_KEY` | — | Google AI Studio API key (Direct mode) |
-| `GEMINI_MODEL_ID` | `gemini-2.0-flash-live-001` | Gemini Live model |
+| `GEMINI_MODEL_ID` | `gemini-2.5-flash-native-audio-preview-12-2025` | Gemini Live model |
 
 See `.env.example` for complete list.
 

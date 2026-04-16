@@ -42,6 +42,12 @@ def _is_public_http_url(url: str) -> bool:
     return True
 
 
+_DEPRECATED_GEMINI_LIVE_MODELS: dict[str, str] = {
+    "gemini-2.0-flash-live-001": "gemini-2.5-flash-native-audio-preview-12-2025",
+    "gemini-live-2.5-flash-preview": "gemini-2.5-flash-native-audio-preview-12-2025",
+}
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -245,9 +251,9 @@ class Settings(BaseSettings):
     # API key from Google AI Studio (aistudio.google.com) or Vertex AI
     gemini_api_key: str = ""
     # Model ID — see https://ai.google.dev/api/multimodal-live for available models
-    # Phase 1: "gemini-2.0-flash-live-001"
+    # Current Live API default replacement for deprecated Gemini 2.0 Live model.
     # Phase 2: "gemini-2.5-flash-preview-native-audio-dialog"
-    gemini_model_id: str = "gemini-2.0-flash-live-001"
+    gemini_model_id: str = "gemini-2.5-flash-native-audio-preview-12-2025"
     # Model used for tts_primary strategy (audio-in → TEXT-out → ElevenLabs TTS).
     # Empty string = use the same model as gemini_model_id (primary model).
     gemini_tts_model_id: str = ""
@@ -383,6 +389,9 @@ class Settings(BaseSettings):
             redis_value = (self.redis_url or "").strip().lower()
             if not redis_value or redis_value.startswith("redis://localhost") or redis_value.startswith("redis://127.0.0.1"):
                 self.redis_url = self.render_redis_url
+        replacement_model = _DEPRECATED_GEMINI_LIVE_MODELS.get((self.gemini_model_id or "").strip())
+        if replacement_model:
+            self.gemini_model_id = replacement_model
         return self
 
 

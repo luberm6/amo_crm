@@ -66,7 +66,7 @@ VAPI_WEBHOOK_SECRET=<secret>
 ### Direct / Gemini Live mode
 ```
 GEMINI_API_KEY=<key>
-GEMINI_MODEL_ID=gemini-2.0-flash-live-001
+GEMINI_MODEL_ID=gemini-2.5-flash-native-audio-preview-12-2025
 DIRECT_MAX_SESSIONS=10
 ```
 

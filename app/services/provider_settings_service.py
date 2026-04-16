@@ -65,7 +65,7 @@ PROVIDER_SPECS: dict[str, ProviderSpec] = {
         provider="gemini",
         display_name="Gemini",
         config_defaults={
-            "model_id": "gemini-2.0-flash-live-001",
+            "model_id": "gemini-2.5-flash-native-audio-preview-12-2025",
             "api_version": "v1beta",
         },
         config_fields=("model_id", "api_version"),

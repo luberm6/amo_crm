@@ -174,7 +174,7 @@ Until Phase 2, Route B uses `StubTelephonyAdapter` for audio (no real call place
 
 ### 3. Gemini model ID
 
-Default: `gemini-2.0-flash-live-001`. Verify availability in [Google AI Studio](https://aistudio.google.com) before production deploy. Configure via `GEMINI_MODEL_ID` env var.
+Default: `gemini-2.5-flash-native-audio-preview-12-2025`. Verify availability in [Google AI Studio](https://aistudio.google.com) before production deploy. Configure via `GEMINI_MODEL_ID` env var.
 
 ### 4. Vapi webhook statelessness vs Direct statefulness
 
@@ -192,7 +192,7 @@ VAPI_PHONE_NUMBER_ID=...
 
 # Direct Route B
 GEMINI_API_KEY=...
-GEMINI_MODEL_ID=gemini-2.0-flash-live-001   # optional
+GEMINI_MODEL_ID=gemini-2.5-flash-native-audio-preview-12-2025   # optional
 GEMINI_API_VERSION=v1beta                   # optional
 
 # Mango (used in Route B for telephony control)

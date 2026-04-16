@@ -70,7 +70,7 @@ class GeminiGenerationConfig:
     @classmethod
     def for_text_modality(cls) -> "GeminiGenerationConfig":
         """Create config for Gemini TEXT output modality.
-        Use with text-capable models (e.g. gemini-2.0-flash-live-001)
+        Use with text-capable models (e.g. gemini-2.5-flash-native-audio-preview-12-2025)
         when ElevenLabs TTS handles speech synthesis.
         responseModalities must be explicitly ["TEXT"] — an empty list
         causes the API to reject the session with error 1011.
