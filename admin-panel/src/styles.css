@@ -304,6 +304,10 @@ a.info-card:hover {
   align-items: start;
 }
 
+.split-card > * {
+  min-width: 0;
+}
+
 .toggle-row {
   display: inline-grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -329,6 +333,10 @@ a.info-card:hover {
   border-radius: 14px;
   padding: 0.95rem 1.1rem;
   font-weight: 700;
+  max-width: 100%;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .primary-link-button {
@@ -583,6 +591,10 @@ a.info-card:hover {
 }
 .button-row,
 .status-strip { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+
+.button-row > * {
+  min-width: 0;
+}
 .status-pill {
   padding: 0.55rem 0.85rem;
   border-radius: 999px;
@@ -593,6 +605,10 @@ a.info-card:hover {
 .status-pill.live { background: var(--accent-soft); color: var(--accent-strong); }
 .status-pill.error { background: var(--danger-soft); color: #7c2e20; }
 .panel-header { display: flex; justify-content: space-between; align-items: start; gap: 1rem; margin-bottom: 1rem; }
+
+.panel-header > * {
+  min-width: 0;
+}
 .transcript-panel { min-height: 32rem; }
 .transcript-list { max-height: 36rem; overflow: auto; padding-right: 0.25rem; }
 .transcript-bubble {
@@ -752,6 +768,8 @@ a.info-card:hover {
 .saas-summary-card strong {
   font-size: 1rem;
   color: var(--ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .issue-chip-row {
@@ -878,11 +896,16 @@ a.info-card:hover {
   align-items: start;
 }
 
+.inventory-card-header > * {
+  min-width: 0;
+}
+
 .inventory-card-title,
 .binding-cta-title {
   margin: 0;
   font-weight: 700;
   color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .inventory-card-phone,
@@ -927,6 +950,10 @@ a.info-card:hover {
   background: linear-gradient(180deg, rgba(237, 248, 239, 0.95) 0%, rgba(220, 239, 231, 0.9) 100%);
 }
 
+.binding-cta-card > * {
+  min-width: 0;
+}
+
 .next-step-banner {
   display: flex;
   justify-content: space-between;
@@ -936,6 +963,10 @@ a.info-card:hover {
   border-radius: 18px;
   border: 1px solid #ecd09b;
   background: linear-gradient(180deg, rgba(255, 248, 235, 0.98) 0%, rgba(255, 243, 220, 0.92) 100%);
+}
+
+.next-step-banner > * {
+  min-width: 0;
 }
 
 .next-step-banner.success {
@@ -953,7 +984,9 @@ a.info-card:hover {
   border: 1px solid rgba(58, 43, 21, 0.12);
   color: var(--ink);
   font-weight: 700;
-  white-space: nowrap;
+  white-space: normal;
+  text-align: center;
+  word-break: break-word;
 }
 
 .readiness-card-grid {
@@ -986,6 +1019,10 @@ a.info-card:hover {
   justify-content: space-between;
   gap: 1rem;
   align-items: start;
+}
+
+.readiness-card-header > * {
+  min-width: 0;
 }
 
 .readiness-card-title {
@@ -1037,6 +1074,10 @@ a.info-card:hover {
   background: rgba(255, 250, 242, 0.88);
 }
 
+.inventory-item > * {
+  min-width: 0;
+}
+
 .inventory-item.focused {
   border-color: var(--accent);
   box-shadow: inset 0 0 0 1px rgba(13, 107, 87, 0.18);
@@ -1051,6 +1092,7 @@ a.info-card:hover {
 .inventory-binding-copy {
   color: var(--muted);
   text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .inline-link {
@@ -1084,6 +1126,18 @@ a.info-card:hover {
 .sync-summary-item strong {
   font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
   color: var(--ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.primary-button,
+.danger-button,
+.ghost-button,
+.inline-danger-button {
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  text-align: center;
 }
 
 .ghost-button.active-filter {
@@ -1122,7 +1176,9 @@ a.info-card:hover {
 
   .binding-cta-card,
   .next-step-banner,
-  .inventory-card-header {
+  .inventory-card-header,
+  .readiness-card-header,
+  .inventory-item {
     flex-direction: column;
   }
 
