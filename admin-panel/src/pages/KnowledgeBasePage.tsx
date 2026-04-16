@@ -46,6 +46,7 @@ type DocumentFormState = {
   content: string
   is_active: boolean
   notes: string
+  metadataSource: string
   metadataText: string
 }
 
@@ -60,6 +61,7 @@ type CompanyFormState = {
   working_hours: string
   compliance_notes: string
   is_active: boolean
+  locale: string
   configText: string
 }
 
@@ -79,6 +81,7 @@ const EMPTY_DOCUMENT_FORM: DocumentFormState = {
   content: '',
   is_active: true,
   notes: '',
+  metadataSource: 'manual',
   metadataText: '{\n  "source": "manual"\n}',
 }
 
@@ -93,6 +96,7 @@ const EMPTY_COMPANY_FORM: CompanyFormState = {
   working_hours: '',
   compliance_notes: '',
   is_active: true,
+  locale: 'ru-RU',
   configText: '{\n  "locale": "ru-RU"\n}',
 }
 
@@ -103,6 +107,7 @@ function toDocumentFormState(document: KnowledgeDocumentRead): DocumentFormState
     content: document.content,
     is_active: document.is_active,
     notes: document.notes || '',
+    metadataSource: typeof document.metadata?.source === 'string' ? document.metadata.source : 'manual',
     metadataText: JSON.stringify(document.metadata || {}, null, 2),
   }
 }
@@ -122,8 +127,31 @@ function toCompanyFormState(profile: CompanyProfile | null): CompanyFormState {
     working_hours: profile.working_hours || '',
     compliance_notes: profile.compliance_notes || '',
     is_active: profile.is_active,
+    locale: typeof profile.config?.locale === 'string' ? profile.config.locale : 'ru-RU',
     configText: JSON.stringify(profile.config || {}, null, 2),
   }
+}
+
+function buildDocumentMetadata(form: DocumentFormState): Record<string, unknown> {
+  let metadata: Record<string, unknown> = {}
+  try {
+    metadata = JSON.parse(form.metadataText || '{}') as Record<string, unknown>
+  } catch {
+    metadata = {}
+  }
+  metadata.source = form.metadataSource || 'manual'
+  return metadata
+}
+
+function buildCompanyConfig(form: CompanyFormState): Record<string, unknown> {
+  let config: Record<string, unknown> = {}
+  try {
+    config = JSON.parse(form.configText || '{}') as Record<string, unknown>
+  } catch {
+    config = {}
+  }
+  config.locale = form.locale || 'ru-RU'
+  return config
 }
 
 export default function KnowledgeBasePage() {
@@ -255,14 +283,7 @@ export default function KnowledgeBasePage() {
     setDocumentSaving(true)
     setDocumentsError(null)
 
-    let metadata: Record<string, unknown>
-    try {
-      metadata = JSON.parse(documentForm.metadataText || '{}') as Record<string, unknown>
-    } catch {
-      setDocumentSaving(false)
-      setDocumentsError('Метаданные документа должны быть валидным JSON.')
-      return
-    }
+    const metadata = buildDocumentMetadata(documentForm)
 
     const payload = {
       title: documentForm.title,
@@ -321,14 +342,7 @@ export default function KnowledgeBasePage() {
     setCompanySaving(true)
     setCompanyError(null)
 
-    let config: Record<string, unknown>
-    try {
-      config = JSON.parse(companyForm.configText || '{}') as Record<string, unknown>
-    } catch {
-      setCompanySaving(false)
-      setCompanyError('Конфигурация компании должна быть валидным JSON.')
-      return
-    }
+    const config = buildCompanyConfig(companyForm)
 
     try {
       const response = await apiFetch<CompanyProfile>(
@@ -546,16 +560,32 @@ export default function KnowledgeBasePage() {
                 rows={4}
               />
             </label>
-
             <label>
-              Метаданные JSON
-              <textarea
-                value={documentForm.metadataText}
-                onChange={(event) => updateDocumentField('metadataText', event.target.value)}
-                rows={8}
-                className="mono-textarea"
-              />
+              Источник документа
+              <select
+                value={documentForm.metadataSource}
+                onChange={(event) => updateDocumentField('metadataSource', event.target.value)}
+              >
+                <option value="manual">Добавлен вручную</option>
+                <option value="import">Импортирован</option>
+                <option value="generated">Сгенерирован системой</option>
+              </select>
             </label>
+            <details className="advanced-settings">
+              <summary>Расширенные метаданные для техподдержки</summary>
+              <p className="compact-copy table-secondary">
+                Обычному пользователю этот JSON не нужен. Он нужен только если мы специально диагностируем источник или служебные поля документа.
+              </p>
+              <label>
+                Служебные метаданные
+                <textarea
+                  value={documentForm.metadataText}
+                  onChange={(event) => updateDocumentField('metadataText', event.target.value)}
+                  rows={8}
+                  className="mono-textarea"
+                />
+              </label>
+            </details>
 
             <div className="button-row">
               <button type="submit" className="primary-button" disabled={documentSaving}>
@@ -624,7 +654,7 @@ export default function KnowledgeBasePage() {
               />
             </label>
             <label>
-              Website URL
+              Сайт компании
               <input
                 value={companyForm.website_url}
                 onChange={(event) => updateCompanyField('website_url', event.target.value)}
@@ -655,14 +685,30 @@ export default function KnowledgeBasePage() {
               <span>Профиль компании активен</span>
             </label>
             <label>
-              Конфигурация JSON
-              <textarea
-                value={companyForm.configText}
-                onChange={(event) => updateCompanyField('configText', event.target.value)}
-                rows={8}
-                className="mono-textarea"
-              />
+              Язык профиля компании
+              <select
+                value={companyForm.locale}
+                onChange={(event) => updateCompanyField('locale', event.target.value)}
+              >
+                <option value="ru-RU">Русский</option>
+                <option value="en-US">English</option>
+              </select>
             </label>
+            <details className="advanced-settings">
+              <summary>Расширенная конфигурация для техподдержки</summary>
+              <p className="compact-copy table-secondary">
+                Этот JSON не нужен обычному пользователю. Мы оставили его только для редких служебных правок без отдельной миграции интерфейса.
+              </p>
+              <label>
+                Служебная конфигурация компании
+                <textarea
+                  value={companyForm.configText}
+                  onChange={(event) => updateCompanyField('configText', event.target.value)}
+                  rows={8}
+                  className="mono-textarea"
+                />
+              </label>
+            </details>
             <div className="button-row">
               <button type="submit" className="primary-button" disabled={companySaving}>
                 {companySaving ? 'Сохранение…' : 'Сохранить профиль компании'}

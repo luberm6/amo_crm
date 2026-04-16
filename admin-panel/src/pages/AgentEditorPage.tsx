@@ -128,6 +128,7 @@ type AgentFormState = {
   voiceProvider: 'elevenlabs' | 'gemini'
   telephonyRemoteLineId: string
   telephonyExtension: string
+  userLocale: string
   userSettingsText: string
   knowledgeDocumentIds: string[]
 }
@@ -159,6 +160,7 @@ const EMPTY_FORM: AgentFormState = {
   voiceProvider: 'gemini',
   telephonyRemoteLineId: '',
   telephonyExtension: '',
+  userLocale: 'ru-RU',
   userSettingsText: '{\n  "locale": "ru-RU",\n  "gemini_voice_name": "Aoede"\n}',
   knowledgeDocumentIds: [],
 }
@@ -188,6 +190,7 @@ function toFormState(settings: AgentSettingsRead): AgentFormState {
     voiceProvider: settings.voice_provider,
     telephonyRemoteLineId: settings.telephony_remote_line_id || settings.telephony_line?.remote_line_id || '',
     telephonyExtension: settings.telephony_extension || settings.telephony_line?.extension || '',
+    userLocale: typeof settings.user_settings?.locale === 'string' ? settings.user_settings.locale : 'ru-RU',
     userSettingsText: JSON.stringify(settings.user_settings || {}, null, 2),
     knowledgeDocumentIds: settings.knowledge_document_ids || [],
   }
@@ -195,6 +198,22 @@ function toFormState(settings: AgentSettingsRead): AgentFormState {
 
 function voiceStrategyFromProvider(provider: AgentFormState['voiceProvider']): 'gemini_primary' | 'tts_primary' {
   return provider === 'gemini' ? 'gemini_primary' : 'tts_primary'
+}
+
+function buildAgentUserSettings(form: AgentFormState): Record<string, unknown> {
+  let parsedSettings: Record<string, unknown> = {}
+  try {
+    parsedSettings = JSON.parse(form.userSettingsText || '{}') as Record<string, unknown>
+  } catch {
+    parsedSettings = {}
+  }
+
+  parsedSettings.locale = form.userLocale || 'ru-RU'
+  if (form.voiceProvider === 'gemini') {
+    parsedSettings.gemini_voice_name =
+      typeof parsedSettings.gemini_voice_name === 'string' ? parsedSettings.gemini_voice_name : 'Aoede'
+  }
+  return parsedSettings
 }
 
 function formatTelephonyLineLabel(line: TelephonyLine): string {
@@ -575,14 +594,7 @@ export default function AgentEditorPage() {
     setError(null)
     setKnowledgeError(null)
 
-    let parsedSettings: Record<string, unknown>
-    try {
-      parsedSettings = JSON.parse(form.userSettingsText || '{}') as Record<string, unknown>
-    } catch {
-      setSaving(false)
-      setError('Пользовательские настройки должны быть валидным JSON.')
-      return
-    }
+    const parsedSettings = buildAgentUserSettings(form)
 
     try {
       if (isCreateMode) {
@@ -960,18 +972,34 @@ export default function AgentEditorPage() {
               <div className="panel-header">
                 <div>
                   <p className="eyebrow">Пользовательские настройки</p>
-                  <h4>JSON-настройки рантайма</h4>
+                  <h4>Понятные настройки рантайма</h4>
                 </div>
               </div>
               <label>
-                Пользовательские настройки
-                <textarea
-                  value={form.userSettingsText}
-                  onChange={(event) => updateField('userSettingsText', event.target.value)}
-                  rows={8}
-                  className="mono-textarea"
-                />
+                Язык общения
+                <select
+                  value={form.userLocale}
+                  onChange={(event) => updateField('userLocale', event.target.value)}
+                >
+                  <option value="ru-RU">Русский</option>
+                  <option value="en-US">English</option>
+                </select>
               </label>
+              <details className="advanced-settings">
+                <summary>Расширенные настройки для техподдержки</summary>
+                <p className="compact-copy table-secondary">
+                  Обычному пользователю этот JSON не нужен. Он оставлен только для точечной отладки и редких служебных правок.
+                </p>
+                <label>
+                  Служебные параметры рантайма
+                  <textarea
+                    value={form.userSettingsText}
+                    onChange={(event) => updateField('userSettingsText', event.target.value)}
+                    rows={8}
+                    className="mono-textarea"
+                  />
+                </label>
+              </details>
             </section>
 
             <section className="panel-card form-section">
