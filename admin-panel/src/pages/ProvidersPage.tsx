@@ -373,11 +373,23 @@ function mapMangoReadinessWarning(warning: string) {
   if (warning.includes('MEDIA_GATEWAY_ENABLED=false')) {
     return 'Входящий AI-рантайм заблокирован: MEDIA_GATEWAY_ENABLED=false.'
   }
+  if (warning.includes('Inbound AI runtime is blocked because MEDIA_GATEWAY_ENABLED=false.')) {
+    return 'Входящий AI-рантайм заблокирован: MEDIA_GATEWAY_ENABLED=false.'
+  }
   if (warning.includes('MEDIA_GATEWAY_PROVIDER=freeswitch')) {
     return 'Входящий AI-рантайм ожидает MEDIA_GATEWAY_PROVIDER=freeswitch.'
   }
   if (warning.includes('MEDIA_GATEWAY_MODE=mock or esl_rtp')) {
     return 'Входящий AI-рантайм ожидает MEDIA_GATEWAY_MODE=mock или esl_rtp.'
+  }
+  if (warning.includes('FREESWITCH_ESL_HOST')) {
+    return 'Входящий AI-рантайм заблокирован: FREESWITCH_ESL_HOST не задан или всё ещё указывает на локальный адрес.'
+  }
+  if (warning.includes('FREESWITCH_ESL_PASSWORD')) {
+    return 'Входящий AI-рантайм заблокирован: FREESWITCH_ESL_PASSWORD не задан или всё ещё использует значение по умолчанию.'
+  }
+  if (warning.includes('FREESWITCH_RTP_IP')) {
+    return 'Входящий AI-рантайм заблокирован: FREESWITCH_RTP_IP не задан или всё ещё указывает на локальный адрес.'
   }
   if (warning.includes('MANGO_API_KEY') || warning.includes('MANGO_API_SALT')) {
     return 'Не заданы учётные данные Mango API. Синхронизация инвентаря и боевая маршрутизация недоступны.'
@@ -425,6 +437,8 @@ function mapActionableNextStepTitle(title: string) {
       return 'Задайте секрет проверки вебхука'
     case 'Set outbound source extension':
       return 'Задайте исходный внутренний номер'
+    case 'Set FreeSWITCH ESL host':
+      return 'Задайте адрес FreeSWITCH ESL'
     default:
       return title
   }
@@ -440,6 +454,8 @@ function mapActionableNextStepDescription(description: string) {
       return 'Перед проверкой входящего вебхука задайте MANGO_WEBHOOK_SECRET или MANGO_WEBHOOK_SHARED_SECRET.'
     case 'Outbound originate still needs a stable source extension when auto-discovery is unavailable.':
       return 'Для стабильного исходящего вызова всё ещё нужен явный исходный внутренний номер, если автоподбор недоступен.'
+    case 'Inbound AI runtime cannot attach to a real media gateway until FREESWITCH_ESL_HOST points to your reachable FreeSWITCH instance.':
+      return 'Входящий AI-рантайм не сможет подключиться к реальному media gateway, пока FREESWITCH_ESL_HOST не укажет на доступный инстанс FreeSWITCH.'
     default:
       return description
   }
@@ -455,6 +471,8 @@ function mapActionableNextStepCta(label: string) {
       return 'Задать MANGO_WEBHOOK_SECRET'
     case 'Set MANGO_FROM_EXT':
       return 'Задать MANGO_FROM_EXT'
+    case 'Set FREESWITCH_ESL_HOST':
+      return 'Задать FREESWITCH_ESL_HOST'
     default:
       return label
   }
