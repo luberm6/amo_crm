@@ -388,6 +388,7 @@ a.info-card:hover {
   color: var(--muted);
   font-size: 0.85rem;
   word-break: break-word;
+  line-height: 1.5;
 }
 
 .mono-inline {
@@ -601,6 +602,10 @@ a.info-card:hover {
   background: #efe7d7;
   color: var(--ink);
   font-size: 0.92rem;
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.35;
 }
 .status-pill.live { background: var(--accent-soft); color: var(--accent-strong); }
 .status-pill.error { background: var(--danger-soft); color: #7c2e20; }
@@ -648,12 +653,13 @@ a.info-card:hover {
   margin: 0 0 0.3rem;
 }
 .debug-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   gap: 0.5rem;
   padding: 0.1rem 0;
   font-size: 11px;
   border-bottom: 1px solid var(--line);
+  align-items: start;
 }
 .debug-group .debug-row:last-child {
   border-bottom: none;
@@ -663,7 +669,9 @@ a.info-card:hover {
   font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
   font-size: 11px;
   text-align: right;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .waveform-block {
   display: grid;
@@ -721,6 +729,7 @@ a.info-card:hover {
   padding: 0.9rem 1rem;
   background: rgba(255, 253, 247, 0.78);
   color: var(--muted);
+  line-height: 1.55;
 }
 
 .status-banner {
@@ -1093,6 +1102,7 @@ a.info-card:hover {
   color: var(--muted);
   text-align: right;
   overflow-wrap: anywhere;
+  line-height: 1.45;
 }
 
 .inline-link {
@@ -1180,6 +1190,14 @@ a.info-card:hover {
   .readiness-card-header,
   .inventory-item {
     flex-direction: column;
+  }
+
+  .debug-row {
+    grid-template-columns: 1fr;
+  }
+
+  .debug-row strong {
+    text-align: left;
   }
 
   .sidebar {

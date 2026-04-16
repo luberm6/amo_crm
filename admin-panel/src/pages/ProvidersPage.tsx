@@ -294,27 +294,27 @@ function mapMangoRequirementLabel(requirement: string) {
 function mapReadinessBlocker(blocker: string) {
   switch (blocker) {
     case 'Mango API credentials are missing.':
-      return 'Не заданы учётные данные Mango API.'
+      return 'Вставьте в Render `MANGO_API_KEY` и `MANGO_API_SALT`.'
     case 'Webhook secret is missing.':
-      return 'Не задан секрет вебхука.'
+      return 'Вставьте в Render `MANGO_WEBHOOK_SECRET` или `MANGO_WEBHOOK_SHARED_SECRET`.'
     case 'BACKEND_URL is not public.':
-      return 'BACKEND_URL не является публичным.'
+      return 'Сделайте `BACKEND_URL` публичным адресом Render, чтобы Mango мог доставлять вебхук.'
     case 'FROM_EXT is not configured and no stable fallback is available.':
-      return 'Не задан FROM_EXT и не найден стабильный fallback.'
+      return 'Задайте `MANGO_FROM_EXT` в Render, чтобы исходящий вызов шёл с предсказуемого внутреннего номера.'
     case 'Telephony runtime is not using a real Mango route.':
-      return 'Рантайм телефонии ещё не использует реальный маршрут Mango.'
+      return 'Переключите рантайм телефонии на Mango: `TELEPHONY_PROVIDER=mango`.'
     case 'MEDIA_GATEWAY_ENABLED=false.':
-      return 'MEDIA_GATEWAY_ENABLED=false.'
+      return 'Включите media gateway: `MEDIA_GATEWAY_ENABLED=true`.'
     case 'MEDIA_GATEWAY_PROVIDER must be freeswitch.':
-      return 'Ожидается MEDIA_GATEWAY_PROVIDER=freeswitch.'
+      return 'Для этого контура нужен `MEDIA_GATEWAY_PROVIDER=freeswitch`.'
     case 'MEDIA_GATEWAY_MODE must be mock or esl_rtp.':
-      return 'Ожидается MEDIA_GATEWAY_MODE=mock или esl_rtp.'
+      return 'Для реального Mango-контура поставьте `MEDIA_GATEWAY_MODE=esl_rtp`.'
     case 'FREESWITCH_ESL_HOST is missing or local-only.':
-      return 'FREESWITCH_ESL_HOST не задан или указывает на локальный адрес.'
+      return 'Укажите `FREESWITCH_ESL_HOST` в Render. Это должен быть доступный адрес FreeSWITCH, а не `127.0.0.1` или `localhost`.'
     case 'FREESWITCH_ESL_PASSWORD is missing or still default.':
-      return 'FREESWITCH_ESL_PASSWORD не задан или всё ещё равен значению по умолчанию.'
+      return 'Укажите `FREESWITCH_ESL_PASSWORD` в Render. Нельзя оставлять `ClueCon` или пустое значение.'
     case 'FREESWITCH_RTP_IP is missing or local-only.':
-      return 'FREESWITCH_RTP_IP не задан или указывает на локальный адрес.'
+      return 'Укажите `FREESWITCH_RTP_IP` в Render. Это должен быть reachable media IP, а не `127.0.0.1` или `localhost`.'
     default:
       return blocker
   }
@@ -437,8 +437,20 @@ function mapActionableNextStepTitle(title: string) {
       return 'Задайте секрет проверки вебхука'
     case 'Set outbound source extension':
       return 'Задайте исходный внутренний номер'
+    case 'Switch telephony runtime to Mango':
+      return 'Переключите рантайм телефонии на Mango'
+    case 'Enable media gateway':
+      return 'Включите media gateway'
+    case 'Use FreeSWITCH media gateway':
+      return 'Используйте FreeSWITCH как media gateway'
+    case 'Use a supported media gateway mode':
+      return 'Выберите поддерживаемый режим media gateway'
     case 'Set FreeSWITCH ESL host':
       return 'Задайте адрес FreeSWITCH ESL'
+    case 'Set FreeSWITCH ESL password':
+      return 'Задайте пароль FreeSWITCH ESL'
+    case 'Set FreeSWITCH RTP IP':
+      return 'Задайте RTP IP для FreeSWITCH'
     default:
       return title
   }
@@ -454,8 +466,20 @@ function mapActionableNextStepDescription(description: string) {
       return 'Перед проверкой входящего вебхука задайте MANGO_WEBHOOK_SECRET или MANGO_WEBHOOK_SHARED_SECRET.'
     case 'Outbound originate still needs a stable source extension when auto-discovery is unavailable.':
       return 'Для стабильного исходящего вызова всё ещё нужен явный исходный внутренний номер, если автоподбор недоступен.'
+    case 'The current telephony runtime is not using a real Mango route, so originate smoke would not hit PSTN.':
+      return 'Сейчас рантайм телефонии не использует реальный маршрут Mango, поэтому исходящая smoke-проверка не дойдёт до PSTN.'
+    case 'Inbound AI runtime requires MEDIA_GATEWAY_ENABLED=true before Mango inbound calls can reach the AI voice path.':
+      return 'Чтобы входящий Mango-вызов дошёл до AI-контура, включите `MEDIA_GATEWAY_ENABLED=true`.'
+    case 'Inbound AI runtime currently expects MEDIA_GATEWAY_PROVIDER=freeswitch.':
+      return 'Для этого входящего AI-контура backend сейчас ожидает `MEDIA_GATEWAY_PROVIDER=freeswitch`.'
+    case 'Inbound AI runtime currently supports MEDIA_GATEWAY_MODE=mock or esl_rtp.':
+      return 'Для реального звонка используйте `MEDIA_GATEWAY_MODE=esl_rtp`. `mock` подходит только для тестового контура без боевой телефонии.'
     case 'Inbound AI runtime cannot attach to a real media gateway until FREESWITCH_ESL_HOST points to your reachable FreeSWITCH instance.':
       return 'Входящий AI-рантайм не сможет подключиться к реальному media gateway, пока FREESWITCH_ESL_HOST не укажет на доступный инстанс FreeSWITCH.'
+    case 'Inbound AI runtime still uses a missing or default ESL password. Replace it with the real FreeSWITCH event socket password.':
+      return 'Входящий AI-рантайм всё ещё использует пустой или дефолтный ESL-пароль. Подставьте реальный пароль event socket из FreeSWITCH.'
+    case 'Inbound AI runtime still points RTP at a local-only address. Set FREESWITCH_RTP_IP to the reachable media IP.':
+      return 'Входящий AI-рантайм всё ещё смотрит RTP в локальный адрес. Задайте `FREESWITCH_RTP_IP` как reachable media IP.'
     default:
       return description
   }
@@ -471,8 +495,20 @@ function mapActionableNextStepCta(label: string) {
       return 'Задать MANGO_WEBHOOK_SECRET'
     case 'Set MANGO_FROM_EXT':
       return 'Задать MANGO_FROM_EXT'
+    case 'Set TELEPHONY_PROVIDER=mango':
+      return 'Задать TELEPHONY_PROVIDER=mango'
+    case 'Enable MEDIA_GATEWAY_ENABLED':
+      return 'Включить MEDIA_GATEWAY_ENABLED'
+    case 'Set MEDIA_GATEWAY_PROVIDER=freeswitch':
+      return 'Задать MEDIA_GATEWAY_PROVIDER=freeswitch'
+    case 'Set MEDIA_GATEWAY_MODE=mock or esl_rtp':
+      return 'Задать MEDIA_GATEWAY_MODE=esl_rtp'
     case 'Set FREESWITCH_ESL_HOST':
       return 'Задать FREESWITCH_ESL_HOST'
+    case 'Set FREESWITCH_ESL_PASSWORD':
+      return 'Задать FREESWITCH_ESL_PASSWORD'
+    case 'Set FREESWITCH_RTP_IP':
+      return 'Задать FREESWITCH_RTP_IP'
     default:
       return label
   }
