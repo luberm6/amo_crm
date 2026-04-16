@@ -87,6 +87,7 @@ async def test_browser_calls_endpoint_accepts_admin_token(session):
         patch.object(cfg.settings, "admin_email", "admin@example.com"),
         patch.object(cfg.settings, "admin_password", "super-secret"),
         patch.object(cfg.settings, "admin_auth_secret", "signing-secret"),
+        patch.object(cfg.settings, "environment", "production"),
         patch.object(cfg.settings, "gemini_api_key", "test-gemini-key"),
         patch.object(cfg.settings, "direct_voice_strategy", "gemini_primary"),
         patch.object(cfg.settings, "gemini_audio_output_enabled", True),
@@ -113,9 +114,72 @@ async def test_browser_calls_endpoint_accepts_admin_token(session):
                     json={"label": "sandbox"},
                     headers={"Authorization": f"Bearer {token}"},
                 )
+                call_id = create_resp.json()["call_id"]
+                await ac.post(
+                    f"/v1/browser-calls/{call_id}/stop",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
 
     assert create_resp.status_code == 201
     assert create_resp.json()["voice_strategy"] == "gemini_primary"
+
+
+@pytest.mark.anyio
+async def test_browser_calls_endpoint_still_starts_when_pstn_provider_is_missing(session):
+    app = create_app()
+
+    async def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    with (
+        patch.object(cfg.settings, "admin_email", "admin@example.com"),
+        patch.object(cfg.settings, "admin_password", "super-secret"),
+        patch.object(cfg.settings, "admin_auth_secret", "signing-secret"),
+        patch.object(cfg.settings, "environment", "production"),
+        patch.object(cfg.settings, "gemini_api_key", "test-gemini-key"),
+        patch.object(cfg.settings, "direct_voice_strategy", "gemini_primary"),
+        patch.object(cfg.settings, "gemini_audio_output_enabled", True),
+        patch.object(cfg.settings, "gemini_audio_input_enabled", True),
+        patch.object(cfg.settings, "direct_initial_greeting_enabled", False),
+        patch.object(cfg.settings, "telephony_provider", "mango"),
+        patch.object(cfg.settings, "mango_api_key", ""),
+        patch.object(cfg.settings, "mango_api_salt", ""),
+    ):
+        from tests.conftest import MockGeminiLiveClient
+        import app.api.deps as deps_module
+
+        deps_module._telephony_adapter = None
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as ac:
+            login_resp = await ac.post(
+                "/v1/admin/auth/login",
+                json={"email": "admin@example.com", "password": "super-secret"},
+            )
+            token = login_resp.json()["access_token"]
+            with patch(
+                "app.integrations.direct.session_manager.GeminiLiveClient",
+                new=MockGeminiLiveClient,
+            ):
+                create_resp = await ac.post(
+                    "/v1/browser-calls",
+                    json={"label": "sandbox"},
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                call_id = create_resp.json()["call_id"]
+                await ac.post(
+                    f"/v1/browser-calls/{call_id}/stop",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+
+    assert create_resp.status_code == 201
+    payload = create_resp.json()
+    assert payload["voice_strategy"] == "gemini_primary"
+    assert payload["active_voice_path"] in {"gemini_native", "tts_fallback"}
 
 
 @pytest.mark.anyio

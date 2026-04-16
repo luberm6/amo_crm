@@ -176,9 +176,13 @@ async def get_call_engine() -> AbstractCallEngine:
         from app.integrations.direct.engine import DirectGeminiEngine
         from app.integrations.browser.engine import BrowserDirectEngine
         from app.integrations.browser.telephony import BrowserTelephonyAdapter
+        from app.integrations.telephony.registry import (
+            ProviderNotFoundError,
+            build_default_registry,
+        )
 
+        voice = _build_voice_provider()
         if _telephony_adapter is None:
-            from app.integrations.telephony.registry import build_default_registry
             _telephony_registry = build_default_registry()
             telephony_preference = settings.telephony_provider
             if (
@@ -195,21 +199,36 @@ async def get_call_engine() -> AbstractCallEngine:
                     ),
                 )
                 telephony_preference = "mango"
-            _telephony_adapter = _telephony_registry.resolve(telephony_preference)
-        telephony = _telephony_adapter
-        voice = _build_voice_provider()
+            try:
+                _telephony_adapter = _telephony_registry.resolve(telephony_preference)
+            except ProviderNotFoundError:
+                if settings.is_testing:
+                    raise
+                log.warning(
+                    "deps.direct_engine.telephony_provider_missing_for_browser_runtime",
+                    requested_provider=telephony_preference,
+                    browser_runtime_available=True,
+                    note=(
+                        "PSTN Direct engine is unavailable, but browser sandbox can still "
+                        "start through BrowserTelephonyAdapter."
+                    ),
+                )
+                _telephony_adapter = None
 
-        engine = DirectGeminiEngine(
-            session_manager=_get_or_create_session_manager(),
-            telephony=telephony,
-            voice=voice,
-            # session_factory инжектируется позже через set_session_factory()
-            # т.к. здесь нет доступа к async_sessionmaker напрямую
-            session_factory=None,
-        )
-        # Lazy session factory: будет установлена при первом initiate_call
-        # через _inject_session_factory в RoutingCallEngine
-        direct_engine = engine
+        telephony = _telephony_adapter
+
+        if telephony is not None:
+            engine = DirectGeminiEngine(
+                session_manager=_get_or_create_session_manager(),
+                telephony=telephony,
+                voice=voice,
+                # session_factory инжектируется позже через set_session_factory()
+                # т.к. здесь нет доступа к async_sessionmaker напрямую
+                session_factory=None,
+            )
+            # Lazy session factory: будет установлена при первом initiate_call
+            # через _inject_session_factory в RoutingCallEngine
+            direct_engine = engine
         browser_engine = BrowserDirectEngine(
             session_manager=_get_or_create_session_manager(),
             telephony=BrowserTelephonyAdapter(get_browser_registry()),
