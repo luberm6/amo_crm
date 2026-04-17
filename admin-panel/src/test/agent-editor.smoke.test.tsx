@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { vi } from 'vitest'
@@ -950,5 +950,131 @@ describe('agent editor telephony smoke', () => {
     expect(screen.queryByText(/^Mango не настроен/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Не удалось загрузить список номеров Mango/i)).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Назад к Mango для этой линии/i })).toBeInTheDocument()
+  })
+
+  it('shows cached Mango employees when live extensions API is temporarily unavailable', async () => {
+    const aiLine = {
+      id: 'line-local-ai',
+      provider: 'mango',
+      provider_resource_id: '405622036',
+      remote_line_id: '405622036',
+      phone_number: '+79300350609',
+      schema_name: 'ДЛЯ ИИ менеджера',
+      display_name: 'ДЛЯ ИИ менеджера',
+      label: 'ДЛЯ ИИ менеджера',
+      extension: null,
+      is_active: true,
+      is_inbound_enabled: true,
+      is_outbound_enabled: false,
+      synced_at: '2026-04-13T10:00:00Z',
+      is_recommended_for_ai: true,
+      is_protected: false,
+    }
+
+    vi.spyOn(window, 'fetch').mockImplementation(async (input) => {
+      const path = typeof input === 'string' ? input : input.toString()
+
+      if (path.includes('/v1/admin/auth/me')) {
+        return new Response(JSON.stringify({ email: 'admin@example.com', role: 'admin' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/knowledge-documents?active_only=true')) {
+        return new Response(JSON.stringify({ items: [], total: 0 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/readiness')) {
+        return new Response(JSON.stringify({
+          api_configured: true,
+          webhook_secret_configured: true,
+          from_ext_configured: true,
+          from_ext_auto_discoverable: false,
+          warnings: [],
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/lines')) {
+        return new Response(JSON.stringify({ items: [aiLine], total: 1 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/telephony/mango/extensions')) {
+        return new Response(JSON.stringify({
+          items: [
+            {
+              provider_resource_id: '10',
+              extension: '10',
+              display_name: 'Основной исходящий внутренний номер',
+              line_provider_resource_id: null,
+              line_phone_number: null,
+            },
+            {
+              provider_resource_id: 'user-12',
+              extension: '12',
+              display_name: 'Каширина Ольга',
+              line_provider_resource_id: '405622036',
+              line_phone_number: '+79300350609',
+            },
+          ],
+          total: 2,
+          source: 'cached_inventory_fallback',
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (path.includes('/v1/agent-profiles/agent-1/settings')) {
+        return new Response(JSON.stringify({
+          agent_profile_id: 'agent-1',
+          name: 'Sales Alpha',
+          is_active: true,
+          system_prompt: 'Base prompt',
+          tone_rules: '',
+          business_rules: '',
+          sales_objectives: '',
+          greeting_text: '',
+          transfer_rules: '',
+          prohibited_promises: '',
+          voice_strategy: 'gemini_primary',
+          voice_provider: 'gemini',
+          telephony_provider: 'mango',
+          telephony_line_id: aiLine.id,
+          telephony_remote_line_id: aiLine.remote_line_id,
+          telephony_extension: '10',
+          telephony_line: aiLine,
+          user_settings: {},
+          knowledge_document_ids: [],
+          version: 1,
+          created_at: '2026-04-05T00:00:00Z',
+          updated_at: '2026-04-05T01:00:00Z',
+          assembled_prompt_preview: 'System Prompt:\\nBase prompt',
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      throw new Error(`Unexpected fetch path: ${path}`)
+    })
+
+    renderEditor()
+
+    await waitFor(() => {
+      expect(screen.getByText(/Показаны последние сохранённые внутренние номера/i)).toBeInTheDocument()
+    })
+
+    const extensionSelect = screen.getByLabelText(/Внутренний номер \/ сотрудник/i)
+    expect(within(extensionSelect).getByRole('option', { name: /Каширина Ольга/i })).toBeInTheDocument()
   })
 })

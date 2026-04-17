@@ -374,6 +374,11 @@ export default function AgentEditorPage() {
 
       if (extensionsResult.status === 'fulfilled') {
         setTelephonyExtensions(extensionsResult.value.items)
+        if (extensionsResult.value.source === 'cached_inventory_fallback') {
+          setTelephonyNotice(
+            'Сотрудники Mango временно недоступны через API. Показаны последние сохранённые внутренние номера из синхронизированного инвентаря.',
+          )
+        }
       } else if (extensionsResult.reason instanceof ApiError) {
         setTelephonyNotice(
           mapTelephonyApiError(
@@ -592,6 +597,11 @@ export default function AgentEditorPage() {
       try {
         const extensions = await apiFetch<TelephonyExtensionListResponse>('/v1/telephony/mango/extensions', {}, token)
         setTelephonyExtensions(extensions.items)
+        if (extensions.source === 'cached_inventory_fallback') {
+          setTelephonyNotice(
+            'Сотрудники Mango временно недоступны через API. Показаны последние сохранённые внутренние номера из синхронизированного инвентаря.',
+          )
+        }
       } catch (err) {
         setTelephonyNotice(mapTelephonyApiError(
           err,

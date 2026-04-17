@@ -17,6 +17,7 @@ from app.db.session import get_db
 from app.integrations.telephony.mango_client import (
     MangoClient,
     MangoApiConfig,
+    MangoClientError,
     MangoExtensionPayload,
     MangoLinePayload,
     _build_signed_payload,
@@ -70,6 +71,17 @@ class _FakeMangoClient:
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+@dataclass
+class _FailingExtensionsMangoClient(_FakeMangoClient):
+    async def list_extensions(self) -> list[MangoExtensionPayload]:
+        raise MangoClientError(
+            "Service disabled",
+            stage="http_response",
+            http_status=401,
+            detail={"message": "Service disabled"},
+        )
 
 
 @pytest.mark.anyio
@@ -162,6 +174,52 @@ async def test_mango_line_sync_uses_schema_name_as_display_fallback(session: Asy
     assert result.items[0].schema_name == "ДЛЯ ИИ менеджера"
     assert result.items[0].display_name == "ДЛЯ ИИ менеджера"
     assert result.items[0].label == "ДЛЯ ИИ менеджера"
+
+
+@pytest.mark.anyio
+async def test_mango_extensions_fall_back_to_cached_inventory_when_api_is_unavailable(session: AsyncSession) -> None:
+    line = await session.merge(
+        TelephonyLine(
+            provider="mango",
+            provider_resource_id="line-1",
+            phone_number="+74951234567",
+            schema_name="Основная линия",
+            display_name="Основная линия",
+            extension="12",
+            is_active=True,
+            is_inbound_enabled=True,
+            is_outbound_enabled=True,
+            raw_payload={
+                "matched_extension": {
+                    "id": "user-12",
+                    "general": {"name": "Каширина Ольга"},
+                }
+            },
+            synced_at=datetime.now(timezone.utc),
+        )
+    )
+    await session.flush()
+
+    client = _FailingExtensionsMangoClient(
+        config=MangoApiConfig(
+            base_url="https://app.mango-office.ru/vpbx",
+            api_key="api-key",
+            api_salt="api-salt",
+        ),
+        lines=[],
+        extensions=[],
+    )
+    service = MangoTelephonyService(session, client=client)
+
+    with patch.object(cfg.settings, "mango_from_ext", "10"):
+        result = await service.list_extensions()
+
+    assert result.source == "cached_inventory_fallback"
+    assert {item.extension for item in result.items} == {"10", "12"}
+    by_ext = {item.extension: item for item in result.items}
+    assert by_ext["12"].display_name == "Каширина Ольга"
+    assert by_ext["12"].line_provider_resource_id == line.provider_resource_id
+    assert by_ext["10"].display_name == "Основной исходящий внутренний номер"
 
 
 @pytest.mark.anyio

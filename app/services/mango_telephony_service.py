@@ -6,6 +6,7 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.exceptions import AppError
 from app.core.logging import get_logger
 from app.integrations.telephony.mango_client import (
@@ -41,6 +42,12 @@ class MangoLineSyncResult:
     synced_count: int
     deactivated_count: int
     synced_at: datetime
+
+
+@dataclass(frozen=True)
+class MangoExtensionListResult:
+    items: list[MangoExtensionPayload]
+    source: str
 
 
 class MangoTelephonyService:
@@ -155,11 +162,26 @@ class MangoTelephonyService:
             synced_at=synced_at,
         )
 
-    async def list_extensions(self) -> list[MangoExtensionPayload]:
+    async def list_extensions(self) -> MangoExtensionListResult:
         self._ensure_configured()
         try:
-            return await self.client.list_extensions()
+            return MangoExtensionListResult(
+                items=await self.client.list_extensions(),
+                source="mango_api",
+            )
         except MangoClientError as exc:
+            fallback_items = await self._fallback_extensions_from_inventory()
+            if fallback_items:
+                log.warning(
+                    "mango_extensions.fallback_inventory_used",
+                    stage=exc.stage,
+                    http_status=exc.http_status,
+                    fallback_count=len(fallback_items),
+                )
+                return MangoExtensionListResult(
+                    items=fallback_items,
+                    source="cached_inventory_fallback",
+                )
             raise MangoApiUnavailableError(
                 "Failed to load Mango extensions.",
                 detail=self._error_detail(exc),
@@ -171,6 +193,74 @@ class MangoTelephonyService:
                 "Mango telephony is not configured. Set MANGO_API_KEY and MANGO_API_SALT in the backend environment.",
                 detail=self.client.runtime_diagnostics(),
             )
+
+    async def _fallback_extensions_from_inventory(self) -> list[MangoExtensionPayload]:
+        lines = await self.repo.list_lines(provider="mango", active_only=True)
+        items: list[MangoExtensionPayload] = []
+        seen_extensions: set[str] = set()
+
+        for line in lines:
+            raw_payload = line.raw_payload or {}
+            matched_extension = raw_payload.get("matched_extension") if isinstance(raw_payload, dict) else None
+            matched_general = (
+                matched_extension.get("general")
+                if isinstance(matched_extension, dict) and isinstance(matched_extension.get("general"), dict)
+                else {}
+            )
+            matched_telephony = (
+                matched_extension.get("telephony")
+                if isinstance(matched_extension, dict) and isinstance(matched_extension.get("telephony"), dict)
+                else {}
+            )
+            extension = (line.extension or "").strip()
+            if not extension or extension in seen_extensions:
+                continue
+            items.append(
+                MangoExtensionPayload(
+                    provider_resource_id=(
+                        str(matched_extension.get("id") or matched_extension.get("user_id") or matched_extension.get("employee_id") or extension)
+                        if isinstance(matched_extension, dict)
+                        else extension
+                    ),
+                    extension=extension,
+                    display_name=(
+                        (matched_general.get("name") if isinstance(matched_general, dict) else None)
+                        or (matched_extension.get("name") if isinstance(matched_extension, dict) else None)
+                        or line.display_name
+                        or line.schema_name
+                    ),
+                    line_provider_resource_id=(
+                        str(matched_telephony.get("line_id") or matched_telephony.get("outgoing_line_id"))
+                        if isinstance(matched_telephony, dict) and (matched_telephony.get("line_id") or matched_telephony.get("outgoing_line_id"))
+                        else line.provider_resource_id
+                    ),
+                    line_phone_number=line.phone_number,
+                    raw_payload={
+                        "source": "cached_inventory_fallback",
+                        "line_provider_resource_id": line.provider_resource_id,
+                        "line_phone_number": line.phone_number,
+                    },
+                )
+            )
+            seen_extensions.add(extension)
+
+        from_ext = (settings.mango_from_ext or "").strip()
+        if from_ext and from_ext not in seen_extensions:
+            items.append(
+                MangoExtensionPayload(
+                    provider_resource_id=from_ext,
+                    extension=from_ext,
+                    display_name="Основной исходящий внутренний номер",
+                    line_provider_resource_id=None,
+                    line_phone_number=None,
+                    raw_payload={"source": "env_from_ext_fallback"},
+                )
+            )
+
+        deduped: dict[tuple[str, str], MangoExtensionPayload] = {}
+        for item in items:
+            deduped[(item.provider_resource_id, item.extension)] = item
+        return list(deduped.values())
 
     @staticmethod
     def _error_detail(exc: MangoClientError) -> dict[str, object]:

@@ -519,7 +519,7 @@ async def list_mango_extensions(
 ) -> TelephonyExtensionListRead:
     service = MangoTelephonyService(db)
     try:
-        items = await service.list_extensions()
+        result = await service.list_extensions()
     except AppError as exc:
         _handle_app_error(exc)
     finally:
@@ -533,9 +533,10 @@ async def list_mango_extensions(
                 line_provider_resource_id=item.line_provider_resource_id,
                 line_phone_number=item.line_phone_number,
             )
-            for item in items
+            for item in result.items
         ],
-        total=len(items),
+        total=len(result.items),
+        source=result.source,
     )
 
 
