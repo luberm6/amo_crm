@@ -14,10 +14,16 @@ All tests use the in-memory SQLite test DB and StubEngine.
 from __future__ import annotations
 
 import pytest
+from fastapi import FastAPI
+from httpx import ASGITransport
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_call_engine
+from app.integrations.call_engine.stub import StubEngine
+from app.models.agent_profile import AgentProfile
 from app.models.blocked_phone import BlockedPhone
+from app.repositories.agent_profile_repo import AgentProfileRepository
 from app.repositories.blocked_phone_repo import BlockedPhoneRepository
 
 
@@ -32,6 +38,39 @@ async def test_create_call_returns_201(client: AsyncClient):
     assert data["phone"] == "+79991234567"
     assert data["status"] in ("CREATED", "QUEUED", "COMPLETED")  # StubEngine → COMPLETED
     assert "id" in data
+
+
+@pytest.mark.anyio
+async def test_create_call_accepts_phone_number_and_agent_name(app: FastAPI, session: AsyncSession):
+    async def override_get_call_engine():
+        return StubEngine()
+
+    app.dependency_overrides[get_call_engine] = override_get_call_engine
+    agent = await AgentProfileRepository(AgentProfile, session).save(
+        AgentProfile(
+            name="Test Agent",
+            is_active=True,
+            system_prompt="Prompt",
+            voice_strategy="tts_primary",
+            voice_provider="elevenlabs",
+            config={},
+            version=1,
+            telephony_provider="mango",
+        )
+    )
+    await session.flush()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.post(
+            "/v1/calls",
+            json={"phone_number": "+79991234567", "agent_name": "Test Agent", "mode": "direct"},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["accepted"] is True
+        assert data["phone"] == "+79991234567"
+        assert data["agent_profile_id"] == str(agent.id)
+        assert data["call_id"] == data["id"]
 
 
 @pytest.mark.anyio

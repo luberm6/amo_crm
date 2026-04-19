@@ -10,11 +10,14 @@ POST   /calls/{call_id}/stop          — stop an active call
 import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.api.admin_auth import require_admin_auth
 from app.api.auth import require_api_key
 from app.api.deps import get_abuse_policy, get_call_service, get_db
 from app.core.exceptions import AppError
 from app.core.rate_limit import AbusePolicy
+from app.models.agent_profile import AgentProfile
 from app.models.steering import SteeringInstruction
 from app.models.transcript import TranscriptEntry
 from app.models.transfer import TransferRecord
@@ -25,6 +28,7 @@ from app.schemas.call import (
     CallActiveList,
     CallCardView,
     CallCreate,
+    CallCreateResponse,
     CallListItem,
     CallRead,
 )
@@ -35,19 +39,50 @@ router = APIRouter(prefix="/calls", tags=["calls"])
 def _handle_app_error(exc: AppError) -> None:
     """Convert domain errors to HTTP responses with consistent shape."""
     raise HTTPException(status_code=exc.status_code, detail=exc.to_dict())
+async def _require_calls_auth(request: Request) -> None:
+    auth_header = request.headers.get("Authorization")
+    if auth_header:
+        await require_admin_auth(authorization=auth_header)
+        return
+    api_key = request.headers.get("x-api-key")
+    await require_api_key(x_api_key=api_key)
+
+
 @router.post(
     "",
-    response_model=CallRead,
+    response_model=CallCreateResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_api_key)],
 )
 async def create_call(
     body: CallCreate,
     request: Request,
     policy: AbusePolicy = Depends(get_abuse_policy),
     service: CallService = Depends(get_call_service),
-) -> CallRead:
+    session: AsyncSession = Depends(get_db),
+) -> CallCreateResponse:
     """Initiate a new outbound AI call."""
+    await _require_calls_auth(request)
+
+    agent_profile_id = body.agent_profile_id
+    if body.agent_name:
+        agent = (
+            await session.execute(
+                select(AgentProfile)
+                .where(AgentProfile.name == body.agent_name)
+                .where(AgentProfile.is_active.is_(True))
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if agent is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "agent_not_found",
+                    "message": f"Active agent '{body.agent_name}' not found.",
+                },
+            )
+        agent_profile_id = agent.id
+
     # Rate limiting check
     api_key = request.headers.get("X-API-Key", "")
     ip = request.client.host if request.client else "unknown"
@@ -61,11 +96,22 @@ async def create_call(
         call = await service.create_call(
             raw_phone=body.phone,
             mode=body.mode,
-            agent_profile_id=body.agent_profile_id,
+            agent_profile_id=agent_profile_id,
         )
     except AppError as exc:
         _handle_app_error(exc)
-    return CallRead.model_validate(call)
+    return CallCreateResponse(
+        accepted=True,
+        id=call.id,
+        call_id=call.id,
+        phone=call.phone,
+        mode=call.mode,
+        status=call.status,
+        agent_profile_id=call.agent_profile_id,
+        route_used=call.route_used,
+        telephony_leg_id=call.telephony_leg_id,
+        error=None,
+    )
 @router.get("/active", response_model=CallActiveList)
 async def list_active_calls(
     service: CallService = Depends(get_call_service),

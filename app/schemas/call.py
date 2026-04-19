@@ -9,7 +9,7 @@ from typing import Any, Optional
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from app.models.call import CallMode, CallStatus
 from app.schemas.transcript import TranscriptEntryRead
@@ -21,18 +21,33 @@ class CallCreate(BaseModel):
         max_length=20,
         description="Subscriber phone number. Will be normalized to E.164.",
         examples=["+79991234567", "89991234567"],
+        validation_alias=AliasChoices("phone", "phone_number"),
     )
     mode: CallMode = Field(
         default=CallMode.AUTO,
         description="Call engine mode: auto | vapi | direct | browser",
     )
     agent_profile_id: Optional[uuid.UUID] = None
+    agent_name: Optional[str] = None
+
     @field_validator("phone")
     @classmethod
     def phone_not_blank(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("phone must not be blank")
         return v.strip()
+
+    @field_validator("agent_name")
+    @classmethod
+    def agent_name_not_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        cleaned = v.strip()
+        if not cleaned:
+            raise ValueError("agent_name must not be blank")
+        return cleaned
+
+
 class CallRead(BaseModel):
     """Response body for GET /calls/{id} and POST /calls."""
     model_config = {"from_attributes": True}
@@ -70,6 +85,21 @@ class CallRead(BaseModel):
             delta = completed - created
             data.__dict__["duration_seconds"] = int(delta.total_seconds())
         return data
+
+
+class CallCreateResponse(BaseModel):
+    accepted: bool
+    id: Optional[uuid.UUID] = None
+    call_id: Optional[uuid.UUID] = None
+    phone: Optional[str] = None
+    mode: Optional[CallMode] = None
+    status: Optional[str] = None
+    agent_profile_id: Optional[uuid.UUID] = None
+    route_used: Optional[str] = None
+    telephony_leg_id: Optional[str] = None
+    error: Optional[Any] = None
+
+
 class CallListItem(BaseModel):
     """Compact representation for list responses."""
     model_config = {"from_attributes": True}
