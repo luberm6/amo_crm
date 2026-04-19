@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from typing import TYPE_CHECKING, AsyncIterator, Optional
 
 import httpx
@@ -209,8 +210,11 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         resp_data = await self._post(
             "/commands/callback",
             {
-                "from[extension]": from_ext,
-                "to[number]": phone,
+                "command_id": f"direct-{uuid.uuid4().hex}",
+                "from": {
+                    "extension": from_ext,
+                },
+                "to_number": phone,
                 "line_number": line_number,
             },
         )
