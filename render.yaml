@@ -135,7 +135,13 @@ services:
         value: external
       - key: FREESWITCH_SIP_DOMAIN
         value: localhost
+      - key: FREESWITCH_SIP_IP
+        sync: false
       - key: FREESWITCH_RTP_IP
+        sync: false
+      - key: FREESWITCH_WS_URL
+        sync: false
+      - key: FREESWITCH_WSS_URL
         sync: false
       - key: FREESWITCH_RTP_PORT_START
         value: "16384"
@@ -227,6 +233,12 @@ services:
       - key: MANGO_API_KEY
         sync: false
       - key: MANGO_API_SALT
+        sync: false
+      - key: MANGO_SIP_LOGIN
+        sync: false
+      - key: MANGO_SIP_PASSWORD
+        sync: false
+      - key: MANGO_SIP_SERVER
         sync: false
       - key: MANGO_FROM_EXT
         sync: false

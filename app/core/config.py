@@ -120,6 +120,9 @@ class Settings(BaseSettings):
     mango_api_key: str = ""
     mango_api_salt: str = ""
     mango_api_base_url: str = "https://app.mango-office.ru/vpbx"
+    mango_sip_login: str = ""
+    mango_sip_password: str = ""
+    mango_sip_server: str = ""
     # Extension number for Click-to-Call origination (Direct mode)
     mango_from_ext: str = ""
     # Optional HMAC secret for Mango webhook signature verification.
@@ -153,7 +156,10 @@ class Settings(BaseSettings):
     freeswitch_esl_password: str = "ClueCon"
     freeswitch_sip_profile: str = "external"
     freeswitch_sip_domain: str = "localhost"
+    freeswitch_sip_ip: str = ""
     freeswitch_rtp_ip: str = "127.0.0.1"
+    freeswitch_ws_url: str = ""
+    freeswitch_wss_url: str = ""
     freeswitch_rtp_port_start: int = 16384
     freeswitch_rtp_port_end: int = 32768
     freeswitch_session_timeout_seconds: int = 120

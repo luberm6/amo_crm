@@ -6,13 +6,16 @@ CELERY := .venv/bin/celery
 NPM := npm
 COMPOSE_CMD := $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; elif command -v docker-compose >/dev/null 2>&1; then echo "docker-compose"; else echo "docker compose"; fi)
 
-.PHONY: bootstrap-local doctor-local infra-up infra-down migrate run-backend run-admin run-worker run-beat run-all
+.PHONY: bootstrap-local doctor-local sync-env infra-up infra-down migrate run-backend run-admin run-worker run-beat run-all
 
 bootstrap-local:
 	./scripts/bootstrap_local.sh
 
 doctor-local:
 	$(PYTHON) scripts/local_env_doctor.py
+
+sync-env:
+	python3 scripts/sync_freeswitch_env.py
 
 infra-up:
 	$(COMPOSE_CMD) up -d postgres redis

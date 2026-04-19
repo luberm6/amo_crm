@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_PYTHON="$ROOT_DIR/.venv/bin/python"
 ALEMBIC_BIN="$ROOT_DIR/.venv/bin/alembic"
 DOCTOR_SCRIPT="$ROOT_DIR/scripts/local_env_doctor.py"
+FREESWITCH_SYNC_SCRIPT="$ROOT_DIR/scripts/sync_freeswitch_env.py"
 BACKEND_ENV_TEMPLATE="$ROOT_DIR/.env.local.example"
 BACKEND_ENV_FILE="$ROOT_DIR/.env"
 FRONTEND_ENV_TEMPLATE="$ROOT_DIR/admin-panel/.env.example"
@@ -107,6 +108,8 @@ if [ ! -f "$BACKEND_ENV_FILE" ]; then
 else
   info ".env already exists — leaving it untouched"
 fi
+info "Applying canonical remote FreeSWITCH env values to .env"
+python3 "$FREESWITCH_SYNC_SCRIPT" --local-only
 warn_if_legacy_local_database_url
 
 if [ ! -f "$FRONTEND_ENV_FILE" ]; then

@@ -66,6 +66,32 @@ cp .env.example .env
 # Edit .env — at minimum set TELEGRAM_BOT_TOKEN
 ```
 
+Или одной командой сразу синхронизировать FreeSWITCH/Mango telephony env локально и в Render:
+
+```bash
+make sync-env
+```
+
+Что делает команда:
+- обновляет локальный `.env`
+- обновляет `.env.example`, `.env.local.example`, `.env.production.example`
+- отправляет те же telephony env в Render service `amo-crm-api`
+
+Нужные переменные для этого контура:
+- `FREESWITCH_ESL_HOST`
+- `FREESWITCH_ESL_PORT`
+- `FREESWITCH_ESL_PASSWORD`
+- `FREESWITCH_SIP_IP`
+- `FREESWITCH_RTP_IP`
+- `FREESWITCH_WS_URL`
+- `FREESWITCH_WSS_URL`
+- `MANGO_SIP_LOGIN`
+- `MANGO_SIP_PASSWORD`
+- `MANGO_SIP_SERVER`
+
+Если `RENDER_API_KEY` не задан, скрипт попробует взять Render auth из `~/.render/cli.yaml`.
+Если и его нет, локальный `.env` всё равно будет обновлён, а Render sync завершится понятной ошибкой.
+
 ### 3. Start infrastructure
 
 ```bash
