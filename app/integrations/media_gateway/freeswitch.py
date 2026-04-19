@@ -389,9 +389,20 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             "esl_host": self._cfg.esl_host,
             "esl_port": self._cfg.esl_port,
             "esl_target": f"{self._cfg.esl_host}:{self._cfg.esl_port}",
+            "esl_password_masked": self._mask_secret(self._cfg.esl_password),
+            "esl_password_is_default": self._cfg.esl_password == "ClueCon",
             "esl_dns": diag,
             "last_esl_error": self._last_esl_error,
         }
+
+    @staticmethod
+    def _mask_secret(secret: str) -> str:
+        value = (secret or "").strip()
+        if not value:
+            return ""
+        if len(value) <= 4:
+            return "*" * len(value)
+        return f"{value[:2]}***{value[-2:]}"
 
     async def _esl_target_diagnostics(self) -> dict[str, Any]:
         loop = asyncio.get_running_loop()
