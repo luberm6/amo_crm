@@ -103,7 +103,6 @@ async def test_mango_event_command_id_alias_updates_provisional_leg(session: Asy
 async def test_wait_for_answered_webhook_first():
     store = InMemoryMangoLegStateStore()
     adapter = _make_adapter(store)
-    adapter._poll_leg_state = AsyncMock(return_value=None)
 
     async def emit_answer():
         await asyncio.sleep(0.05)
@@ -116,19 +115,20 @@ async def test_wait_for_answered_webhook_first():
 
 
 @pytest.mark.anyio
-async def test_wait_for_answered_with_polling_fallback_delayed_answer():
+async def test_wait_for_answered_does_not_poll_stats_endpoint():
     store = InMemoryMangoLegStateStore()
     adapter = _make_adapter(store)
-    adapter._poll_leg_state = AsyncMock(
-        side_effect=[
-            TelephonyLegState.INITIATING,
-            TelephonyLegState.RINGING,
-            TelephonyLegState.ANSWERED,
-        ]
-    )
+    adapter._http.get = AsyncMock(side_effect=AssertionError("stats polling must stay disabled"))
 
-    state = await adapter.wait_for_answered("leg-300", timeout=2.0)
+    async def emit_answer():
+        await asyncio.sleep(0.05)
+        await store.set_leg_state("leg-300", TelephonyLegState.ANSWERED)
+
+    task = asyncio.create_task(emit_answer())
+    state = await adapter.wait_for_answered("leg-300", timeout=1.0)
+    await task
     assert state == TelephonyLegState.ANSWERED
+    adapter._http.get.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -136,7 +136,6 @@ async def test_wait_for_answered_uses_freeswitch_correlation_before_polling():
     store = InMemoryMangoLegStateStore()
     corr = InMemoryMangoFreeSwitchCorrelationStore()
     adapter = _make_adapter(store, corr)
-    adapter._poll_leg_state = AsyncMock(return_value=TelephonyLegState.RINGING)
 
     async def emit_fs_answer():
         await asyncio.sleep(0.05)
@@ -158,7 +157,6 @@ async def test_wait_for_answered_hangup_before_answer_from_freeswitch():
     store = InMemoryMangoLegStateStore()
     corr = InMemoryMangoFreeSwitchCorrelationStore()
     adapter = _make_adapter(store, corr)
-    adapter._poll_leg_state = AsyncMock(return_value=TelephonyLegState.RINGING)
 
     async def emit_fs_hangup():
         await asyncio.sleep(0.05)
@@ -200,7 +198,6 @@ async def test_stale_mango_state_recovered_from_freeswitch_correlation():
     store = InMemoryMangoLegStateStore()
     corr = InMemoryMangoFreeSwitchCorrelationStore()
     adapter = _make_adapter(store, corr)
-    adapter._poll_leg_state = AsyncMock(return_value=None)
     await corr.set_freeswitch_state(
         mango_leg_id="leg-stale",
         state=TelephonyLegState.ANSWERED,

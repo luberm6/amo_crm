@@ -289,7 +289,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             accepted={TelephonyLegState.ANSWERED, TelephonyLegState.BRIDGED},
             failed={TelephonyLegState.FAILED, TelephonyLegState.TERMINATED},
             timeout=wait_timeout,
-            poll_fallback=lambda: self._poll_answer_state_with_fallback(leg_id),
+            poll_fallback=lambda: self._wait_for_leg_state_via_correlation(leg_id),
         )
         if state is None:
             raise TelephonyError(
@@ -393,13 +393,12 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             await self._state.set_leg_state(leg_id, corr_state)
             return corr_state
 
-        mapped = await self._poll_leg_state(leg_id)
-        if mapped is None:
-            return TelephonyLegState.FAILED
-        await self._state.set_leg_state(leg_id, mapped)
-        return mapped
+        return TelephonyLegState.FAILED
 
-    async def _poll_answer_state_with_fallback(self, leg_id: str) -> Optional[TelephonyLegState]:
+    async def _wait_for_leg_state_via_correlation(
+        self,
+        leg_id: str,
+    ) -> Optional[TelephonyLegState]:
         corr_state = await self._corr.get_effective_state(leg_id)
         if corr_state in {
             TelephonyLegState.ANSWERED,
@@ -408,7 +407,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             TelephonyLegState.FAILED,
         }:
             return corr_state
-        return await self._poll_leg_state(leg_id)
+        return None
 
     async def _wait_for_bridge_confirmation(self, customer_leg_id: str, manager_leg_id: str) -> None:
         bridge_key = MangoEventProcessor.bridge_key(customer_leg_id, manager_leg_id)
@@ -465,34 +464,3 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             return resp.json()
         except Exception:
             return {"raw": resp.text}
-
-    async def _poll_leg_state(self, leg_id: str) -> Optional[TelephonyLegState]:
-        try:
-            # Mango stats uses signed GET params in production. We keep compatibility
-            # with existing integration and map common response shapes.
-            resp = await self._http.get(f"/stats/request?recording_id={leg_id}")
-            if resp.status_code >= 400:
-                return None
-            data = resp.json()
-            raw_state = (data.get("data", [{}])[0] or {}).get("state", "")
-            return _MANGO_STATE_MAP.get(str(raw_state), None)
-        except Exception as exc:
-            log.debug("mango_telephony.poll_state_error", leg_id=leg_id, error=str(exc))
-            return None
-
-
-_MANGO_STATE_MAP: dict[str, TelephonyLegState] = {
-    "0": TelephonyLegState.INITIATING,
-    "1": TelephonyLegState.RINGING,
-    "2": TelephonyLegState.ANSWERED,
-    "3": TelephonyLegState.BRIDGED,
-    "4": TelephonyLegState.TERMINATED,
-    "5": TelephonyLegState.FAILED,
-    "Initiating": TelephonyLegState.INITIATING,
-    "Ringing": TelephonyLegState.RINGING,
-    "Connected": TelephonyLegState.ANSWERED,
-    "OnHold": TelephonyLegState.BRIDGED,
-    "Disconnected": TelephonyLegState.TERMINATED,
-    "Busy": TelephonyLegState.FAILED,
-    "Unavailable": TelephonyLegState.FAILED,
-}
