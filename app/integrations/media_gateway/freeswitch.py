@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import errno
 import random
 import socket
 import struct
@@ -140,6 +141,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         self._esl_reader_task: Optional[asyncio.Task] = None
         self._esl_connect_lock = asyncio.Lock()
         self._corr = get_mango_freeswitch_correlation_store()
+        self._last_esl_error: Optional[dict[str, Any]] = None
 
     async def attach_session(
         self,
@@ -378,12 +380,78 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         await self._queue_event(session_id, MediaEvent(type=MediaEventType.HANGUP, reason=reason))
 
     async def health(self) -> dict[str, Any]:
+        diag = await self._esl_target_diagnostics()
         return {
             "provider": "freeswitch",
             "mode": self._cfg.mode,
             "active_sessions": len(self._handles),
             "esl_connected": bool(self._esl is not None and self._esl.connected),
+            "esl_host": self._cfg.esl_host,
+            "esl_port": self._cfg.esl_port,
+            "esl_target": f"{self._cfg.esl_host}:{self._cfg.esl_port}",
+            "esl_dns": diag,
+            "last_esl_error": self._last_esl_error,
         }
+
+    async def _esl_target_diagnostics(self) -> dict[str, Any]:
+        loop = asyncio.get_running_loop()
+        try:
+            addrinfo = await asyncio.wait_for(
+                loop.getaddrinfo(
+                    self._cfg.esl_host,
+                    self._cfg.esl_port,
+                    type=socket.SOCK_STREAM,
+                ),
+                timeout=float(self._cfg.esl_connect_timeout_seconds),
+            )
+        except asyncio.TimeoutError:
+            return {
+                "status": "timeout",
+                "host": self._cfg.esl_host,
+                "port": self._cfg.esl_port,
+            }
+        except socket.gaierror as exc:
+            return {
+                "status": "dns_failure",
+                "host": self._cfg.esl_host,
+                "port": self._cfg.esl_port,
+                "error": str(exc),
+            }
+        except Exception as exc:
+            return {
+                "status": "error",
+                "host": self._cfg.esl_host,
+                "port": self._cfg.esl_port,
+                "error": str(exc),
+            }
+
+        targets: list[str] = []
+        for item in addrinfo:
+            sockaddr = item[4]
+            if isinstance(sockaddr, tuple) and len(sockaddr) >= 2:
+                targets.append(f"{sockaddr[0]}:{sockaddr[1]}")
+
+        return {
+            "status": "resolved",
+            "host": self._cfg.esl_host,
+            "port": self._cfg.esl_port,
+            "targets": targets,
+        }
+
+    @staticmethod
+    def _classify_esl_error(exc: Exception) -> str:
+        if isinstance(exc, asyncio.TimeoutError):
+            return "timeout"
+        if isinstance(exc, socket.gaierror):
+            return "dns_failure"
+        if isinstance(exc, ConnectionRefusedError):
+            return "connection_refused"
+        if isinstance(exc, OSError):
+            if exc.errno == errno.ECONNREFUSED:
+                return "connection_refused"
+            if exc.errno in {errno.ETIMEDOUT, errno.EHOSTUNREACH, errno.ENETUNREACH}:
+                return "timeout"
+        return exc.__class__.__name__.lower()
 
     def get_session_correlation(self, session_id: str) -> Optional[dict[str, Any]]:
         corr = self._correlation.get(session_id)
@@ -500,16 +568,19 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             attempts = 0
             while True:
                 attempts += 1
+                diag = await self._esl_target_diagnostics()
                 try:
                     client = self._build_esl_client()
                     await client.connect()
                     await client.subscribe_events(self._cfg.esl_events)
                     self._esl = client
+                    self._last_esl_error = None
                     log.info(
                         "freeswitch_gateway.esl_connected",
                         host=self._cfg.esl_host,
                         port=self._cfg.esl_port,
                         attempts=attempts,
+                        dns=diag,
                     )
                     if self._esl_reader_task is None or self._esl_reader_task.done():
                         self._esl_reader_task = asyncio.create_task(
@@ -519,10 +590,23 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
                     return
                 except Exception as exc:
                     inc_fs_error("esl_connect")
+                    self._last_esl_error = {
+                        "kind": self._classify_esl_error(exc),
+                        "error": str(exc),
+                        "host": self._cfg.esl_host,
+                        "port": self._cfg.esl_port,
+                        "target": f"{self._cfg.esl_host}:{self._cfg.esl_port}",
+                        "dns": diag,
+                    }
                     log.error(
                         "freeswitch_gateway.esl_connect_failed",
                         attempt=attempts,
                         error=str(exc),
+                        kind=self._last_esl_error["kind"],
+                        host=self._cfg.esl_host,
+                        port=self._cfg.esl_port,
+                        target=self._last_esl_error["target"],
+                        dns=diag,
                     )
                     if not self._cfg.esl_reconnect_enabled:
                         raise MediaGatewayNotReadyError(

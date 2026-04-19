@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Optional
 
 import redis.asyncio as aioredis
@@ -378,7 +379,8 @@ class DirectVoicePreflightService:
             return
 
         try:
-            await ensure_connected()
+            timeout_seconds = max(1.0, float(settings.freeswitch_esl_connect_timeout_seconds) + 1.0)
+            await asyncio.wait_for(ensure_connected(), timeout=timeout_seconds)
             health = await health_fn()
             if health.get("esl_connected"):
                 self._add_check(
@@ -397,12 +399,17 @@ class DirectVoicePreflightService:
                     details=health,
                 )
         except Exception as exc:
+            details = {"error": str(exc)}
+            try:
+                details["health"] = await health_fn()
+            except Exception:
+                pass
             self._add_check(
                 checks,
                 "freeswitch_esl",
                 "fail",
                 "FreeSWITCH ESL connection failed.",
-                details={"error": str(exc)},
+                details=details,
             )
 
     @staticmethod
