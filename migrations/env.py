@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.db.base import Base
 import app.models  # noqa: F401 — side-effect: registers all model metadata
 
-from app.core.config import settings
+from app.core.config import _normalize_database_url, settings
 
 # Alembic config object
 config = context.config
@@ -34,9 +34,10 @@ def _runtime_database_url() -> str:
     Prefer raw process env on Render pre-deploy so Alembic does not accidentally
     fall back to local development defaults from .env templates.
     """
-    render_db = (os.environ.get("RENDER_DATABASE_URL") or "").strip()
-    database_url = (os.environ.get("DATABASE_URL") or "").strip()
-    return render_db or database_url or settings.database_url
+    render_db = _normalize_database_url((os.environ.get("RENDER_DATABASE_URL") or "").strip())
+    database_url = _normalize_database_url((os.environ.get("DATABASE_URL") or "").strip())
+    settings_database_url = _normalize_database_url(settings.database_url)
+    return render_db or database_url or settings_database_url
 
 
 def run_migrations_offline() -> None:
