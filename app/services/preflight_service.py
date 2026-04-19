@@ -89,9 +89,9 @@ class DirectVoicePreflightService:
             self._add_check(
                 checks,
                 "redis",
-                "fail",
-                "Redis is not reachable.",
-                details={"error": str(exc)},
+                "warn",
+                "Redis is not reachable. Runtime will use in-memory fallbacks for Direct session state.",
+                details={"error": str(exc), "fallback_mode": "in_memory"},
             )
         finally:
             if client is not None:

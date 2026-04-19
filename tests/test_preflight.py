@@ -154,6 +154,47 @@ async def test_direct_voice_preflight_fails_without_outbound_voice_path(session,
         _restore_settings(old)
 
 
+@pytest.mark.anyio
+async def test_direct_voice_preflight_warns_when_redis_is_unavailable(session, monkeypatch):
+    old = _set_direct_voice_settings()
+    try:
+        service = DirectVoicePreflightService(session)
+
+        async def _db_ok(checks):
+            service._add_check(checks, "database", "pass", "Database is reachable.")
+
+        monkeypatch.setattr(service, "_check_database", _db_ok)
+        monkeypatch.setattr(
+            "app.services.preflight_service.aioredis.from_url",
+            lambda *args, **kwargs: SimpleNamespace(
+                ping=AsyncMock(side_effect=RuntimeError("redis down")),
+                aclose=AsyncMock(return_value=None),
+            ),
+        )
+        monkeypatch.setattr(
+            service,
+            "_resolve_telephony_adapter",
+            lambda checks: SimpleNamespace(
+                capabilities=SimpleNamespace(
+                    supports_outbound_call=True,
+                    supports_audio_bridge=True,
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            "app.services.preflight_service.get_media_gateway",
+            lambda: _FakeGateway(),
+        )
+
+        payload = await service.run()
+
+        redis_check = next(c for c in payload["checks"] if c["name"] == "redis")
+        assert redis_check["status"] == "warn"
+        assert redis_check["details"]["fallback_mode"] == "in_memory"
+    finally:
+        _restore_settings(old)
+
+
 def test_effective_backend_url_prefers_render_public_url_when_local_backend_url():
     old_backend_url = settings.backend_url
     old_render_external_url = settings.render_external_url
