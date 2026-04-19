@@ -223,6 +223,116 @@ async def test_mango_extensions_fall_back_to_cached_inventory_when_api_is_unavai
 
 
 @pytest.mark.anyio
+async def test_mango_sync_preserves_cached_extension_when_live_extensions_are_unavailable(session: AsyncSession) -> None:
+    await session.merge(
+        TelephonyLine(
+            provider="mango",
+            provider_resource_id="405622036",
+            phone_number="+79300350609",
+            schema_name="ДЛЯ ИИ менеджера",
+            display_name="ДЛЯ ИИ менеджера",
+            extension="10",
+            is_active=True,
+            is_inbound_enabled=True,
+            is_outbound_enabled=True,
+            raw_payload={
+                "id": "405622036",
+                "number": "79300350609",
+                "matched_extension": {
+                    "id": "user-10",
+                    "name": "Каширина Ольга",
+                    "telephony": {"line_id": "405622036"},
+                },
+            },
+            synced_at=datetime.now(timezone.utc),
+        )
+    )
+    await session.flush()
+
+    client = _FailingExtensionsMangoClient(
+        config=MangoApiConfig(
+            base_url="https://app.mango-office.ru/vpbx",
+            api_key="api-key",
+            api_salt="api-salt",
+        ),
+        lines=[
+            MangoLinePayload(
+                provider_resource_id="405622036",
+                phone_number="+79300350609",
+                schema_name="ДЛЯ ИИ менеджера",
+                display_name=None,
+                extension=None,
+                is_active=True,
+                is_inbound_enabled=True,
+                is_outbound_enabled=False,
+                raw_payload={"id": "405622036", "number": "79300350609"},
+            )
+        ],
+        extensions=[],
+    )
+    service = MangoTelephonyService(session, client=client)
+
+    result = await service.sync_lines()
+
+    assert result.items[0].extension == "10"
+    assert result.items[0].is_outbound_enabled is True
+    assert result.items[0].raw_payload["matched_extension"]["id"] == "user-10"
+
+
+@pytest.mark.anyio
+async def test_mango_extensions_merge_live_api_with_cached_inventory_metadata(session: AsyncSession) -> None:
+    await session.merge(
+        TelephonyLine(
+            provider="mango",
+            provider_resource_id="405622036",
+            phone_number="+79300350609",
+            schema_name="ДЛЯ ИИ менеджера",
+            display_name="ДЛЯ ИИ менеджера",
+            extension="10",
+            is_active=True,
+            is_inbound_enabled=True,
+            is_outbound_enabled=True,
+            raw_payload={
+                "matched_extension": {
+                    "id": "user-10",
+                    "general": {"name": "Каширина Ольга"},
+                    "telephony": {"line_id": "405622036"},
+                }
+            },
+            synced_at=datetime.now(timezone.utc),
+        )
+    )
+    await session.flush()
+
+    client = _FakeMangoClient(
+        config=MangoApiConfig(
+            base_url="https://app.mango-office.ru/vpbx",
+            api_key="api-key",
+            api_salt="api-salt",
+        ),
+        lines=[],
+        extensions=[
+            MangoExtensionPayload(
+                provider_resource_id="10",
+                extension="10",
+                display_name="Каширина Ольга",
+                line_provider_resource_id=None,
+                line_phone_number=None,
+                raw_payload={"source": "mango_api"},
+            )
+        ],
+    )
+    service = MangoTelephonyService(session, client=client)
+
+    result = await service.list_extensions()
+
+    assert result.source == "mango_api"
+    assert len(result.items) == 1
+    assert result.items[0].line_provider_resource_id == "405622036"
+    assert result.items[0].line_phone_number == "+79300350609"
+
+
+@pytest.mark.anyio
 async def test_agent_settings_api_saves_mango_binding_and_knowledge(
     session: AsyncSession,
     admin_auth_settings,

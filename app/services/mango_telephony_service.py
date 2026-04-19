@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -120,18 +120,26 @@ class MangoTelephonyService:
                     phone_number=remote.phone_number,
                 )
 
+            previous_payload = dict(line.raw_payload or {}) if line.raw_payload else {}
+            previous_matched_extension = (
+                previous_payload.get("matched_extension")
+                if isinstance(previous_payload.get("matched_extension"), dict)
+                else None
+            )
             line.phone_number = remote.phone_number
             line.schema_name = remote.schema_name
             line.display_name = remote.display_name or remote.schema_name or remote.phone_number
             line.extension = remote.extension or (
-                matched_extension.extension if matched_extension is not None else None
+                matched_extension.extension if matched_extension is not None else line.extension
             )
             line.is_active = remote.is_active
             line.is_inbound_enabled = remote.is_inbound_enabled
-            line.is_outbound_enabled = remote.is_outbound_enabled or matched_extension is not None
+            line.is_outbound_enabled = remote.is_outbound_enabled or matched_extension is not None or bool(line.extension)
             line.raw_payload = dict(remote.raw_payload or {})
             if matched_extension is not None:
                 line.raw_payload.setdefault("matched_extension", matched_extension.raw_payload)
+            elif previous_matched_extension is not None:
+                line.raw_payload.setdefault("matched_extension", previous_matched_extension)
             line.synced_at = synced_at
             await self.repo.save(line)
 
@@ -165,9 +173,11 @@ class MangoTelephonyService:
     async def list_extensions(self) -> MangoExtensionListResult:
         self._ensure_configured()
         try:
+            live_items = await self.client.list_extensions()
+            fallback_items = await self._fallback_extensions_from_inventory()
             return MangoExtensionListResult(
-                items=await self.client.list_extensions(),
-                source="mango_api",
+                items=self._merge_extension_items(live_items, fallback_items),
+                source="mango_api" if live_items else ("cached_inventory_fallback" if fallback_items else "mango_api"),
             )
         except MangoClientError as exc:
             fallback_items = await self._fallback_extensions_from_inventory()
@@ -261,6 +271,41 @@ class MangoTelephonyService:
         for item in items:
             deduped[(item.provider_resource_id, item.extension)] = item
         return list(deduped.values())
+
+    @staticmethod
+    def _merge_extension_items(
+        live_items: list[MangoExtensionPayload],
+        fallback_items: list[MangoExtensionPayload],
+    ) -> list[MangoExtensionPayload]:
+        merged_by_extension: dict[str, MangoExtensionPayload] = {item.extension: item for item in fallback_items}
+
+        for item in live_items:
+            fallback = merged_by_extension.get(item.extension)
+            if fallback is None:
+                merged_by_extension[item.extension] = item
+                continue
+            merged_by_extension[item.extension] = MangoExtensionPayload(
+                provider_resource_id=item.provider_resource_id or fallback.provider_resource_id,
+                extension=item.extension or fallback.extension,
+                display_name=item.display_name or fallback.display_name,
+                line_provider_resource_id=item.line_provider_resource_id or fallback.line_provider_resource_id,
+                line_phone_number=item.line_phone_number or fallback.line_phone_number,
+                raw_payload=MangoTelephonyService._merge_extension_raw_payload(item.raw_payload, fallback.raw_payload),
+            )
+
+        return sorted(merged_by_extension.values(), key=lambda extension: (extension.extension, extension.provider_resource_id))
+
+    @staticmethod
+    def _merge_extension_raw_payload(
+        live_payload: dict[str, Any],
+        fallback_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        merged: dict[str, Any] = {}
+        if isinstance(fallback_payload, dict):
+            merged.update(fallback_payload)
+        if isinstance(live_payload, dict):
+            merged.update(live_payload)
+        return merged
 
     @staticmethod
     def _error_detail(exc: MangoClientError) -> dict[str, object]:
