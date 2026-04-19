@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import errno
+import socket
 from dataclasses import dataclass
 from typing import Optional
 
@@ -38,19 +40,45 @@ class FreeSwitchEslClient:
         self._write_lock = asyncio.Lock()
 
     async def connect(self) -> None:
-        self._reader, self._writer = await asyncio.wait_for(
-            asyncio.open_connection(self._host, self._port),
-            timeout=self._connect_timeout,
+        dns_result = await self._resolve_target()
+        log.info(
+            "freeswitch_esl.connect_attempt",
+            host=self._host,
+            port=self._port,
+            dns=dns_result,
+            target=f"{self._host}:{self._port}",
         )
-        greeting = await self.read_frame()
-        if greeting.headers.get("Content-Type") != "auth/request":
-            raise RuntimeError(f"Unexpected ESL greeting: {greeting.headers}")
-        await self.send_raw(f"auth {self._password}\n\n")
-        auth_reply = await self.read_frame()
-        reply = auth_reply.headers.get("Reply-Text", "")
-        if not reply.startswith("+OK"):
-            raise RuntimeError(f"ESL auth failed: {reply}")
-        log.info("freeswitch_esl.connected", host=self._host, port=self._port)
+        try:
+            self._reader, self._writer = await asyncio.wait_for(
+                asyncio.open_connection(self._host, self._port),
+                timeout=self._connect_timeout,
+            )
+            greeting = await self.read_frame()
+            if greeting.headers.get("Content-Type") != "auth/request":
+                raise RuntimeError(f"Unexpected ESL greeting: {greeting.headers}")
+            await self.send_raw(f"auth {self._password}\n\n")
+            auth_reply = await self.read_frame()
+            reply = auth_reply.headers.get("Reply-Text", "")
+            if not reply.startswith("+OK"):
+                raise RuntimeError(f"ESL auth failed: {reply}")
+            log.info(
+                "freeswitch_esl.connected",
+                host=self._host,
+                port=self._port,
+                dns=dns_result,
+                target=f"{self._host}:{self._port}",
+            )
+        except Exception as exc:
+            log.error(
+                "freeswitch_esl.connect_failed",
+                host=self._host,
+                port=self._port,
+                dns=dns_result,
+                target=f"{self._host}:{self._port}",
+                error=str(exc),
+                kind=self._classify_error(exc),
+            )
+            raise
 
     @property
     def connected(self) -> bool:
@@ -98,6 +126,61 @@ class FreeSwitchEslClient:
         reply = frame.headers.get("Reply-Text", "")
         if reply and not reply.startswith("+OK"):
             raise RuntimeError(f"ESL event subscribe rejected: {reply}")
+
+    async def _resolve_target(self) -> dict[str, object]:
+        loop = asyncio.get_running_loop()
+        try:
+            addrinfo = await asyncio.wait_for(
+                loop.getaddrinfo(self._host, self._port, type=socket.SOCK_STREAM),
+                timeout=self._connect_timeout,
+            )
+        except asyncio.TimeoutError:
+            return {
+                "status": "timeout",
+                "host": self._host,
+                "port": self._port,
+            }
+        except socket.gaierror as exc:
+            return {
+                "status": "dns_failure",
+                "host": self._host,
+                "port": self._port,
+                "error": str(exc),
+            }
+        except Exception as exc:
+            return {
+                "status": "error",
+                "host": self._host,
+                "port": self._port,
+                "error": str(exc),
+            }
+
+        targets: list[str] = []
+        for item in addrinfo:
+            sockaddr = item[4]
+            if isinstance(sockaddr, tuple) and len(sockaddr) >= 2:
+                targets.append(f"{sockaddr[0]}:{sockaddr[1]}")
+        return {
+            "status": "resolved",
+            "host": self._host,
+            "port": self._port,
+            "targets": targets,
+        }
+
+    @staticmethod
+    def _classify_error(exc: Exception) -> str:
+        if isinstance(exc, asyncio.TimeoutError):
+            return "timeout"
+        if isinstance(exc, socket.gaierror):
+            return "dns_failure"
+        if isinstance(exc, ConnectionRefusedError):
+            return "connection_refused"
+        if isinstance(exc, OSError):
+            if exc.errno == errno.ECONNREFUSED:
+                return "connection_refused"
+            if exc.errno in {errno.ETIMEDOUT, errno.EHOSTUNREACH, errno.ENETUNREACH}:
+                return "timeout"
+        return exc.__class__.__name__.lower()
 
     async def read_frame(self) -> EslFrame:
         if self._reader is None:
