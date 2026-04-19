@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.core.config as cfg
 from app.db.session import get_db
+from app.api.deps import get_call_engine
+from app.integrations.call_engine.stub import StubEngine
 from app.integrations.telephony.mango_client import (
     MangoClient,
     MangoApiConfig,
@@ -857,3 +859,55 @@ async def test_resolve_agent_to_mango_line(session: AsyncSession) -> None:
         )
     )
     assert await resolve_agent_to_mango_line(session, unbound.id) is None
+
+
+@pytest.mark.anyio
+async def test_outbound_call_endpoint_resolves_agent_name_and_creates_call(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    app = create_app()
+
+    async def override_get_db():
+        yield session
+
+    async def override_get_call_engine():
+        return StubEngine()
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_call_engine] = override_get_call_engine
+
+    session.add(
+        AgentProfile(
+            name="Test Agent",
+            is_active=True,
+            system_prompt="Ты AI агент.",
+            voice_strategy="tts_primary",
+            voice_provider="elevenlabs",
+            telephony_provider="mango",
+            config={},
+            version=1,
+        )
+    )
+    await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        token = await _login(ac)
+        response = await ac.post(
+            "/v1/telephony/outbound-call",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "phone_number": "+17547365909",
+                "agent_name": "Test Agent",
+                "mode": "DIRECT",
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["accepted"] is True
+    assert payload["provider"] == "mango"
+    assert payload["agent"] == "Test Agent"
+    assert payload["mode"] == "DIRECT"
+    assert payload["status"] == "queued"
+    assert payload["call_id"] is not None

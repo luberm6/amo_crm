@@ -5,14 +5,16 @@ from ipaddress import ip_address, ip_network
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin_auth import require_admin_auth
-from app.api.deps import get_db
+from app.api.deps import get_call_service, get_db
 from app.core.exceptions import AppError
 from app.core.config import settings
 from app.integrations.telephony.mango_runtime import resolve_mango_from_ext
 from app.models.agent_profile import AgentProfile
+from app.models.call import CallMode
 from app.models.telephony_line import TelephonyLine
 from app.repositories.agent_profile_repo import AgentProfileRepository
 from app.repositories.telephony_line_repo import TelephonyLineRepository
@@ -31,7 +33,10 @@ from app.schemas.telephony import (
     TelephonyLineListRead,
     TelephonyLineRead,
     TelephonyLineSyncRead,
+    TelephonyOutboundCallRequest,
+    TelephonyOutboundCallResponse,
 )
+from app.services.call_service import CallService
 from app.services.mango_telephony_service import MangoTelephonyService
 from app.services.telephony_routing_service import TelephonyRoutingService
 
@@ -44,6 +49,20 @@ router = APIRouter(
 
 def _handle_app_error(exc: AppError) -> None:
     raise HTTPException(status_code=exc.status_code, detail=exc.to_dict())
+
+
+def _normalize_outbound_mode(value: str) -> CallMode:
+    normalized = (value or "").strip().lower()
+    if normalized != CallMode.DIRECT.value:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "unsupported_mode",
+                "message": "Only DIRECT mode is supported by this endpoint.",
+                "detail": {"mode": value},
+            },
+        )
+    return CallMode.DIRECT
 
 
 def _is_public_backend_url(url: str) -> bool:
@@ -369,6 +388,74 @@ def _build_actionable_next_step(
         description="Read the blocked cards below and clear the first blocker before attempting a live smoke.",
         cta_label="Clear the first blocked card",
         scope="global",
+    )
+
+
+@router.post("/outbound-call", response_model=TelephonyOutboundCallResponse)
+async def create_outbound_call(
+    body: TelephonyOutboundCallRequest,
+    session: AsyncSession = Depends(get_db),
+    service: CallService = Depends(get_call_service),
+) -> TelephonyOutboundCallResponse:
+    mode = _normalize_outbound_mode(body.mode)
+    result = await session.execute(
+        select(AgentProfile)
+        .where(AgentProfile.name == body.agent_name)
+        .where(AgentProfile.is_active.is_(True))
+        .limit(1)
+    )
+    agent = result.scalar_one_or_none()
+    if agent is None:
+        return TelephonyOutboundCallResponse(
+            accepted=False,
+            provider="mango",
+            agent=body.agent_name,
+            mode=mode.value.upper(),
+            status="agent_not_found",
+            error={
+                "error": "agent_not_found",
+                "message": f"Active agent '{body.agent_name}' not found.",
+            },
+        )
+
+    if (agent.telephony_provider or "").strip().lower() != "mango":
+        return TelephonyOutboundCallResponse(
+            accepted=False,
+            provider="mango",
+            agent=agent.name,
+            mode=mode.value.upper(),
+            status="agent_provider_mismatch",
+            error={
+                "error": "agent_provider_mismatch",
+                "message": f"Agent '{agent.name}' is not configured for Mango telephony.",
+            },
+        )
+
+    try:
+        call = await service.create_call(
+            raw_phone=body.phone_number,
+            mode=mode,
+            actor="telephony_api",
+            agent_profile_id=agent.id,
+        )
+    except AppError as exc:
+        return TelephonyOutboundCallResponse(
+            accepted=False,
+            provider="mango",
+            agent=agent.name,
+            mode=mode.value.upper(),
+            status="failed",
+            error=exc.to_dict(),
+        )
+
+    return TelephonyOutboundCallResponse(
+        accepted=True,
+        provider="mango",
+        agent=agent.name,
+        mode=mode.value.upper(),
+        status=(getattr(call.status, "value", str(call.status)) or "").lower(),
+        call_id=call.id,
+        error=None,
     )
 
 

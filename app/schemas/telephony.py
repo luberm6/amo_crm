@@ -199,6 +199,30 @@ class MangoWebhookReceipt(BaseModel):
     inbound_launch: Optional[MangoInboundLaunchSummary] = None
 
 
+class TelephonyOutboundCallRequest(BaseModel):
+    phone_number: str = Field(..., min_length=7, max_length=20)
+    agent_name: str = Field(..., min_length=1, max_length=200)
+    mode: str = Field(default="DIRECT")
+
+    @field_validator("phone_number", "agent_name", "mode")
+    @classmethod
+    def strip_required_values(cls, value: str) -> str:
+        normalized = (value or "").strip()
+        if not normalized:
+            raise ValueError("value must not be blank")
+        return normalized
+
+
+class TelephonyOutboundCallResponse(BaseModel):
+    accepted: bool
+    provider: str
+    agent: str
+    mode: str
+    status: str
+    call_id: Optional[uuid.UUID] = None
+    error: Optional[Any] = None
+
+
 class AgentProfileSettingsRead(BaseModel):
     agent_profile_id: uuid.UUID
     name: str
