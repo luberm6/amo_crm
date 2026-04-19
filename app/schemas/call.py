@@ -37,6 +37,13 @@ class CallCreate(BaseModel):
             raise ValueError("phone must not be blank")
         return v.strip()
 
+    @field_validator("mode", mode="before")
+    @classmethod
+    def normalize_mode(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.strip().lower()
+        return v
+
     @field_validator("agent_name")
     @classmethod
     def agent_name_not_blank(cls, v: Optional[str]) -> Optional[str]:

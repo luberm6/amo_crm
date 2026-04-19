@@ -63,7 +63,7 @@ async def test_create_call_accepts_phone_number_and_agent_name(app: FastAPI, ses
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/v1/calls",
-            json={"phone_number": "+79991234567", "agent_name": "Test Agent", "mode": "direct"},
+            json={"phone_number": "+79991234567", "agent_name": "Test Agent", "mode": "DIRECT"},
         )
         assert resp.status_code == 201
         data = resp.json()
