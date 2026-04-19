@@ -75,7 +75,8 @@ make sync-env
 Что делает команда:
 - обновляет локальный `.env`
 - обновляет `.env.example`, `.env.local.example`, `.env.production.example`
-- отправляет те же telephony env в Render service `amo-crm-api`
+- merge-safe обновляет telephony env в Render service `amo-crm-api`
+- сначала читает текущие env сервиса и сохраняет все остальные ключи, чтобы частичный sync не затирал рабочие секреты
 
 Нужные переменные для этого контура:
 - `FREESWITCH_ESL_HOST`

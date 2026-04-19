@@ -146,17 +146,48 @@ def resolve_render_service_id(api_host: str, token: str, service_name: str) -> s
     raise RuntimeError(f"Could not find Render service named {service_name!r}")
 
 
+def _list_render_env_vars(api_host: str, token: str, service_id: str) -> dict[str, str]:
+    payload = _render_request(api_host, token, "GET", f"/services/{service_id}/env-vars")
+    if not isinstance(payload, list):
+        raise RuntimeError("Unexpected Render env-vars response shape")
+
+    current: dict[str, str] = {}
+    for item in payload:
+        env_var = item.get("envVar") if isinstance(item, dict) else None
+        if not isinstance(env_var, dict):
+            continue
+        key = env_var.get("key")
+        value = env_var.get("value")
+        if isinstance(key, str):
+            current[key] = value if isinstance(value, str) else ""
+    return current
+
+
 def sync_render_env(service_name: str, updates: dict[str, str], *, dry_run: bool = False) -> None:
     api_host, token = _load_render_credentials()
     service_id = resolve_render_service_id(api_host, token, service_name)
-    payload = [{"key": key, "value": value} for key, value in updates.items()]
+    existing = _list_render_env_vars(api_host, token, service_id)
+    merged = dict(existing)
+    merged.update(updates)
+    payload = [{"key": key, "value": value} for key, value in sorted(merged.items())]
     if dry_run:
-        print(f"[dry-run] would sync {len(payload)} env vars to Render service {service_name} ({service_id})")
+        preserved_keys = sorted(key for key in existing.keys() if key not in updates)
+        print(
+            f"[dry-run] would merge {len(updates)} env vars into Render service "
+            f"{service_name} ({service_id}); total after sync: {len(payload)}"
+        )
         for key, value in updates.items():
             print(f"  - {key}={_mask_value(key, value)}")
+        if preserved_keys:
+            preview = ", ".join(preserved_keys[:10])
+            suffix = "" if len(preserved_keys) <= 10 else f" ... (+{len(preserved_keys) - 10} more)"
+            print(f"  - preserving existing keys: {preview}{suffix}")
         return
     _render_request(api_host, token, "PUT", f"/services/{service_id}/env-vars", payload)
-    print(f"[ok] synced {len(payload)} env vars to Render service {service_name} ({service_id})")
+    print(
+        f"[ok] merged {len(updates)} env vars into Render service "
+        f"{service_name} ({service_id}); total keys now {len(payload)}"
+    )
     for key, value in updates.items():
         print(f"  - {key}={_mask_value(key, value)}")
 
