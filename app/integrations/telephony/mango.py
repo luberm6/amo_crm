@@ -46,6 +46,12 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 
+def _mango_digits(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    return "".join(ch for ch in str(value).strip() if ch.isdigit())
+
+
 class TelephonyError(EngineError):
     error_code = "telephony_error"
 
@@ -200,12 +206,16 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         line_number = "0"
         if metadata:
             explicit_line = (
-                metadata.get("telephony_remote_line_id")
+                metadata.get("telephony_line_phone_number")
+                or metadata.get("line_phone_number")
+                or metadata.get("mango_line_phone_number")
+                or metadata.get("telephony_remote_line_id")
                 or metadata.get("mango_remote_line_id")
                 or metadata.get("line_number")
             )
             if explicit_line:
-                line_number = str(explicit_line)
+                normalized_line = _mango_digits(str(explicit_line))
+                line_number = normalized_line or str(explicit_line)
 
         resp_data = await self._post(
             "/commands/callback",
