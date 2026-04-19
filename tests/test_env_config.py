@@ -9,7 +9,6 @@ Tests use an IsolatedSettings subclass that does NOT read the .env file,
 so they are independent of any local credentials.
 """
 from __future__ import annotations
-
 import pytest
 from pydantic_settings import SettingsConfigDict
 
@@ -215,6 +214,24 @@ class TestRenderDatabaseUrlNormalization:
             environment="production",
             database_url="postgresql+asyncpg://amo_user:amo_pass@127.0.0.1:5433/amo_crm",
             render_database_url="postgresql://render_user:render_pass@render-db:5432/app_db",
+        )
+        assert s.database_url == "postgresql+asyncpg://render_user:render_pass@render-db:5432/app_db"
+
+    def test_prefers_raw_process_database_url_when_field_falls_back_to_localhost(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "postgresql://render_user:render_pass@render-db:5432/app_db")
+        s = make(
+            environment="production",
+            database_url="postgresql+asyncpg://amo_user:amo_pass@127.0.0.1:5433/amo_crm",
+            render_database_url="",
+        )
+        assert s.database_url == "postgresql+asyncpg://render_user:render_pass@render-db:5432/app_db"
+
+    def test_uses_raw_render_database_url_when_settings_field_is_empty(self, monkeypatch):
+        monkeypatch.setenv("RENDER_DATABASE_URL", "postgresql://render_user:render_pass@render-db:5432/app_db")
+        s = make(
+            environment="production",
+            database_url="postgresql+asyncpg://amo_user:amo_pass@127.0.0.1:5433/amo_crm",
+            render_database_url="",
         )
         assert s.database_url == "postgresql+asyncpg://render_user:render_pass@render-db:5432/app_db"
 

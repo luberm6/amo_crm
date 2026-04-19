@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -380,11 +381,20 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def normalize_render_urls(self) -> "Settings":
+        raw_database_url = _normalize_database_url(os.environ.get("DATABASE_URL", ""))
+        raw_render_database_url = _normalize_database_url(os.environ.get("RENDER_DATABASE_URL", ""))
+        raw_render_redis_url = (os.environ.get("RENDER_REDIS_URL", "") or "").strip()
         self.database_url = _normalize_database_url(self.database_url)
         self.render_database_url = _normalize_database_url(self.render_database_url)
+        if raw_database_url and _is_local_database_url(self.database_url):
+            self.database_url = raw_database_url
+        if raw_render_database_url and not self.render_database_url:
+            self.render_database_url = raw_render_database_url
         render_like_runtime = self.is_production or _is_public_http_url(self.render_external_url)
         if render_like_runtime and self.render_database_url and _is_local_database_url(self.database_url):
             self.database_url = self.render_database_url
+        if raw_render_redis_url and not self.render_redis_url:
+            self.render_redis_url = raw_render_redis_url
         if render_like_runtime and self.render_redis_url:
             redis_value = (self.redis_url or "").strip().lower()
             if not redis_value or redis_value.startswith("redis://localhost") or redis_value.startswith("redis://127.0.0.1"):
