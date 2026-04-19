@@ -67,6 +67,39 @@ async def test_mango_event_normalization_and_processing(session: AsyncSession):
 
 
 @pytest.mark.anyio
+async def test_mango_event_command_id_alias_updates_provisional_leg(session: AsyncSession):
+    store = InMemoryMangoLegStateStore()
+    corr = InMemoryMangoFreeSwitchCorrelationStore()
+    processor = MangoEventProcessor(session=session, store=store, correlation_store=corr)
+
+    call = Call(
+        phone="+79990000003",
+        mode=CallMode.DIRECT,
+        status=CallStatus.DIALING,
+        telephony_leg_id="direct-cmd-123",
+    )
+    call = await CallRepository(Call, session).save(call)
+
+    event = await processor.process(
+        {
+            "event_id": "evt-cmd-1",
+            "event": "answered",
+            "command_id": "direct-cmd-123",
+            "call_id": "leg-real-777",
+        }
+    )
+
+    assert event.command_id == "direct-cmd-123"
+    real_snap = await store.get_leg_state("leg-real-777")
+    alias_snap = await store.get_leg_state("direct-cmd-123")
+    assert real_snap is not None
+    assert real_snap.state == TelephonyLegState.ANSWERED
+    assert alias_snap is not None
+    assert alias_snap.state == TelephonyLegState.ANSWERED
+    assert alias_snap.call_id == str(call.id)
+
+
+@pytest.mark.anyio
 async def test_wait_for_answered_webhook_first():
     store = InMemoryMangoLegStateStore()
     adapter = _make_adapter(store)

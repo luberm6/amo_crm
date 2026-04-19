@@ -217,10 +217,11 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 normalized_line = _mango_digits(str(explicit_line))
                 line_number = normalized_line or str(explicit_line)
 
+        command_id = f"direct-{uuid.uuid4().hex}"
         resp_data = await self._post(
             "/commands/callback",
             {
-                "command_id": f"direct-{uuid.uuid4().hex}",
+                "command_id": command_id,
                 "from": {
                     "extension": from_ext,
                 },
@@ -229,6 +230,9 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             },
         )
         call_uid = str(resp_data.get("uid", ""))
+        callback_result = str(resp_data.get("result", "")).strip()
+        if not call_uid and callback_result == "1000":
+            call_uid = command_id
         if not call_uid:
             raise TelephonyError("Mango callback API returned no uid", detail=resp_data)
 
@@ -252,19 +256,24 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             "mango_telephony.call_originated",
             phone=phone,
             mango_uid=call_uid,
+            command_id=command_id,
             line_number=line_number,
             from_ext=from_ext,
             from_ext_source=resolved_from_ext.source,
             from_ext_candidate_count=resolved_from_ext.candidate_count,
+            callback_result=callback_result or None,
+            callback_uid_present=bool(resp_data.get("uid")),
         )
         return TelephonyOriginateResult(
             leg_id=call_uid,
             sip_call_id=None,
             provider_response={
                 **resp_data,
+                "command_id": command_id,
                 "line_number": line_number,
                 "from_extension": from_ext,
                 "from_extension_source": resolved_from_ext.source,
+                "callback_uid_present": bool(resp_data.get("uid")),
             },
         )
 

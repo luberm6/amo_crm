@@ -121,7 +121,7 @@ async def test_mango_originate_call_posts_to_callback():
 
 @pytest.mark.anyio
 async def test_mango_originate_call_uses_agent_bound_remote_line_id():
-    """originate_call respects telephony_remote_line_id when runtime passes agent-bound Mango line."""
+    """originate_call prefers the actual Mango line phone when runtime passes it."""
     adapter = _make_mango_adapter()
 
     mock_resp = MagicMock()
@@ -131,14 +131,17 @@ async def test_mango_originate_call_uses_agent_bound_remote_line_id():
 
     await adapter.originate_call(
         "+79991234567",
-        metadata={"telephony_remote_line_id": "405622036"},
+        metadata={
+            "telephony_remote_line_id": "405622036",
+            "telephony_line_phone_number": "+79300350609",
+        },
     )
 
     call_args = adapter._http.post.call_args
     assert "/commands/callback" in call_args[0][0]
     sent_form = call_args.kwargs["data"]
     signed_payload = json.loads(sent_form["json"])
-    assert signed_payload["line_number"] == "405622036"
+    assert signed_payload["line_number"] == "79300350609"
 
 
 @pytest.mark.anyio
@@ -159,7 +162,25 @@ async def test_mango_originate_call_auto_discovers_from_ext():
         await adapter.originate_call("+79991234567")
 
     signed_payload = json.loads(adapter._http.post.call_args.kwargs["data"]["json"])
-    assert signed_payload["from[extension]"] == "12"
+    assert signed_payload["from"]["extension"] == "12"
+
+
+@pytest.mark.anyio
+async def test_mango_originate_call_accepts_result_1000_without_uid():
+    """Mango callback may accept command asynchronously and omit uid immediately."""
+    adapter = _make_mango_adapter()
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"result": 1000}
+    adapter._http.post = AsyncMock(return_value=mock_resp)
+
+    result = await adapter.originate_call("+79991234567")
+
+    signed_payload = json.loads(adapter._http.post.call_args.kwargs["data"]["json"])
+    assert result.leg_id == signed_payload["command_id"]
+    assert result.provider_response["command_id"] == signed_payload["command_id"]
+    assert result.provider_response["callback_uid_present"] is False
 
 
 @pytest.mark.anyio

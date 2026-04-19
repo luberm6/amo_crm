@@ -56,6 +56,7 @@ class MangoNormalizedEvent:
     provider_event_id: str
     provider_type: str
     leg_id: Optional[str]
+    command_id: Optional[str]
     state: Optional[TelephonyLegState]
     call_id: Optional[str]
     transfer_id: Optional[str]
@@ -169,6 +170,20 @@ class MangoEventProcessor:
                 call_id=event.call_id,
                 raw_event=event.raw_payload,
             )
+            if event.command_id and event.command_id != event.leg_id:
+                await self._store.set_leg_state(
+                    event.command_id,
+                    event.state,
+                    call_id=event.call_id,
+                    transfer_id=event.transfer_id,
+                    role=event.role,
+                    raw_event=event.raw_payload,
+                )
+                await self._corr.upsert_mapping(
+                    mango_leg_id=event.command_id,
+                    call_id=event.call_id,
+                    freeswitch_uuid=event.leg_id,
+                )
         elif event.leg_id:
             await self._store.set_leg_context(
                 event.leg_id,
@@ -180,6 +195,18 @@ class MangoEventProcessor:
                 mango_leg_id=event.leg_id,
                 call_id=event.call_id,
             )
+            if event.command_id and event.command_id != event.leg_id:
+                await self._store.set_leg_context(
+                    event.command_id,
+                    call_id=event.call_id,
+                    transfer_id=event.transfer_id,
+                    role=event.role,
+                )
+                await self._corr.upsert_mapping(
+                    mango_leg_id=event.command_id,
+                    call_id=event.call_id,
+                    freeswitch_uuid=event.leg_id,
+                )
 
         if event.bridge_status and call is not None and transfer is not None:
             bridge_key = self.bridge_key(call.telephony_leg_id or str(call.id), transfer.manager_call_id or "")
@@ -202,6 +229,7 @@ class MangoEventProcessor:
 
         state = _extract_state(provider_type, payload)
         leg_id = _extract_leg_id(payload)
+        command_id = _extract_command_id(payload)
         call_id = _extract_uuid_like(payload, ("internal_call_id", "call_id", "crm_call_id"))
         transfer_id = _extract_uuid_like(payload, ("transfer_id", "internal_transfer_id"))
         role = _str_or(payload, "role", "leg_role", "party")
@@ -214,6 +242,7 @@ class MangoEventProcessor:
             provider_event_id=provider_id,
             provider_type=provider_type or "unknown",
             leg_id=leg_id,
+            command_id=command_id,
             state=state,
             call_id=call_id,
             transfer_id=transfer_id,
@@ -240,6 +269,8 @@ class MangoEventProcessor:
 
         if call is None and event.leg_id:
             call = await self._call_repo.get_by_telephony_leg_id(event.leg_id)
+        if call is None and event.command_id:
+            call = await self._call_repo.get_by_telephony_leg_id(event.command_id)
 
         if event.transfer_id:
             try:
@@ -354,6 +385,10 @@ def _extract_leg_id(payload: dict[str, Any]) -> Optional[str]:
         "entry_id",
         "manager_call_id",
     )
+
+
+def _extract_command_id(payload: dict[str, Any]) -> Optional[str]:
+    return _str_or(payload, "command_id", "request_id")
 
 
 def _extract_state(provider_type: str, payload: dict[str, Any]) -> Optional[TelephonyLegState]:
