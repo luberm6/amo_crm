@@ -170,6 +170,43 @@ class TestAdminAuthConfigured:
         assert s.admin_auth_secret == "signing-secret"
         assert s.admin_auth_configured is True
 
+    def test_falls_back_to_raw_process_admin_cors_origins_when_field_is_empty(self, monkeypatch):
+        monkeypatch.setenv("ADMIN_CORS_ORIGINS", "https://amo-crm-admin.onrender.com")
+        s = make(admin_cors_origins="")
+        assert s.admin_cors_origins == "https://amo-crm-admin.onrender.com"
+        assert s.admin_cors_origins_list == ["https://amo-crm-admin.onrender.com"]
+
+    def test_falls_back_to_raw_process_direct_voice_env_when_fields_use_defaults(self, monkeypatch):
+        monkeypatch.setenv("DIRECT_VOICE_STRATEGY", "tts_primary")
+        monkeypatch.setenv("TELEPHONY_PROVIDER", "mango")
+        monkeypatch.setenv("MEDIA_GATEWAY_ENABLED", "true")
+        monkeypatch.setenv("MEDIA_GATEWAY_MODE", "esl_rtp")
+        monkeypatch.setenv("ELEVENLABS_ENABLED", "true")
+        monkeypatch.setenv("ELEVENLABS_API_KEY", "elevenlabs-key")
+        monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voice-id")
+        monkeypatch.setenv("FREESWITCH_ESL_HOST", "84.247.184.72")
+        monkeypatch.setenv("FREESWITCH_RTP_IP", "84.247.184.72")
+        s = make(
+            direct_voice_strategy="disabled",
+            telephony_provider="auto",
+            media_gateway_enabled=False,
+            media_gateway_mode="disabled",
+            elevenlabs_enabled=False,
+            elevenlabs_api_key="",
+            elevenlabs_voice_id="",
+            freeswitch_esl_host="127.0.0.1",
+            freeswitch_rtp_ip="127.0.0.1",
+        )
+        assert s.direct_voice_strategy == "tts_primary"
+        assert s.telephony_provider == "mango"
+        assert s.media_gateway_enabled is True
+        assert s.media_gateway_mode == "esl_rtp"
+        assert s.elevenlabs_enabled is True
+        assert s.elevenlabs_api_key == "elevenlabs-key"
+        assert s.elevenlabs_voice_id == "voice-id"
+        assert s.freeswitch_esl_host == "84.247.184.72"
+        assert s.freeswitch_rtp_ip == "84.247.184.72"
+
 
 # ---------------------------------------------------------------------------
 # is_production / is_testing

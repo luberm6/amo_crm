@@ -8,6 +8,10 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _env_truthy(value: str) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _normalize_database_url(database_url: str) -> str:
     value = (database_url or "").strip()
     if not value:
@@ -393,6 +397,22 @@ class Settings(BaseSettings):
         raw_admin_email = (os.environ.get("ADMIN_EMAIL", "") or "").strip()
         raw_admin_password = (os.environ.get("ADMIN_PASSWORD", "") or "").strip()
         raw_admin_auth_secret = (os.environ.get("ADMIN_AUTH_SECRET", "") or "").strip()
+        raw_admin_cors_origins = (os.environ.get("ADMIN_CORS_ORIGINS", "") or "").strip()
+        raw_direct_voice_strategy = (os.environ.get("DIRECT_VOICE_STRATEGY", "") or "").strip()
+        raw_telephony_provider = (os.environ.get("TELEPHONY_PROVIDER", "") or "").strip()
+        raw_media_gateway_enabled = (os.environ.get("MEDIA_GATEWAY_ENABLED", "") or "").strip()
+        raw_media_gateway_mode = (os.environ.get("MEDIA_GATEWAY_MODE", "") or "").strip()
+        raw_media_gateway_provider = (os.environ.get("MEDIA_GATEWAY_PROVIDER", "") or "").strip()
+        raw_mango_from_ext = (os.environ.get("MANGO_FROM_EXT", "") or "").strip()
+        raw_gemini_audio_output_enabled = (os.environ.get("GEMINI_AUDIO_OUTPUT_ENABLED", "") or "").strip()
+        raw_direct_voice_allow_tts_fallback = (os.environ.get("DIRECT_VOICE_ALLOW_TTS_FALLBACK", "") or "").strip()
+        raw_direct_initial_greeting_enabled = (os.environ.get("DIRECT_INITIAL_GREETING_ENABLED", "") or "").strip()
+        raw_elevenlabs_enabled = (os.environ.get("ELEVENLABS_ENABLED", "") or "").strip()
+        raw_elevenlabs_api_key = (os.environ.get("ELEVENLABS_API_KEY", "") or "").strip()
+        raw_elevenlabs_voice_id = (os.environ.get("ELEVENLABS_VOICE_ID", "") or "").strip()
+        raw_freeswitch_esl_host = (os.environ.get("FREESWITCH_ESL_HOST", "") or "").strip()
+        raw_freeswitch_esl_password = (os.environ.get("FREESWITCH_ESL_PASSWORD", "") or "").strip()
+        raw_freeswitch_rtp_ip = (os.environ.get("FREESWITCH_RTP_IP", "") or "").strip()
         self.database_url = _normalize_database_url(self.database_url)
         self.render_database_url = _normalize_database_url(self.render_database_url)
         if raw_database_url and _is_local_database_url(self.database_url):
@@ -414,6 +434,38 @@ class Settings(BaseSettings):
             self.admin_password = raw_admin_password
         if raw_admin_auth_secret and not (self.admin_auth_secret or "").strip():
             self.admin_auth_secret = raw_admin_auth_secret
+        if raw_admin_cors_origins and not (self.admin_cors_origins or "").strip():
+            self.admin_cors_origins = raw_admin_cors_origins
+        if raw_direct_voice_strategy and (self.direct_voice_strategy or "").strip() == "disabled":
+            self.direct_voice_strategy = raw_direct_voice_strategy  # type: ignore[assignment]
+        if raw_telephony_provider and (self.telephony_provider or "").strip() == "auto":
+            self.telephony_provider = raw_telephony_provider
+        if raw_media_gateway_enabled and not self.media_gateway_enabled:
+            self.media_gateway_enabled = _env_truthy(raw_media_gateway_enabled)
+        if raw_media_gateway_mode and (self.media_gateway_mode or "").strip() == "disabled":
+            self.media_gateway_mode = raw_media_gateway_mode
+        if raw_media_gateway_provider and not (self.media_gateway_provider or "").strip():
+            self.media_gateway_provider = raw_media_gateway_provider
+        if raw_mango_from_ext and not (self.mango_from_ext or "").strip():
+            self.mango_from_ext = raw_mango_from_ext
+        if raw_gemini_audio_output_enabled and not self.gemini_audio_output_enabled:
+            self.gemini_audio_output_enabled = _env_truthy(raw_gemini_audio_output_enabled)
+        if raw_direct_voice_allow_tts_fallback:
+            self.direct_voice_allow_tts_fallback = _env_truthy(raw_direct_voice_allow_tts_fallback)
+        if raw_direct_initial_greeting_enabled and not self.direct_initial_greeting_enabled:
+            self.direct_initial_greeting_enabled = _env_truthy(raw_direct_initial_greeting_enabled)
+        if raw_elevenlabs_enabled and not self.elevenlabs_enabled:
+            self.elevenlabs_enabled = _env_truthy(raw_elevenlabs_enabled)
+        if raw_elevenlabs_api_key and not (self.elevenlabs_api_key or "").strip():
+            self.elevenlabs_api_key = raw_elevenlabs_api_key
+        if raw_elevenlabs_voice_id and not (self.elevenlabs_voice_id or "").strip():
+            self.elevenlabs_voice_id = raw_elevenlabs_voice_id
+        if raw_freeswitch_esl_host and (self.freeswitch_esl_host or "").strip() in {"", "127.0.0.1", "localhost"}:
+            self.freeswitch_esl_host = raw_freeswitch_esl_host
+        if raw_freeswitch_esl_password and (self.freeswitch_esl_password or "").strip() == "ClueCon":
+            self.freeswitch_esl_password = raw_freeswitch_esl_password
+        if raw_freeswitch_rtp_ip and (self.freeswitch_rtp_ip or "").strip() in {"", "127.0.0.1", "localhost"}:
+            self.freeswitch_rtp_ip = raw_freeswitch_rtp_ip
         replacement_model = _DEPRECATED_GEMINI_LIVE_MODELS.get((self.gemini_model_id or "").strip())
         if replacement_model:
             self.gemini_model_id = replacement_model
