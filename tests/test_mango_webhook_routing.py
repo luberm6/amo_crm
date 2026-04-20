@@ -22,6 +22,7 @@ from app.models.agent_profile import AgentProfile
 from app.models.telephony_line import TelephonyLine
 from app.repositories.agent_profile_repo import AgentProfileRepository
 from app.repositories.telephony_line_repo import TelephonyLineRepository
+from app.integrations.call_engine.stub import StubEngine
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -215,6 +216,45 @@ async def test_webhook_no_secret_accepts_request(session: AsyncSession) -> None:
             )
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
+
+
+@pytest.mark.anyio
+async def test_freeswitch_inbound_sip_launches_direct_call_for_bound_agent(session: AsyncSession) -> None:
+    app = _make_app(session)
+    line = await _make_line(session, phone_number="+79300350609")
+    agent = await _make_agent(session, line=line)
+
+    async def _stub_engine():
+        return StubEngine()
+
+    with (
+        patch.object(cfg.settings, "provider_settings_secret", "fs-secret"),
+        patch.object(cfg.settings, "gemini_api_key", "gemini-key"),
+        patch.object(cfg.settings, "media_gateway_enabled", True),
+        patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
+        patch.object(cfg.settings, "media_gateway_mode", "esl_rtp"),
+        patch("app.services.mango_inbound_call_service.get_call_engine", _stub_engine),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post(
+                "/v1/webhooks/freeswitch/inbound-sip",
+                json={
+                    "call_uuid": "fs-uuid-123",
+                    "to_number": "+79300350609",
+                    "from_number": "+79261234567",
+                    "provider": "mango",
+                },
+                headers={"x-provider-settings-secret": "fs-secret"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["accepted"] is True
+    assert body["status"] == "started"
+    assert body["agent_found"] is True
+    assert body["agent_id"] == str(agent.id)
+    assert body["agent_name"] == "Test Agent"
+    assert body["telephony_leg_id"] == "fs-uuid-123"
 
 
 @pytest.mark.anyio

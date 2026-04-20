@@ -97,3 +97,78 @@ class MangoInboundCallService:
             remote_line_id=routing.telephony_line.remote_line_id,
         )
         return MangoInboundLaunchResult(status="started", call=call)
+
+    async def ensure_inbound_sip_call(
+        self,
+        *,
+        provider: str,
+        call_uuid: str,
+        to_number: str,
+        from_number: Optional[str],
+        routing: InboundRoutingResult,
+    ) -> MangoInboundLaunchResult:
+        if not call_uuid:
+            return MangoInboundLaunchResult(status="skipped", reason="missing_call_uuid")
+        if routing.agent is None or routing.telephony_line is None:
+            return MangoInboundLaunchResult(status="skipped", reason="agent_not_resolved")
+
+        existing = await self.call_repo.get_by_telephony_leg_id(call_uuid)
+        if existing is not None:
+            return MangoInboundLaunchResult(status="existing_call", call=existing)
+
+        readiness_errors: list[str] = []
+        if not settings.gemini_configured:
+            readiness_errors.append("gemini_not_configured")
+        if not settings.media_gateway_enabled:
+            readiness_errors.append("media_gateway_disabled")
+        if settings.media_gateway_provider != "freeswitch":
+            readiness_errors.append("media_gateway_not_freeswitch")
+        if settings.media_gateway_mode not in {"mock", "esl_rtp"}:
+            readiness_errors.append("media_gateway_mode_not_supported")
+        if readiness_errors:
+            return MangoInboundLaunchResult(
+                status="blocked",
+                reason=",".join(readiness_errors),
+            )
+
+        engine = await get_call_engine()
+        _maybe_inject_session_factory(engine, self.session)
+        call_service = CallService(session=self.session, engine=engine)
+        caller_phone = from_number or to_number or "sip:inbound"
+        runtime_context = {
+            "telephony": {
+                "existing_leg_id": call_uuid,
+                "provider_leg_id": call_uuid,
+                "mango_leg_id": call_uuid,
+                "freeswitch_uuid": call_uuid,
+                "telephony_provider": provider,
+                "telephony_line_id": str(routing.telephony_line.id),
+                "telephony_remote_line_id": routing.telephony_line.remote_line_id,
+                "telephony_line_phone_number": routing.telephony_line.phone_number,
+                "telephony_line_label": routing.telephony_line.label,
+                "telephony_extension": routing.agent.telephony_extension or routing.telephony_line.extension,
+                "call_id": None,
+                "inbound": True,
+            }
+        }
+        call = await call_service.create_call(
+            raw_phone=caller_phone,
+            mode=CallMode.DIRECT,
+            actor="freeswitch_inbound_sip",
+            agent_profile_id=routing.agent.id,
+            runtime_context=runtime_context,
+            skip_policy_checks=True,
+        )
+        if not call.telephony_leg_id:
+            call.telephony_leg_id = call_uuid
+            await self.call_repo.save(call)
+        log.info(
+            "freeswitch_inbound.call_started",
+            call_id=str(call.id),
+            telephony_leg_id=call.telephony_leg_id,
+            agent_id=str(routing.agent.id),
+            agent_name=routing.agent.name,
+            remote_line_id=routing.telephony_line.remote_line_id,
+            freeswitch_uuid=call_uuid,
+        )
+        return MangoInboundLaunchResult(status="started", call=call)

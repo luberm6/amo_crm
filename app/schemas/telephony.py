@@ -199,6 +199,45 @@ class MangoWebhookReceipt(BaseModel):
     inbound_launch: Optional[MangoInboundLaunchSummary] = None
 
 
+class FreeSwitchInboundSipRequest(BaseModel):
+    call_uuid: str = Field(..., min_length=1, max_length=200)
+    to_number: str = Field(..., min_length=3, max_length=64)
+    from_number: Optional[str] = Field(default=None, max_length=64)
+    provider: str = Field(default="mango", min_length=1, max_length=32)
+    line_phone_number: Optional[str] = Field(default=None, max_length=64)
+
+    @field_validator("call_uuid", "to_number", "provider")
+    @classmethod
+    def strip_required_value(cls, value: str) -> str:
+        normalized = (value or "").strip()
+        if not normalized:
+            raise ValueError("value must not be blank")
+        return normalized
+
+    @field_validator("from_number", "line_phone_number")
+    @classmethod
+    def strip_optional_value(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class FreeSwitchInboundSipReceipt(BaseModel):
+    accepted: bool
+    status: str
+    provider: str
+    call_uuid: str
+    to_number: str
+    from_number: Optional[str] = None
+    agent_found: bool
+    agent_id: Optional[uuid.UUID] = None
+    agent_name: Optional[str] = None
+    call_id: Optional[uuid.UUID] = None
+    telephony_leg_id: Optional[str] = None
+    error: Optional[str] = None
+
+
 class TelephonyOutboundCallRequest(BaseModel):
     phone_number: str = Field(..., min_length=7, max_length=20)
     agent_name: str = Field(..., min_length=1, max_length=200)

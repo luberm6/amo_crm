@@ -21,6 +21,7 @@ from app.core.logging import get_logger
 from app.core.redis_client import get_redis
 from app.schemas.telephony import MangoWebhookReceipt, MangoWebhookRoutingSummary
 from app.schemas.telephony import MangoInboundLaunchSummary
+from app.schemas.telephony import FreeSwitchInboundSipReceipt, FreeSwitchInboundSipRequest
 from app.services.mango_inbound_call_service import MangoInboundCallService
 from app.services.telephony_routing_service import TelephonyRoutingService
 
@@ -35,6 +36,12 @@ def _get_state_store():
     if redis is not None:
         return RedisMangoLegStateStore(redis)
     return _in_memory_store
+
+
+def _verify_provider_secret(header_value: Optional[str]) -> bool:
+    expected = (settings.provider_settings_secret or settings.admin_auth_secret or "").strip()
+    provided = (header_value or "").strip()
+    return bool(expected and provided and expected == provided)
 
 
 @router.post("/mango", status_code=status.HTTP_200_OK, response_model=MangoWebhookReceipt)
@@ -201,4 +208,67 @@ async def mango_webhook(
             "routing": routing_summary.model_dump(mode="json") if routing_summary else None,
             "inbound_launch": inbound_launch_summary.model_dump(mode="json") if inbound_launch_summary else None,
         }
+    )
+
+
+@router.post("/freeswitch/inbound-sip", status_code=status.HTTP_200_OK, response_model=FreeSwitchInboundSipReceipt)
+async def freeswitch_inbound_sip(
+    body: FreeSwitchInboundSipRequest,
+    session: AsyncSession = Depends(get_db),
+    x_provider_settings_secret: Optional[str] = Header(default=None, alias="x-provider-settings-secret"),
+) -> JSONResponse:
+    request_id = str(uuid.uuid4())
+    if not _verify_provider_secret(x_provider_settings_secret):
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={
+                "accepted": False,
+                "status": "unauthorized",
+                "provider": body.provider,
+                "call_uuid": body.call_uuid,
+                "to_number": body.to_number,
+                "from_number": body.from_number,
+                "agent_found": False,
+                "error": "invalid_provider_settings_secret",
+            },
+        )
+
+    routing_svc = TelephonyRoutingService(session)
+    route_number = body.line_phone_number or body.to_number
+    result = await routing_svc.resolve_inbound(
+        provider=body.provider,
+        phone_number=route_number,
+    )
+    inbound_service = MangoInboundCallService(session)
+    launch = await inbound_service.ensure_inbound_sip_call(
+        provider=body.provider,
+        call_uuid=body.call_uuid,
+        to_number=body.to_number,
+        from_number=body.from_number,
+        routing=result,
+    )
+    log.info(
+        "freeswitch_inbound.call_launch_result",
+        request_id=request_id,
+        status=launch.status,
+        reason=launch.reason,
+        call_id=str(launch.call.id) if launch.call else None,
+        freeswitch_uuid=body.call_uuid,
+        to_number=body.to_number,
+    )
+    return JSONResponse(
+        content=FreeSwitchInboundSipReceipt(
+            accepted=launch.status in {"started", "existing_call"},
+            status=launch.status,
+            provider=body.provider,
+            call_uuid=body.call_uuid,
+            to_number=body.to_number,
+            from_number=body.from_number,
+            agent_found=result.agent is not None,
+            agent_id=result.agent.id if result.agent else None,
+            agent_name=result.agent.name if result.agent else None,
+            call_id=launch.call.id if launch.call else None,
+            telephony_leg_id=launch.call.telephony_leg_id if launch.call else body.call_uuid,
+            error=launch.reason,
+        ).model_dump(mode="json")
     )
