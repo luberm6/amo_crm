@@ -390,6 +390,9 @@ class Settings(BaseSettings):
         raw_database_url = _normalize_database_url(os.environ.get("DATABASE_URL", ""))
         raw_render_database_url = _normalize_database_url(os.environ.get("RENDER_DATABASE_URL", ""))
         raw_render_redis_url = (os.environ.get("RENDER_REDIS_URL", "") or "").strip()
+        raw_admin_email = (os.environ.get("ADMIN_EMAIL", "") or "").strip()
+        raw_admin_password = (os.environ.get("ADMIN_PASSWORD", "") or "").strip()
+        raw_admin_auth_secret = (os.environ.get("ADMIN_AUTH_SECRET", "") or "").strip()
         self.database_url = _normalize_database_url(self.database_url)
         self.render_database_url = _normalize_database_url(self.render_database_url)
         if raw_database_url and _is_local_database_url(self.database_url):
@@ -405,6 +408,12 @@ class Settings(BaseSettings):
             redis_value = (self.redis_url or "").strip().lower()
             if not redis_value or redis_value.startswith("redis://localhost") or redis_value.startswith("redis://127.0.0.1"):
                 self.redis_url = self.render_redis_url
+        if raw_admin_email and not (self.admin_email or "").strip():
+            self.admin_email = raw_admin_email
+        if raw_admin_password and not (self.admin_password or "").strip():
+            self.admin_password = raw_admin_password
+        if raw_admin_auth_secret and not (self.admin_auth_secret or "").strip():
+            self.admin_auth_secret = raw_admin_auth_secret
         replacement_model = _DEPRECATED_GEMINI_LIVE_MODELS.get((self.gemini_model_id or "").strip())
         if replacement_model:
             self.gemini_model_id = replacement_model

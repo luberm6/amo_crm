@@ -160,6 +160,16 @@ class TestAdminAuthConfigured:
         s = make(admin_email="admin@example.com", admin_password="secret", admin_auth_secret="")
         assert s.admin_auth_configured is False
 
+    def test_falls_back_to_raw_process_admin_env_when_fields_are_empty(self, monkeypatch):
+        monkeypatch.setenv("ADMIN_EMAIL", "admin@example.com")
+        monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+        monkeypatch.setenv("ADMIN_AUTH_SECRET", "signing-secret")
+        s = make(admin_email="", admin_password="", admin_auth_secret="")
+        assert s.admin_email == "admin@example.com"
+        assert s.admin_password == "secret"
+        assert s.admin_auth_secret == "signing-secret"
+        assert s.admin_auth_configured is True
+
 
 # ---------------------------------------------------------------------------
 # is_production / is_testing

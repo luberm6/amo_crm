@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         log_level=settings.log_level,
         vapi_configured=settings.vapi_configured,
         gemini_configured=settings.gemini_configured,
-        auth_enabled=bool(settings.api_key),
+        auth_enabled=settings.admin_auth_configured,
         quiet_hours_enforced=settings.enforce_quiet_hours,
         rate_limit_enabled=settings.rate_limit_enabled,
     )
