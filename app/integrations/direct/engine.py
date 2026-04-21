@@ -134,19 +134,11 @@ class DirectGeminiEngine(AbstractCallEngine):
             telephony_metadata.setdefault("telephony_extension", runtime_agent.telephony_extension or telephony_line.extension)
             telephony_metadata.setdefault("call_id", str(call.id))
         if telephony_caller_id is None:
-            existing_leg_id = str(telephony_metadata.get("existing_leg_id") or "").strip()
-            if (
-                not existing_leg_id
-                and str(telephony_metadata.get("telephony_provider") or "").strip().lower() == "mango"
-                and (settings.mango_from_ext or "").strip()
-            ):
-                telephony_caller_id = (settings.mango_from_ext or "").strip() or None
-            else:
-                telephony_caller_id = str(
-                    runtime_agent.telephony_extension
-                    or telephony_metadata.get("telephony_extension")
-                    or ""
-                ).strip() or None
+            telephony_caller_id = str(
+                runtime_agent.telephony_extension
+                or telephony_metadata.get("telephony_extension")
+                or ""
+            ).strip() or None
         log.info(
             "direct_engine.telephony_context_resolved",
             call_id=str(call.id),

@@ -146,47 +146,6 @@ async def test_mango_originate_call_uses_agent_bound_remote_line_id():
 
 
 @pytest.mark.anyio
-async def test_mango_originate_call_prefers_extension_inventory_line_number_when_it_differs():
-    """originate_call should align line_number with the chosen Mango extension inventory."""
-    adapter = _make_mango_adapter()
-    adapter._from_ext = "10"
-
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json.return_value = {"success": 1, "uid": "mango-uid-line-overridden"}
-    adapter._http.post = AsyncMock(return_value=mock_resp)
-
-    fake_client = AsyncMock()
-    fake_client.list_extensions = AsyncMock(
-        return_value=[
-            MangoExtensionPayload(
-                provider_resource_id="user-10",
-                extension="10",
-                display_name="AI route",
-                line_provider_resource_id="line-795",
-                line_phone_number="+79585382099",
-                raw_payload={},
-            )
-        ]
-    )
-    fake_client.aclose = AsyncMock()
-
-    with patch("app.integrations.telephony.mango.MangoClient.from_settings", return_value=fake_client):
-        await adapter.originate_call(
-            "+79991234567",
-            metadata={
-                "telephony_remote_line_id": "405622036",
-                "telephony_line_phone_number": "+79300350609",
-            },
-        )
-
-    sent_form = adapter._http.post.call_args.kwargs["data"]
-    signed_payload = json.loads(sent_form["json"])
-    assert signed_payload["from"]["extension"] == "10"
-    assert signed_payload["line_number"] == "79585382099"
-
-
-@pytest.mark.anyio
 async def test_mango_originate_call_auto_discovers_from_ext():
     """originate_call falls back to live/discovered extension when MANGO_FROM_EXT is empty."""
     adapter = _make_mango_adapter()

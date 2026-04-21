@@ -13,6 +13,7 @@ FRONTEND_URL="${FRONTEND_URL:-http://127.0.0.1/}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 NPM_BIN="${NPM_BIN:-npm}"
 ROLLBACK_ON_FAILURE="${ROLLBACK_ON_FAILURE:-1}"
+HEALTH_WAIT_SECONDS="${HEALTH_WAIT_SECONDS:-30}"
 
 LOCK_FILE="/tmp/amo_crm_deploy.lock"
 ROLLBACK_REV=""
@@ -83,6 +84,25 @@ require_command flock
 require_command systemctl
 require_command nginx
 
+wait_for_http() {
+  local url="$1"
+  local timeout="${2:-30}"
+  local started_at
+  started_at="$(date +%s)"
+
+  while true; do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    if (( "$(date +%s)" - started_at >= timeout )); then
+      return 1
+    fi
+
+    sleep 1
+  done
+}
+
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   die "Another deploy is already running"
@@ -128,6 +148,7 @@ sudo systemctl restart "$SERVICE_NAME"
 sudo systemctl --no-pager --full status "$SERVICE_NAME"
 
 log "Validating backend health"
+wait_for_http "$API_HEALTH_URL" "$HEALTH_WAIT_SECONDS"
 curl -fsS "$API_HEALTH_URL"
 
 log "Validating nginx config"

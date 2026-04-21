@@ -214,10 +214,10 @@ async def test_initiate_call_passes_agent_bound_mango_context():
 
 
 @pytest.mark.anyio
-async def test_initiate_call_prefers_env_from_ext_for_new_mango_outbound_call():
-    """New outbound Mango direct calls must prefer configured MANGO_FROM_EXT over agent extension."""
+async def test_initiate_call_prefers_agent_bound_extension_for_new_mango_outbound_call():
+    """New outbound Mango direct calls must use the agent/line-bound extension for the selected line."""
     mock_sm = AsyncMock(spec=DirectSessionManager)
-    mock_sm.create_session.return_value = "session-with-mango-env-caller-id"
+    mock_sm.create_session.return_value = "session-with-mango-line-bound-caller-id"
 
     engine = DirectGeminiEngine(
         session_manager=mock_sm,
@@ -261,5 +261,5 @@ async def test_initiate_call_prefers_env_from_ext_for_new_mango_outbound_call():
         await engine.initiate_call(call)
 
     kwargs = mock_sm.create_session.call_args.kwargs
-    assert kwargs["telephony_caller_id"] == "10"
+    assert kwargs["telephony_caller_id"] == "11"
     assert kwargs["telephony_metadata"]["telephony_extension"] == "11"

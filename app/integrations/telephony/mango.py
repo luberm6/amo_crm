@@ -27,7 +27,6 @@ from app.integrations.telephony.base import (
     TelephonyOriginateResult,
 )
 from app.integrations.telephony.capabilities import ProviderCapabilities
-from app.integrations.telephony.mango_client import MangoClient, MangoClientError
 from app.integrations.telephony.freeswitch_bridge import FreeSwitchAudioBridge
 from app.integrations.telephony.mango_events import MangoEventProcessor
 from app.integrations.telephony.mango_freeswitch_correlation import (
@@ -247,11 +246,6 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             if explicit_line:
                 normalized_line = _mango_digits(str(explicit_line))
                 line_number = normalized_line or str(explicit_line)
-
-        line_number = await self._resolve_line_number_for_extension(
-            from_ext=from_ext,
-            requested_line_number=line_number,
-        )
 
         command_id = f"direct-{uuid.uuid4().hex}"
         resp_data = await self._post(
@@ -517,50 +511,3 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             return resp.json()
         except Exception:
             return {"raw": resp.text}
-
-    async def _resolve_line_number_for_extension(
-        self,
-        *,
-        from_ext: str,
-        requested_line_number: str,
-    ) -> str:
-        cleaned_from_ext = (from_ext or "").strip()
-        normalized_requested = _mango_digits(requested_line_number)
-        if not cleaned_from_ext:
-            return normalized_requested or requested_line_number
-
-        own_client = True
-        client = MangoClient.from_settings()
-        try:
-            extensions = await client.list_extensions()
-        except MangoClientError as exc:
-            log.warning(
-                "mango_telephony.extension_inventory_unavailable",
-                from_ext=cleaned_from_ext,
-                requested_line_number=normalized_requested or requested_line_number or None,
-                stage=exc.stage,
-                http_status=exc.http_status,
-                detail=exc.detail,
-            )
-            return normalized_requested or requested_line_number
-        finally:
-            if own_client:
-                await client.aclose()
-
-        matched = next((item for item in extensions if (item.extension or "").strip() == cleaned_from_ext), None)
-        if matched is None:
-            return normalized_requested or requested_line_number
-
-        extension_line_number = _mango_digits(matched.line_phone_number)
-        if extension_line_number and extension_line_number != normalized_requested:
-            log.warning(
-                "mango_telephony.line_number_overridden_from_extension",
-                from_ext=cleaned_from_ext,
-                requested_line_number=normalized_requested or requested_line_number or None,
-                resolved_line_number=extension_line_number,
-                extension_line_phone_number=matched.line_phone_number,
-                extension_line_provider_resource_id=matched.line_provider_resource_id,
-            )
-            return extension_line_number
-
-        return extension_line_number or normalized_requested or requested_line_number
