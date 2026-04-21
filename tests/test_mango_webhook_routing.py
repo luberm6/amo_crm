@@ -25,6 +25,12 @@ from app.repositories.telephony_line_repo import TelephonyLineRepository
 from app.integrations.call_engine.stub import StubEngine
 
 
+@pytest.fixture(autouse=True)
+def disable_single_number_policy_for_generic_routing_tests():
+    with patch.object(cfg.settings, "mango_primary_phone_number", ""):
+        yield
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _make_app(session: AsyncSession):

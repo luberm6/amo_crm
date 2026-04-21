@@ -38,6 +38,12 @@ from app.services.telephony_routing import (
 from app.integrations.telephony.mango_client import normalize_mango_phone
 
 
+@pytest.fixture(autouse=True)
+def disable_single_number_policy_for_generic_inventory_tests():
+    with patch.object(cfg.settings, "mango_primary_phone_number", ""):
+        yield
+
+
 @pytest.fixture
 def admin_auth_settings():
     with (
@@ -217,11 +223,10 @@ async def test_mango_extensions_fall_back_to_cached_inventory_when_api_is_unavai
         result = await service.list_extensions()
 
     assert result.source == "cached_inventory_fallback"
-    assert {item.extension for item in result.items} == {"10", "12"}
+    assert {item.extension for item in result.items} == {"12"}
     by_ext = {item.extension: item for item in result.items}
     assert by_ext["12"].display_name == "Каширина Ольга"
     assert by_ext["12"].line_provider_resource_id == line.provider_resource_id
-    assert by_ext["10"].display_name == "Основной исходящий внутренний номер"
 
 
 @pytest.mark.anyio
@@ -757,6 +762,48 @@ async def test_mango_list_extensions_parses_nested_live_payload() -> None:
     assert items[0].extension == "10"
     assert items[0].display_name == "Каширина Ольга"
     assert items[0].line_phone_number == "+79585382099"
+
+
+@pytest.mark.anyio
+async def test_mango_sync_filters_non_primary_number(session: AsyncSession) -> None:
+    client = _FakeMangoClient(
+        config=MangoApiConfig(
+            base_url="https://app.mango-office.ru/vpbx",
+            api_key="api-key",
+            api_salt="api-salt",
+        ),
+        lines=[
+            MangoLinePayload(
+                provider_resource_id="line-primary",
+                phone_number="+79300350609",
+                schema_name="Primary",
+                display_name="Primary",
+                extension="11",
+                is_active=True,
+                is_inbound_enabled=True,
+                is_outbound_enabled=True,
+                raw_payload={"id": "line-primary"},
+            ),
+            MangoLinePayload(
+                provider_resource_id="line-secondary",
+                phone_number="+79585382099",
+                schema_name="Secondary",
+                display_name="Secondary",
+                extension="10",
+                is_active=True,
+                is_inbound_enabled=True,
+                is_outbound_enabled=True,
+                raw_payload={"id": "line-secondary"},
+            ),
+        ],
+        extensions=[],
+    )
+    service = MangoTelephonyService(session, client=client)
+
+    with patch.object(cfg.settings, "mango_primary_phone_number", "89300350609"):
+        result = await service.sync_lines()
+
+    assert [item.phone_number for item in result.items] == ["+79300350609"]
 
 
 @pytest.mark.anyio

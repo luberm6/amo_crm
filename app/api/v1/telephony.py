@@ -673,10 +673,12 @@ async def mango_routing_map(
     db: AsyncSession = Depends(get_db),
 ) -> MangoRoutingMapRead:
     """Return all Mango telephony lines with their bound agents (if any)."""
-    line_repo = TelephonyLineRepository(TelephonyLine, db)
+    service = MangoTelephonyService(db)
     agent_repo = AgentProfileRepository(AgentProfile, db)
-
-    lines = await line_repo.list_lines(provider="mango")
+    try:
+        lines = await service.list_lines(active_only=None)
+    finally:
+        await service.aclose()
 
     # Build a map of line_id → first active agent for that line
     items: list[MangoRoutingMapItem] = []

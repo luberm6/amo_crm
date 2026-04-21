@@ -40,9 +40,5 @@ jobs:
         run: |
           ssh "${VPS_USER}@${VPS_HOST}" 'bash -lc "
             set -Eeuo pipefail
-            cd /opt/amo_crm
-            git fetch origin main --prune
-            git reset --hard origin/main
-            chmod +x scripts/deploy_vps.sh
-            APP_DIR=/opt/amo_crm BRANCH=main SERVICE_NAME=amo-crm-api bash scripts/deploy_vps.sh
+            sudo -n /usr/bin/bash /opt/amo_crm/scripts/deploy_vps.sh
           "'

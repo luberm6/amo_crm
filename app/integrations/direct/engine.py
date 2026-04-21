@@ -33,6 +33,7 @@ from app.core.logging import get_logger
 from app.integrations.call_engine.base import AbstractCallEngine, EngineCallResult
 from app.integrations.direct.session_manager import DirectSessionManager
 from app.integrations.telephony.base import AbstractTelephonyAdapter
+from app.integrations.telephony.mango_client import is_allowed_mango_phone_number
 from app.integrations.voice.base import AbstractVoiceProvider
 from app.models.agent_profile import AgentProfile
 from app.models.call import Call, CallStatus
@@ -126,6 +127,19 @@ class DirectGeminiEngine(AbstractCallEngine):
         telephony_caller_id = str(runtime_context.get("telephony_caller_id") or "").strip() or None
         if full_agent_profile is not None and getattr(full_agent_profile, "telephony_line", None) is not None:
             telephony_line = full_agent_profile.telephony_line
+            if (
+                (full_agent_profile.telephony_provider or "").strip().lower() == "mango"
+                and not is_allowed_mango_phone_number(telephony_line.phone_number)
+            ):
+                raise EngineError(
+                    "Direct Mango call blocked by single-number policy.",
+                    detail={
+                        "call_id": str(call.id),
+                        "phone_number": telephony_line.phone_number,
+                        "provider_resource_id": telephony_line.provider_resource_id,
+                        "primary_phone_number": settings.mango_primary_phone_e164,
+                    },
+                )
             telephony_metadata.setdefault("telephony_provider", full_agent_profile.telephony_provider or telephony_line.provider)
             telephony_metadata.setdefault("telephony_line_id", str(telephony_line.id))
             telephony_metadata.setdefault("telephony_remote_line_id", telephony_line.remote_line_id)

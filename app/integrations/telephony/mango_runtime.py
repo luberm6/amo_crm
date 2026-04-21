@@ -34,10 +34,6 @@ async def resolve_mango_from_ext(
     if metadata_from_ext:
         return ResolvedMangoFromExt(value=metadata_from_ext, source="metadata")
 
-    env_from_ext = (settings.mango_from_ext or "").strip()
-    if env_from_ext:
-        return ResolvedMangoFromExt(value=env_from_ext, source="env")
-
     own_client = client is None
     mango_client = client or MangoClient.from_settings()
     try:
@@ -55,7 +51,28 @@ async def resolve_mango_from_ext(
             await mango_client.aclose()
 
     if not extensions:
+        env_from_ext = (settings.mango_from_ext or "").strip()
+        if env_from_ext:
+            return ResolvedMangoFromExt(value=env_from_ext, source="env_no_inventory")
         return ResolvedMangoFromExt(value=None, source="no_extensions", candidate_count=0)
+
+    env_from_ext = (settings.mango_from_ext or "").strip()
+    if env_from_ext:
+        env_match = next((item for item in extensions if item.extension == env_from_ext), None)
+        if env_match is not None:
+            return ResolvedMangoFromExt(
+                value=env_from_ext,
+                source="env",
+                matched_line_id=env_match.line_provider_resource_id,
+                matched_line_phone_number=env_match.line_phone_number,
+                candidate_count=len(extensions),
+            )
+        log.warning(
+            "mango_from_ext.env_extension_not_allowed",
+            env_from_ext=env_from_ext,
+            candidate_extensions=[item.extension for item in extensions],
+            primary_phone_number=settings.mango_primary_phone_e164,
+        )
 
     line_id = str(
         metadata.get("telephony_remote_line_id")

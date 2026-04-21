@@ -14,6 +14,7 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 NPM_BIN="${NPM_BIN:-npm}"
 ROLLBACK_ON_FAILURE="${ROLLBACK_ON_FAILURE:-1}"
 HEALTH_WAIT_SECONDS="${HEALTH_WAIT_SECONDS:-30}"
+ENV_FILE="${ENV_FILE:-/opt/amo_crm/.env}"
 
 LOCK_FILE="/tmp/amo_crm_deploy.lock"
 ROLLBACK_REV=""
@@ -103,6 +104,32 @@ wait_for_http() {
   done
 }
 
+ensure_env_value() {
+  local key="$1"
+  local value="$2"
+  [[ -f "$ENV_FILE" ]] || return 0
+  python3 - "$ENV_FILE" "$key" "$value" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+value = sys.argv[3]
+lines = path.read_text().splitlines()
+updated = False
+result = []
+for line in lines:
+    if line.startswith(f"{key}="):
+        result.append(f"{key}='{value}'")
+        updated = True
+    else:
+        result.append(line)
+if not updated:
+    result.append(f"{key}='{value}'")
+path.write_text("\n".join(result) + "\n")
+PY
+}
+
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   die "Another deploy is already running"
@@ -120,6 +147,14 @@ log "Current revision: $ROLLBACK_REV"
 log "Fetching latest code"
 git fetch origin "$BRANCH" --prune
 git reset --hard "origin/$BRANCH"
+
+log "Enforcing colocated FreeSWITCH environment"
+ensure_env_value "BACKEND_URL" "http://84.247.184.72"
+ensure_env_value "MANGO_PRIMARY_PHONE_NUMBER" "89300350609"
+ensure_env_value "MANGO_FROM_EXT" "11"
+ensure_env_value "FREESWITCH_ESL_HOST" "127.0.0.1"
+ensure_env_value "FREESWITCH_RTP_IP" "127.0.0.1"
+grep -E '^(BACKEND_URL|MANGO_PRIMARY_PHONE_NUMBER|MANGO_FROM_EXT|FREESWITCH_ESL_HOST|FREESWITCH_RTP_IP)=' "$ENV_FILE" || true
 
 log "Ensuring Python virtualenv"
 if [[ ! -d .venv ]]; then

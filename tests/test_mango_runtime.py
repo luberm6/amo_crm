@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+import app.core.config as cfg
 from app.integrations.telephony.mango_client import MangoExtensionPayload
 from app.integrations.telephony.mango_runtime import resolve_mango_from_ext
 
@@ -72,4 +73,27 @@ async def test_resolve_mango_from_ext_falls_back_to_first_extension():
 
     resolved = await resolve_mango_from_ext(client=client)
     assert resolved.value == "10"
+    assert resolved.source == "auto_discovered_first_extension"
+
+
+@pytest.mark.anyio
+async def test_resolve_mango_from_ext_ignores_env_when_not_in_primary_inventory():
+    client = AsyncMock()
+    client.list_extensions.return_value = [
+        MangoExtensionPayload(
+            provider_resource_id="u11",
+            extension="11",
+            display_name="Primary",
+            line_provider_resource_id="405622036",
+            line_phone_number="+79300350609",
+            raw_payload={},
+        ),
+    ]
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(cfg.settings, "mango_from_ext", "10")
+        mp.setattr(cfg.settings, "mango_primary_phone_number", "89300350609")
+        resolved = await resolve_mango_from_ext(client=client)
+
+    assert resolved.value == "11"
     assert resolved.source == "auto_discovered_first_extension"

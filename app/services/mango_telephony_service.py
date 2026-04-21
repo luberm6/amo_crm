@@ -14,6 +14,7 @@ from app.integrations.telephony.mango_client import (
     MangoClientError,
     MangoExtensionPayload,
     MangoLinePayload,
+    is_allowed_mango_phone_number,
 )
 from app.models.telephony_line import TelephonyLine
 from app.repositories.telephony_line_repo import TelephonyLineRepository
@@ -65,7 +66,8 @@ class MangoTelephonyService:
         await self.client.aclose()
 
     async def list_lines(self, *, active_only: Optional[bool] = None) -> list[TelephonyLine]:
-        return await self.repo.list_lines(provider="mango", active_only=active_only)
+        items = await self.repo.list_lines(provider="mango", active_only=active_only)
+        return [item for item in items if is_allowed_mango_phone_number(item.phone_number)]
 
     async def sync_lines(self) -> MangoLineSyncResult:
         self._ensure_configured()
@@ -162,7 +164,7 @@ class MangoTelephonyService:
             deactivated_count=deactivated_count,
             extension_count=len(remote_extensions),
         )
-        items = await self.repo.list_lines(provider="mango", active_only=None)
+        items = await self.list_lines(active_only=None)
         return MangoLineSyncResult(
             items=items,
             synced_count=synced_count,
@@ -210,6 +212,8 @@ class MangoTelephonyService:
         seen_extensions: set[str] = set()
 
         for line in lines:
+            if not is_allowed_mango_phone_number(line.phone_number):
+                continue
             raw_payload = line.raw_payload or {}
             matched_extension = raw_payload.get("matched_extension") if isinstance(raw_payload, dict) else None
             matched_general = (
@@ -253,19 +257,6 @@ class MangoTelephonyService:
                 )
             )
             seen_extensions.add(extension)
-
-        from_ext = (settings.mango_from_ext or "").strip()
-        if from_ext and from_ext not in seen_extensions:
-            items.append(
-                MangoExtensionPayload(
-                    provider_resource_id=from_ext,
-                    extension=from_ext,
-                    display_name="Основной исходящий внутренний номер",
-                    line_provider_resource_id=None,
-                    line_phone_number=None,
-                    raw_payload={"source": "env_from_ext_fallback"},
-                )
-            )
 
         deduped: dict[tuple[str, str], MangoExtensionPayload] = {}
         for item in items:

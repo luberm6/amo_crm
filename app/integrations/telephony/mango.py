@@ -233,7 +233,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         if not from_ext:
             raise TelephonyError("MANGO_FROM_EXT is not configured.")
 
-        line_number = "0"
+        line_number = _mango_digits(settings.mango_primary_phone_e164 or settings.mango_primary_phone_number) or "0"
         if metadata:
             explicit_line = (
                 metadata.get("telephony_line_phone_number")
@@ -246,6 +246,16 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             if explicit_line:
                 normalized_line = _mango_digits(str(explicit_line))
                 line_number = normalized_line or str(explicit_line)
+
+        normalized_primary_line = _mango_digits(settings.mango_primary_phone_e164 or settings.mango_primary_phone_number)
+        if normalized_primary_line and _mango_digits(line_number) != normalized_primary_line:
+            raise TelephonyError(
+                "Direct Mango originate blocked by single-number policy.",
+                detail={
+                    "requested_line_number": line_number,
+                    "primary_line_number": normalized_primary_line,
+                },
+            )
 
         command_id = f"direct-{uuid.uuid4().hex}"
         resp_data = await self._post(

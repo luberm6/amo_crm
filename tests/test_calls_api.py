@@ -13,6 +13,8 @@ All tests use the in-memory SQLite test DB and StubEngine.
 """
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport
@@ -46,9 +48,10 @@ async def test_create_call_accepts_phone_number_and_agent_name(app: FastAPI, ses
         return StubEngine()
 
     app.dependency_overrides[get_call_engine] = override_get_call_engine
+    agent_name = f"Test Agent {uuid.uuid4()}"
     agent = await AgentProfileRepository(AgentProfile, session).save(
         AgentProfile(
-            name="Test Agent",
+            name=agent_name,
             is_active=True,
             system_prompt="Prompt",
             voice_strategy="tts_primary",
@@ -63,7 +66,7 @@ async def test_create_call_accepts_phone_number_and_agent_name(app: FastAPI, ses
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/v1/calls",
-            json={"phone_number": "+79991234567", "agent_name": "Test Agent", "mode": "DIRECT"},
+            json={"phone_number": "+79991234567", "agent_name": agent_name, "mode": "DIRECT"},
         )
         assert resp.status_code == 201
         data = resp.json()

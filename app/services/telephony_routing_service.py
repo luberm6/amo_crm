@@ -6,8 +6,9 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.logging import get_logger
-from app.integrations.telephony.mango_client import normalize_mango_phone
+from app.integrations.telephony.mango_client import is_allowed_mango_phone_number, normalize_mango_phone
 from app.models.agent_profile import AgentProfile
 from app.models.telephony_line import TelephonyLine
 from app.repositories.agent_profile_repo import AgentProfileRepository
@@ -80,6 +81,23 @@ class TelephonyRoutingService:
                 candidate_count=0,
             )
 
+        if provider == "mango" and not is_allowed_mango_phone_number(line.phone_number):
+            log.warning(
+                "mango_inbound.line_rejected_by_primary_number_policy",
+                provider=provider,
+                phone_number_normalized=normalized,
+                line_id=str(line.id),
+                provider_resource_id=line.provider_resource_id,
+                line_phone_number=line.phone_number,
+                primary_phone_number=settings.mango_primary_phone_e164,
+            )
+            return InboundRoutingResult(
+                agent=None,
+                telephony_line=None,
+                phone_number_normalized=normalized,
+                candidate_count=0,
+            )
+
         candidates = await self.agent_repo.get_all_active_by_telephony_line(
             telephony_provider=provider,
             telephony_line_id=line.id,
@@ -141,4 +159,16 @@ class TelephonyRoutingService:
         agent = await self.agent_repo.get_with_related(agent_id)
         if agent is None or not agent.is_active:
             return None
-        return OutboundTelephonyBinding(agent=agent, telephony_line=agent.telephony_line)
+        line = agent.telephony_line
+        if line is not None and agent.telephony_provider == "mango" and not is_allowed_mango_phone_number(line.phone_number):
+            log.warning(
+                "mango_outbound.line_rejected_by_primary_number_policy",
+                agent_id=str(agent.id),
+                agent_name=agent.name,
+                line_id=str(line.id),
+                provider_resource_id=line.provider_resource_id,
+                line_phone_number=line.phone_number,
+                primary_phone_number=settings.mango_primary_phone_e164,
+            )
+            line = None
+        return OutboundTelephonyBinding(agent=agent, telephony_line=line)

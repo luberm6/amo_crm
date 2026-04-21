@@ -13,6 +13,22 @@ def _env_truthy(value: str) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _normalize_ru_phone(value: str) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return ""
+    if cleaned.startswith("+"):
+        return "+" + "".join(ch for ch in cleaned[1:] if ch.isdigit())
+    digits = "".join(ch for ch in cleaned if ch.isdigit())
+    if len(digits) == 11 and digits.startswith("8"):
+        return "+7" + digits[1:]
+    if len(digits) == 11 and digits.startswith("7"):
+        return "+" + digits
+    if len(digits) == 10:
+        return "+7" + digits
+    return "+" + digits if digits else cleaned
+
+
 def _normalize_database_url(database_url: str) -> str:
     value = (database_url or "").strip()
     if not value:
@@ -154,6 +170,8 @@ class Settings(BaseSettings):
     mango_sip_server: str = ""
     # Extension number for Click-to-Call origination (Direct mode)
     mango_from_ext: str = ""
+    # Strict single-number policy for Mango runtime/sync/routing/originate.
+    mango_primary_phone_number: str = "89300350609"
     # Optional HMAC secret for Mango webhook signature verification.
     # Header expected: X-Mango-Signature: sha256=<hex> (or plain hex)
     mango_webhook_secret: str = ""
@@ -437,6 +455,10 @@ class Settings(BaseSettings):
         if self.media_gateway_mode != "esl_rtp":
             return True
         return self.freeswitch_backend_media_colocated
+
+    @property
+    def mango_primary_phone_e164(self) -> str:
+        return _normalize_ru_phone(self.mango_primary_phone_number)
 
     @model_validator(mode="after")
     def normalize_render_urls(self) -> "Settings":

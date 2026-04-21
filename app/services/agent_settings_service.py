@@ -17,6 +17,7 @@ from app.repositories.agent_profile_repo import AgentProfileRepository
 from app.repositories.knowledge_document_repo import KnowledgeDocumentRepository
 from app.repositories.telephony_line_repo import TelephonyLineRepository
 from app.schemas.telephony import AgentProfileSettingsUpdate
+from app.integrations.telephony.mango_client import is_allowed_mango_phone_number
 from app.services.agent_profile_service import assemble_agent_system_prompt
 
 
@@ -174,6 +175,10 @@ class AgentSettingsService:
                 raise TelephonyLineNotFoundError(f"Telephony line {missing_identifier} not found")
             if line.provider != "mango":
                 raise TelephonyLineNotFoundError(f"Telephony line {line.id} is not a Mango line")
+            if not is_allowed_mango_phone_number(line.phone_number):
+                raise TelephonyLineNotFoundError(
+                    f"Telephony line {line.phone_number} is outside the single-number Mango policy"
+                )
             if not line.is_active:
                 raise TelephonyLineInactiveError(
                     f"Telephony line {line.phone_number} is inactive",

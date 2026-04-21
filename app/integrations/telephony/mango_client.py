@@ -14,6 +14,14 @@ from app.core.logging import get_logger
 log = get_logger(__name__)
 
 
+def is_allowed_mango_phone_number(number: Optional[str]) -> bool:
+    primary = normalize_mango_phone(settings.mango_primary_phone_e164 or settings.mango_primary_phone_number)
+    normalized = normalize_mango_phone(number)
+    if not primary:
+        return True
+    return normalized == primary
+
+
 @dataclass(frozen=True)
 class MangoApiConfig:
     base_url: str
@@ -163,6 +171,16 @@ class MangoClient:
                 )
             )
 
+        filtered_lines = [line for line in lines if is_allowed_mango_phone_number(line.phone_number)]
+        if len(filtered_lines) != len(lines):
+            log.warning(
+                "mango_client.lines_filtered_to_primary_number",
+                original_count=len(lines),
+                filtered_count=len(filtered_lines),
+                primary_phone_number=settings.mango_primary_phone_e164,
+            )
+            lines = filtered_lines
+
         log.info(
             "mango_client.lines_loaded",
             line_count=len(lines),
@@ -176,27 +194,38 @@ class MangoClient:
         cached = self._shared_extensions_cache.get(cache_key)
         now = time.monotonic()
         if cached is not None and (now - cached[0]) < self._EXTENSIONS_CACHE_TTL_SECONDS:
+            cached_items = [item for item in cached[1] if is_allowed_mango_phone_number(item.line_phone_number)]
             log.info(
                 "mango_client.extensions_cache_hit",
-                extension_count=len(cached[1]),
+                extension_count=len(cached_items),
                 base_url=self.config.base_url,
             )
-            return list(cached[1])
+            return list(cached_items)
 
         try:
             payload = await self._post_json("/config/users/request", {})
         except MangoClientError as exc:
             if exc.http_status == 429 and cached is not None:
+                cached_items = [item for item in cached[1] if is_allowed_mango_phone_number(item.line_phone_number)]
                 log.warning(
                     "mango_client.extensions_rate_limited_using_cache",
-                    extension_count=len(cached[1]),
+                    extension_count=len(cached_items),
                     base_url=self.config.base_url,
                 )
-                return list(cached[1])
+                return list(cached_items)
             raise
 
         records = _extract_records(payload, preferred_keys=("users", "employees", "extensions"))
         extensions = _parse_extensions(records)
+        filtered_extensions = [item for item in extensions if is_allowed_mango_phone_number(item.line_phone_number)]
+        if len(filtered_extensions) != len(extensions):
+            log.warning(
+                "mango_client.extensions_filtered_to_primary_number",
+                original_count=len(extensions),
+                filtered_count=len(filtered_extensions),
+                primary_phone_number=settings.mango_primary_phone_e164,
+            )
+            extensions = filtered_extensions
 
         log.info(
             "mango_client.extensions_loaded",
