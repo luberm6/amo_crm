@@ -1,0 +1,18 @@
+[Unit]
+Description=AMO CRM Voice API (colocated with FreeSWITCH)
+After=network.target redis.service postgresql.service freeswitch.service
+Wants=redis.service postgresql.service freeswitch.service
+
+[Service]
+Type=simple
+User=freeswitch
+Group=freeswitch
+WorkingDirectory=/opt/amo_crm
+EnvironmentFile=/opt/amo_crm/.env
+ExecStart=/opt/amo_crm/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
