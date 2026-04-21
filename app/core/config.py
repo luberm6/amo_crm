@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import socket
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -45,6 +46,23 @@ def _is_public_http_url(url: str) -> bool:
     if host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".local"):
         return False
     return True
+
+
+def _resolve_host_ips(host: str) -> set[str]:
+    value = (host or "").strip()
+    if not value:
+        return set()
+    try:
+        infos = socket.getaddrinfo(value, None, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return set()
+    resolved: set[str] = set()
+    for family, _, _, _, sockaddr in infos:
+        if family == socket.AF_INET:
+            resolved.add(str(sockaddr[0]))
+        elif family == socket.AF_INET6:
+            resolved.add(str(sockaddr[0]))
+    return resolved
 
 
 _DEPRECATED_GEMINI_LIVE_MODELS: dict[str, str] = {
@@ -388,6 +406,26 @@ class Settings(BaseSettings):
         if _is_public_http_url(render_url):
             return render_url
         return configured or render_url
+
+    @property
+    def backend_runtime_host(self) -> str:
+        return (urlparse(self.effective_backend_url).hostname or "").strip().lower()
+
+    @property
+    def freeswitch_backend_media_colocated(self) -> bool:
+        backend_host = self.backend_runtime_host
+        freeswitch_host = (self.freeswitch_esl_host or "").strip().lower()
+        if not backend_host or not freeswitch_host:
+            return False
+        if backend_host == freeswitch_host:
+            return True
+        return bool(_resolve_host_ips(backend_host) & _resolve_host_ips(freeswitch_host))
+
+    @property
+    def freeswitch_local_media_supported(self) -> bool:
+        if self.media_gateway_mode != "esl_rtp":
+            return True
+        return self.freeswitch_backend_media_colocated
 
     @model_validator(mode="after")
     def normalize_render_urls(self) -> "Settings":

@@ -158,6 +158,7 @@ def _requirements_to_blockers(
         "media_gateway_disabled": "MEDIA_GATEWAY_ENABLED=false.",
         "media_gateway_provider_not_freeswitch": "MEDIA_GATEWAY_PROVIDER must be freeswitch.",
         "media_gateway_mode_not_supported": "MEDIA_GATEWAY_MODE must be mock or esl_rtp.",
+        "media_gateway_topology_not_supported": "Current esl_rtp mode opens RTP sockets in the backend runtime. Backend and FreeSWITCH are on different hosts, so this topology is unsupported.",
         "freeswitch_esl_host_missing": "FREESWITCH_ESL_HOST is missing or local-only.",
         "freeswitch_esl_password_missing": "FREESWITCH_ESL_PASSWORD is missing or still default.",
         "freeswitch_rtp_ip_missing": "FREESWITCH_RTP_IP is missing or local-only.",
@@ -227,6 +228,7 @@ def _build_route_readiness(
                     "media_gateway_disabled",
                     "media_gateway_provider_not_freeswitch",
                     "media_gateway_mode_not_supported",
+                    "media_gateway_topology_not_supported",
                     "freeswitch_esl_host_missing",
                     "freeswitch_esl_password_missing",
                     "freeswitch_rtp_ip_missing",
@@ -334,6 +336,16 @@ def _build_actionable_next_step(
                 title="Use a supported media gateway mode",
                 description="Inbound AI runtime currently supports MEDIA_GATEWAY_MODE=mock or esl_rtp.",
                 cta_label="Set MEDIA_GATEWAY_MODE=mock or esl_rtp",
+                scope="inbound_ai_runtime",
+            ),
+        ),
+        (
+            "media_gateway_topology_not_supported",
+            MangoActionableNextStep(
+                key="move_media_to_freeswitch_host",
+                title="Move media handling onto the FreeSWITCH host",
+                description="Current esl_rtp mode opens RTP sockets inside the backend runtime. Because this backend and FreeSWITCH are on different hosts, inbound AI needs a FreeSWITCH-local media worker or dialplan app instead of Render-local RTP.",
+                cta_label="Deploy FreeSWITCH-local media handling",
                 scope="inbound_ai_runtime",
             ),
         ),
@@ -509,6 +521,16 @@ async def mango_readiness() -> MangoReadinessRead:
     if settings.media_gateway_mode not in {"mock", "esl_rtp"}:
         warnings.append("Inbound AI runtime currently expects MEDIA_GATEWAY_MODE=mock or esl_rtp.")
         missing_requirements.append("media_gateway_mode_not_supported")
+    if (
+        settings.media_gateway_enabled
+        and settings.media_gateway_provider == "freeswitch"
+        and settings.media_gateway_mode == "esl_rtp"
+        and not settings.freeswitch_local_media_supported
+    ):
+        warnings.append(
+            "Inbound AI runtime is blocked because MEDIA_GATEWAY_MODE=esl_rtp opens RTP sockets in the backend runtime, but this backend and FreeSWITCH are on different hosts."
+        )
+        missing_requirements.append("media_gateway_topology_not_supported")
     if media_gateway_transport_enabled and not freeswitch_esl_host_configured:
         warnings.append("Inbound AI runtime is blocked because FREESWITCH_ESL_HOST is missing or still local-only.")
         missing_requirements.append("freeswitch_esl_host_missing")
@@ -531,6 +553,7 @@ async def mango_readiness() -> MangoReadinessRead:
         and settings.media_gateway_enabled
         and settings.media_gateway_provider == "freeswitch"
         and settings.media_gateway_mode in {"mock", "esl_rtp"}
+        and settings.freeswitch_local_media_supported
         and freeswitch_esl_host_configured
         and freeswitch_esl_password_configured
         and freeswitch_rtp_ip_configured

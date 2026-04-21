@@ -93,6 +93,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             settings.media_gateway_enabled
             and settings.media_gateway_provider == "freeswitch"
             and settings.media_gateway_mode in {"mock", "esl_rtp"}
+            and settings.freeswitch_local_media_supported
         )
         return ProviderCapabilities(
             provider_name="mango",
@@ -174,6 +175,21 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         )
 
     async def attach_audio_bridge(self, channel: TelephonyChannel) -> "AbstractAudioBridge":
+        if (
+            settings.media_gateway_enabled
+            and settings.media_gateway_provider == "freeswitch"
+            and settings.media_gateway_mode == "esl_rtp"
+            and not settings.freeswitch_local_media_supported
+        ):
+            raise TelephonyError(
+                "FreeSWITCH esl_rtp mode expects RTP sockets to open in the backend runtime. "
+                "This backend and FreeSWITCH are on different hosts, so Render-local RTP is unsupported.",
+                detail={
+                    "backend_host": settings.backend_runtime_host,
+                    "freeswitch_host": settings.freeswitch_esl_host,
+                    "media_gateway_mode": settings.media_gateway_mode,
+                },
+            )
         if (
             settings.media_gateway_enabled
             and settings.media_gateway_provider == "freeswitch"

@@ -35,6 +35,7 @@ def _set_direct_voice_settings() -> dict[str, object]:
         "media_gateway_enabled": settings.media_gateway_enabled,
         "media_gateway_provider": settings.media_gateway_provider,
         "media_gateway_mode": settings.media_gateway_mode,
+        "freeswitch_esl_host": settings.freeswitch_esl_host,
         "direct_voice_strategy": settings.direct_voice_strategy,
         "direct_voice_allow_tts_fallback": settings.direct_voice_allow_tts_fallback,
         "gemini_audio_output_enabled": settings.gemini_audio_output_enabled,
@@ -55,6 +56,7 @@ def _set_direct_voice_settings() -> dict[str, object]:
     settings.media_gateway_enabled = True
     settings.media_gateway_provider = "freeswitch"
     settings.media_gateway_mode = "esl_rtp"
+    settings.freeswitch_esl_host = "voice.example.com"
     settings.direct_voice_strategy = "gemini_primary"
     settings.direct_voice_allow_tts_fallback = True
     settings.gemini_audio_output_enabled = True
@@ -191,6 +193,54 @@ async def test_direct_voice_preflight_warns_when_redis_is_unavailable(session, m
         redis_check = next(c for c in payload["checks"] if c["name"] == "redis")
         assert redis_check["status"] == "warn"
         assert redis_check["details"]["fallback_mode"] == "in_memory"
+    finally:
+        _restore_settings(old)
+
+
+@pytest.mark.anyio
+async def test_direct_voice_preflight_fails_when_freeswitch_media_is_remote(session, monkeypatch):
+    old = _set_direct_voice_settings()
+    try:
+        settings.backend_url = "https://render.example.com"
+        settings.freeswitch_esl_host = "pbx.example.com"
+
+        service = DirectVoicePreflightService(session)
+
+        async def _db_ok(checks):
+            service._add_check(checks, "database", "pass", "Database is reachable.")
+
+        async def _redis_ok(checks):
+            service._add_check(checks, "redis", "pass", "Redis is reachable.")
+
+        monkeypatch.setattr(service, "_check_database", _db_ok)
+        monkeypatch.setattr(service, "_check_redis", _redis_ok)
+        monkeypatch.setattr(
+            service,
+            "_resolve_telephony_adapter",
+            lambda checks: SimpleNamespace(
+                capabilities=SimpleNamespace(
+                    supports_outbound_call=True,
+                    supports_audio_bridge=False,
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            "app.services.preflight_service.get_media_gateway",
+            lambda: _FakeGateway(),
+        )
+        monkeypatch.setattr(
+            "app.core.config._resolve_host_ips",
+            lambda host: {
+                "render.example.com": {"203.0.113.10"},
+                "pbx.example.com": {"198.51.100.20"},
+            }.get(host, set()),
+        )
+
+        payload = await service.run()
+
+        assert payload["status"] == "fail"
+        topology_check = next(c for c in payload["checks"] if c["name"] == "media_gateway_topology")
+        assert topology_check["status"] == "fail"
     finally:
         _restore_settings(old)
 

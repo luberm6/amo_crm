@@ -56,6 +56,8 @@ class MangoInboundCallService:
             readiness_errors.append("media_gateway_not_freeswitch")
         if settings.media_gateway_mode not in {"mock", "esl_rtp"}:
             readiness_errors.append("media_gateway_mode_not_supported")
+        if settings.media_gateway_mode == "esl_rtp" and not settings.freeswitch_local_media_supported:
+            readiness_errors.append("media_gateway_topology_not_supported")
         if readiness_errors:
             return MangoInboundLaunchResult(
                 status="blocked",
@@ -125,6 +127,8 @@ class MangoInboundCallService:
             readiness_errors.append("media_gateway_not_freeswitch")
         if settings.media_gateway_mode not in {"mock", "esl_rtp"}:
             readiness_errors.append("media_gateway_mode_not_supported")
+        if settings.media_gateway_mode == "esl_rtp" and not settings.freeswitch_local_media_supported:
+            readiness_errors.append("media_gateway_topology_not_supported")
         if readiness_errors:
             return MangoInboundLaunchResult(
                 status="blocked",

@@ -241,6 +241,31 @@ class DirectVoicePreflightService:
                 details={"mode": settings.media_gateway_mode},
             )
 
+        if settings.media_gateway_mode == "esl_rtp":
+            if settings.freeswitch_local_media_supported:
+                self._add_check(
+                    checks,
+                    "media_gateway_topology",
+                    "pass",
+                    "Current FreeSWITCH RTP topology is colocated with the backend runtime.",
+                    details={
+                        "backend_host": settings.backend_runtime_host,
+                        "freeswitch_host": settings.freeswitch_esl_host,
+                    },
+                )
+            else:
+                self._add_check(
+                    checks,
+                    "media_gateway_topology",
+                    "fail",
+                    "Current esl_rtp mode opens RTP sockets in the backend runtime, but this backend and FreeSWITCH are on different hosts.",
+                    details={
+                        "backend_host": settings.backend_runtime_host,
+                        "freeswitch_host": settings.freeswitch_esl_host,
+                        "required_change": "Move media handling onto the FreeSWITCH host or implement a FreeSWITCH-local media worker/dialplan app.",
+                    },
+                )
+
         if settings.direct_initial_greeting_enabled:
             self._add_check(
                 checks,

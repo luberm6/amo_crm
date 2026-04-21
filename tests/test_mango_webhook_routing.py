@@ -233,6 +233,8 @@ async def test_freeswitch_inbound_sip_launches_direct_call_for_bound_agent(sessi
         patch.object(cfg.settings, "media_gateway_enabled", True),
         patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
         patch.object(cfg.settings, "media_gateway_mode", "esl_rtp"),
+        patch.object(cfg.settings, "backend_url", "https://voice.example.com"),
+        patch.object(cfg.settings, "freeswitch_esl_host", "voice.example.com"),
         patch("app.services.mango_inbound_call_service.get_call_engine", _stub_engine),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -722,7 +724,7 @@ async def test_mango_readiness_reports_direct_override_to_mango(
         patch.object(cfg.settings, "media_gateway_enabled", True),
         patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
         patch.object(cfg.settings, "media_gateway_mode", "esl_rtp"),
-        patch.object(cfg.settings, "freeswitch_esl_host", "fs.example.com"),
+        patch.object(cfg.settings, "freeswitch_esl_host", "voice.example.com"),
         patch.object(cfg.settings, "freeswitch_esl_password", "super-secret"),
         patch.object(cfg.settings, "freeswitch_rtp_ip", "34.120.10.20"),
         patch("app.api.v1.telephony.resolve_mango_from_ext", AsyncMock(return_value=type("_Resolved", (), {"value": "10"})())),
@@ -746,6 +748,46 @@ async def test_mango_readiness_reports_direct_override_to_mango(
     assert body["render_summary"]["overall_status"] == "ready"
     assert body["actionable_next_step"]["key"] == "run_live_smoke"
     assert body["actionable_next_step"]["scope"] == "global"
+
+
+@pytest.mark.anyio
+async def test_mango_readiness_blocks_remote_freeswitch_rtp_topology(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    app = _make_app(session)
+    with (
+        patch.object(cfg.settings, "mango_api_key", "api-key"),
+        patch.object(cfg.settings, "mango_api_salt", "api-salt"),
+        patch.object(cfg.settings, "gemini_api_key", "gemini-key"),
+        patch.object(cfg.settings, "environment", "production"),
+        patch.object(cfg.settings, "telephony_provider", "mango"),
+        patch.object(cfg.settings, "backend_url", "https://render.example.com"),
+        patch.object(cfg.settings, "mango_webhook_secret", "whsec"),
+        patch.object(cfg.settings, "mango_from_ext", "10"),
+        patch.object(cfg.settings, "media_gateway_enabled", True),
+        patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
+        patch.object(cfg.settings, "media_gateway_mode", "esl_rtp"),
+        patch.object(cfg.settings, "freeswitch_esl_host", "pbx.example.com"),
+        patch.object(cfg.settings, "freeswitch_esl_password", "super-secret"),
+        patch.object(cfg.settings, "freeswitch_rtp_ip", "84.247.184.72"),
+        patch("app.core.config._resolve_host_ips", lambda host: {
+            "render.example.com": {"203.0.113.10"},
+            "pbx.example.com": {"198.51.100.20"},
+        }.get(host, set())),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            token = await _admin_login(ac)
+            resp = await ac.get(
+                "/v1/telephony/mango/readiness",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["inbound_ai_runtime_ready"] is False
+    assert "media_gateway_topology_not_supported" in body["missing_requirements"]
+    assert body["actionable_next_step"]["key"] == "move_media_to_freeswitch_host"
 
 
 @pytest.mark.anyio

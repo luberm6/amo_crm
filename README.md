@@ -345,8 +345,8 @@ celery -A app.workers.celery_app worker --loglevel=info -Q default -c 2
 - [ ] `API_KEY` set to a strong random value (shared with bot via `BACKEND_API_KEY` env on bot service)
 - [ ] `VAPI_WEBHOOK_SECRET` set and matching Vapi assistant config
 - [ ] Mango webhook configured to `POST /v1/webhooks/mango` with guard secret/signature
-- [ ] `MEDIA_GATEWAY_MODE=esl_rtp` configured and FreeSWITCH ESL reachable
-- [ ] RTP/SIP firewall rules opened between Mango, FreeSWITCH, backend
+- [ ] `MEDIA_GATEWAY_MODE=esl_rtp` used only when the backend media worker is colocated with FreeSWITCH
+- [ ] If backend runs on Render and FreeSWITCH is remote, media must terminate on the FreeSWITCH host (dialplan/local media worker), not in the Render web process
 - [ ] `GEMINI_AUDIO_INPUT_ENABLED=true` and Gemini key configured
 - [ ] `GEMINI_AUDIO_OUTPUT_ENABLED=true` or ElevenLabs fallback configured
 - [ ] `ENFORCE_QUIET_HOURS=true` with correct `CALLING_TIMEZONE`
@@ -380,7 +380,7 @@ Go-live docs:
 | `RoutingCallEngine` / `CallRoutePolicy` | ✅ PRODUCTION_READY | Dispatches | Raises on explicit unconfigured mode |
 | `DirectGeminiEngine` | ⚠️ INTEGRATION_READY | Partial | Real audio loop wired; live PSTN validation still required |
 | `MangoTelephonyAdapter` | ⚠️ INTEGRATION_READY | originate/bridge/whisper/webhook | Control-plane only; no media streaming |
-| `FreeSwitchMediaGateway` | ⚠️ INTEGRATION_READY | ESL+RTP implemented | Inbound real path + partial outbound; needs live contour validation |
+| `FreeSwitchMediaGateway` | ⚠️ INTEGRATION_READY | ESL+RTP implemented | Current `esl_rtp` path binds RTP in the backend process; valid only when media worker is colocated with FreeSWITCH |
 | `TransferService` | ⚠️ INTEGRATION_READY | Logic complete | Uses `MangoTransferEngine` when Mango configured, otherwise stub |
 | `StubEngine` | 🔴 MOCK_ONLY | No | Dev/test only |
 | `StubTransferEngine` | 🔴 MOCK_ONLY | No | Used only when Mango transfer engine is not configured |
@@ -395,7 +395,7 @@ Go-live docs:
 These are not "Phase 2 nice-to-haves" — they are functional gaps that make features silently broken in production:
 
 1. **Mango warm transfer requires real webhook delivery** — without `/v1/webhooks/mango` events and Redis-backed state, confirmation flows degrade to polling and may timeout.
-2. **Direct mode real audio is not production-proven** — `esl_rtp` baseline exists, but live Mango trunk + FreeSWITCH validation is still required.
+2. **Direct mode real audio is not production-proven** — current `esl_rtp` baseline opens RTP sockets in the backend process. A Render-hosted backend with a separate FreeSWITCH host needs a FreeSWITCH-local media worker/dialplan app instead.
 3. **Direct voice route still not live-validated end-to-end** — code path exists, but live Mango+FreeSWITCH+Gemini audibility is not yet proven.
 4. **Vapi `transfer-destination-request` not answered** — Vapi expects a destination phone/SIP URI in the response body; handler returns `{"status": "ok"}`, transfer silently fails.
 5. **Vapi tool-calls not dispatched** — when AI calls a tool (CRM lookup, booking), handler logs only; AI stalls or repeats.
@@ -443,6 +443,6 @@ These are not "Phase 2 nice-to-haves" — they are functional gaps that make fea
 3. **Redis session manager**: horizontal scaling for Direct mode
 4. **Audio pipeline hardening**: validate Gemini native audio + ElevenLabs fallback behavior under live PSTN load.
 5. **MangoTelephonyAdapter**: run live tenant smoke for webhook semantics and warm transfer event timing.
-6. **FreeSWITCH RTP media path (NEEDS_REAL_WORLD_VALIDATION)**: `esl_rtp` baseline is implemented, but deployment-specific command templates, NAT/SRTP, jitter and latency must be validated on real contour.
+6. **FreeSWITCH RTP media path (NEEDS_REAL_WORLD_VALIDATION)**: `esl_rtp` is only valid when the RTP worker runs on the same host as FreeSWITCH. For Render + remote FreeSWITCH, move media termination onto the FreeSWITCH host first.
 7. **Mango manager cooldown restore is durable**: deadline is persisted (`managers.available_after`) and restored by periodic reconciliation (API lifespan loop / Celery beat). In-process timer is retained as a best-effort fast path.
 8. **Go-live sign-off**: execute first-call runbook and attach live evidence/log excerpts for answer, first AI reply, stop, transfer.
