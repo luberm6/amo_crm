@@ -204,9 +204,62 @@ async def test_initiate_call_passes_agent_bound_mango_context():
     call.agent_profile = agent
     call.agent_profile_id = None
 
-    await engine.initiate_call(call)
+    with patch("app.integrations.direct.engine.settings.mango_from_ext", ""):
+        await engine.initiate_call(call)
 
     kwargs = mock_sm.create_session.call_args.kwargs
     assert kwargs["telephony_caller_id"] == "12"
     assert kwargs["telephony_metadata"]["telephony_remote_line_id"] == "405622036"
     assert kwargs["telephony_metadata"]["telephony_line_phone_number"] == "+79300350609"
+
+
+@pytest.mark.anyio
+async def test_initiate_call_prefers_env_from_ext_for_new_mango_outbound_call():
+    """New outbound Mango direct calls must prefer configured MANGO_FROM_EXT over agent extension."""
+    mock_sm = AsyncMock(spec=DirectSessionManager)
+    mock_sm.create_session.return_value = "session-with-mango-env-caller-id"
+
+    engine = DirectGeminiEngine(
+        session_manager=mock_sm,
+        telephony=StubTelephonyAdapter(),
+        voice=StubVoiceProvider(),
+        session_factory=AsyncMock(),
+    )
+
+    telephony_line = TelephonyLine(
+        provider="mango",
+        provider_resource_id="405622036",
+        phone_number="+79300350609",
+        schema_name="ДЛЯ ИИ менеджера",
+        display_name="ДЛЯ ИИ менеджера",
+        extension="11",
+        is_active=True,
+        is_inbound_enabled=True,
+        is_outbound_enabled=True,
+        raw_payload={},
+    )
+    telephony_line.id = uuid.uuid4()
+    agent = AgentProfile(
+        name="Mango Agent",
+        is_active=True,
+        system_prompt="Prompt",
+        voice_strategy="tts_primary",
+        voice_provider="elevenlabs",
+        telephony_provider="mango",
+        telephony_extension="11",
+        version=1,
+    )
+    agent.id = uuid.uuid4()
+    agent.telephony_line_id = telephony_line.id
+    agent.telephony_line = telephony_line
+
+    call = _make_call()
+    call.agent_profile = agent
+    call.agent_profile_id = None
+
+    with patch("app.integrations.direct.engine.settings.mango_from_ext", "10"):
+        await engine.initiate_call(call)
+
+    kwargs = mock_sm.create_session.call_args.kwargs
+    assert kwargs["telephony_caller_id"] == "10"
+    assert kwargs["telephony_metadata"]["telephony_extension"] == "11"

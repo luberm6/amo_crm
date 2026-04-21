@@ -27,6 +27,7 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.core.config import settings
 from app.core.exceptions import EngineError
 from app.core.logging import get_logger
 from app.integrations.call_engine.base import AbstractCallEngine, EngineCallResult
@@ -122,12 +123,7 @@ class DirectGeminiEngine(AbstractCallEngine):
         gemini_voice_name = agent_config.get("gemini_voice_name") or None
         gemini_language_code = agent_config.get("gemini_language_code") or "ru-RU"
         telephony_metadata = dict(runtime_context.get("telephony") or {})
-        telephony_caller_id = str(
-            runtime_context.get("telephony_caller_id")
-            or runtime_agent.telephony_extension
-            or telephony_metadata.get("telephony_extension")
-            or ""
-        ).strip() or None
+        telephony_caller_id = str(runtime_context.get("telephony_caller_id") or "").strip() or None
         if full_agent_profile is not None and getattr(full_agent_profile, "telephony_line", None) is not None:
             telephony_line = full_agent_profile.telephony_line
             telephony_metadata.setdefault("telephony_provider", full_agent_profile.telephony_provider or telephony_line.provider)
@@ -137,8 +133,20 @@ class DirectGeminiEngine(AbstractCallEngine):
             telephony_metadata.setdefault("telephony_line_label", telephony_line.label)
             telephony_metadata.setdefault("telephony_extension", runtime_agent.telephony_extension or telephony_line.extension)
             telephony_metadata.setdefault("call_id", str(call.id))
-            if telephony_caller_id is None:
-                telephony_caller_id = (runtime_agent.telephony_extension or telephony_line.extension or "").strip() or None
+        if telephony_caller_id is None:
+            existing_leg_id = str(telephony_metadata.get("existing_leg_id") or "").strip()
+            if (
+                not existing_leg_id
+                and str(telephony_metadata.get("telephony_provider") or "").strip().lower() == "mango"
+                and (settings.mango_from_ext or "").strip()
+            ):
+                telephony_caller_id = (settings.mango_from_ext or "").strip() or None
+            else:
+                telephony_caller_id = str(
+                    runtime_agent.telephony_extension
+                    or telephony_metadata.get("telephony_extension")
+                    or ""
+                ).strip() or None
         log.info(
             "direct_engine.telephony_context_resolved",
             call_id=str(call.id),
