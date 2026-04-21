@@ -12,6 +12,11 @@ from app.api.admin_auth import require_admin_auth
 from app.api.deps import get_call_service, get_db
 from app.core.exceptions import AppError
 from app.core.config import settings
+from app.integrations.telephony.mango_client import (
+    MangoClient,
+    MangoClientError,
+    mango_extension_targets_include_host,
+)
 from app.integrations.telephony.mango_runtime import resolve_mango_from_ext
 from app.models.agent_profile import AgentProfile
 from app.models.call import CallMode
@@ -507,9 +512,29 @@ async def mango_readiness(request: Request) -> MangoReadinessRead:
         and settings.media_gateway_mode in {"mock", "esl_rtp"}
     )
     from_ext_auto_discoverable = False
+    primary_extension_target_ready = True
+    expected_sip_host = (urlparse(backend_url).hostname or "").strip() or "84.247.184.72"
     if api_configured and not from_ext_configured:
         resolved = await resolve_mango_from_ext()
         from_ext_auto_discoverable = bool(resolved.value)
+    if api_configured:
+        client = MangoClient.from_settings()
+        try:
+            extensions = await client.list_extensions()
+        except MangoClientError:
+            extensions = []
+        finally:
+            await client.aclose()
+        if extensions:
+            expected_extension = (settings.mango_from_ext or "").strip()
+            primary_extension = next((item for item in extensions if item.extension == expected_extension), None)
+            if primary_extension is None and len(extensions) == 1:
+                primary_extension = extensions[0]
+            if primary_extension is not None:
+                primary_extension_target_ready = mango_extension_targets_include_host(
+                    primary_extension.raw_payload or {},
+                    expected_sip_host,
+                )
 
     warnings: list[str] = []
     missing_requirements: list[str] = []
@@ -522,6 +547,11 @@ async def mango_readiness(request: Request) -> MangoReadinessRead:
     if not webhook_url_public:
         warnings.append("BACKEND_URL is not publicly reachable. Mango cannot deliver a live webhook to this backend yet.")
         missing_requirements.append("backend_url_not_public")
+    if not primary_extension_target_ready:
+        warnings.append(
+            "Primary Mango extension still points outside this VPS. Update the extension target to SIP on the current server."
+        )
+        missing_requirements.append("mango_primary_extension_target_mismatch")
     if not from_ext_configured and not from_ext_auto_discoverable:
         warnings.append("Outbound calling is not configured (MANGO_FROM_EXT is empty).")
         missing_requirements.append("mango_from_ext_missing")

@@ -18,7 +18,9 @@ import json
 
 import pytest
 
+import app.core.config as cfg
 from app.integrations.telephony.base import TelephonyLegState, TelephonyOriginateResult
+from app.integrations.telephony.mango import TelephonyError
 from app.integrations.telephony.mango_client import MangoExtensionPayload
 from app.integrations.telephony.mango_runtime import ResolvedMangoFromExt
 from app.integrations.telephony.mango_state_store import InMemoryMangoLegStateStore
@@ -182,6 +184,44 @@ async def test_mango_originate_call_accepts_result_1000_without_uid():
     assert result.leg_id == signed_payload["command_id"]
     assert result.provider_response["command_id"] == signed_payload["command_id"]
     assert result.provider_response["callback_uid_present"] is False
+
+
+@pytest.mark.anyio
+async def test_mango_originate_call_rejects_extension_target_outside_vps():
+    adapter = _make_mango_adapter()
+
+    with patch(
+        "app.integrations.telephony.mango.MangoClient.from_settings",
+        return_value=AsyncMock(
+            list_extensions=AsyncMock(
+                return_value=[
+                    MangoExtensionPayload(
+                        provider_resource_id="u11",
+                        extension="11",
+                        display_name="Primary",
+                        line_provider_resource_id="405622036",
+                        line_phone_number="+79300350609",
+                        raw_payload={
+                            "telephony": {
+                                "numbers": [
+                                    {"number": "89263358010", "protocol": "tel"},
+                                ]
+                            }
+                        },
+                    )
+                ]
+            ),
+            aclose=AsyncMock(),
+        ),
+    ), patch.object(cfg.settings, "backend_url", "http://84.247.184.72"):
+        with pytest.raises(TelephonyError) as exc:
+            await adapter.originate_call(
+                "+79991234567",
+                caller_id="11",
+                metadata={"telephony_line_phone_number": "+79300350609"},
+            )
+
+    assert "Primary Mango extension target is not configured for this VPS FreeSWITCH." in str(exc.value)
 
 
 @pytest.mark.anyio

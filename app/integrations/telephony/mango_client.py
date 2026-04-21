@@ -5,6 +5,7 @@ import json
 import time
 from dataclasses import dataclass
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -488,3 +489,40 @@ def normalize_mango_phone(number: Optional[str]) -> str:
         return f"+7{digits_only}"
     # Return original if we can't determine format
     return cleaned
+
+
+def extract_mango_extension_targets(payload: dict[str, Any]) -> list[dict[str, str]]:
+    telephony = payload.get("telephony") if isinstance(payload.get("telephony"), dict) else {}
+    numbers = telephony.get("numbers") if isinstance(telephony.get("numbers"), list) else []
+    items: list[dict[str, str]] = []
+    for item in numbers:
+        if not isinstance(item, dict):
+            continue
+        number = str(item.get("number") or "").strip()
+        protocol = str(item.get("protocol") or "").strip().lower() or "unknown"
+        if number:
+            items.append({"number": number, "protocol": protocol})
+    return items
+
+
+def mango_extension_targets_include_host(payload: dict[str, Any], host: str) -> bool:
+    expected = (host or "").strip().lower()
+    if not expected:
+        return False
+    for item in extract_mango_extension_targets(payload):
+        if item["protocol"] != "sip":
+            continue
+        target = item["number"]
+        if target.lower().startswith("sip:"):
+            remainder = target[4:]
+            if "@" in remainder:
+                remainder = remainder.split("@", 1)[1]
+            remainder = remainder.split(";", 1)[0]
+            sip_host = remainder.split(":", 1)[0].strip().lower()
+            if sip_host == expected:
+                return True
+            continue
+        parsed = urlparse(target)
+        if (parsed.hostname or "").strip().lower() == expected:
+            return True
+    return False

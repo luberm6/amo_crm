@@ -12,6 +12,7 @@ import hashlib
 import json
 import uuid
 from typing import TYPE_CHECKING, AsyncIterator, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -32,6 +33,11 @@ from app.integrations.telephony.mango_events import MangoEventProcessor
 from app.integrations.telephony.mango_freeswitch_correlation import (
     AbstractMangoFreeSwitchCorrelationStore,
     get_mango_freeswitch_correlation_store,
+)
+from app.integrations.telephony.mango_client import (
+    MangoClient,
+    extract_mango_extension_targets,
+    mango_extension_targets_include_host,
 )
 from app.integrations.telephony.mango_runtime import resolve_mango_from_ext
 from app.integrations.telephony.mango_state_store import (
@@ -254,6 +260,29 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 detail={
                     "requested_line_number": line_number,
                     "primary_line_number": normalized_primary_line,
+                },
+            )
+
+        expected_sip_host = (urlparse(settings.effective_backend_url).hostname or "").strip() or "84.247.184.72"
+        validation_client = MangoClient.from_settings()
+        try:
+            extensions = await validation_client.list_extensions()
+        except Exception:
+            extensions = []
+        finally:
+            await validation_client.aclose()
+        matched_extension = next((item for item in extensions if item.extension == from_ext), None)
+        if matched_extension is not None and not mango_extension_targets_include_host(
+            matched_extension.raw_payload or {},
+            expected_sip_host,
+        ):
+            raise TelephonyError(
+                "Primary Mango extension target is not configured for this VPS FreeSWITCH.",
+                detail={
+                    "from_extension": from_ext,
+                    "line_number": line_number,
+                    "expected_sip_host": expected_sip_host,
+                    "current_targets": extract_mango_extension_targets(matched_extension.raw_payload or {}),
                 },
             )
 
