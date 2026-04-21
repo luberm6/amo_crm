@@ -44,6 +44,7 @@ def get_media_gateway() -> AbstractMediaGateway:
         rtp_inbound_timeout_seconds=settings.freeswitch_rtp_inbound_timeout_seconds,
         rtp_outbound_buffer_max_frames=settings.freeswitch_rtp_outbound_buffer_max_frames,
         event_queue_max=settings.freeswitch_event_queue_max,
+        allow_local_rtp_bind=settings.freeswitch_local_media_supported,
     )
     _gateway = FreeSwitchMediaGateway(cfg)
     return _gateway

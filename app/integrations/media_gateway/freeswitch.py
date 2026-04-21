@@ -66,6 +66,7 @@ class FreeSwitchGatewayConfig:
     rtp_inbound_timeout_seconds: int = 15
     rtp_outbound_buffer_max_frames: int = 50
     event_queue_max: int = 512
+    allow_local_rtp_bind: bool = True
 
 
 @dataclass
@@ -161,6 +162,11 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             )
 
         if self._cfg.mode == "esl_rtp":
+            if not self._cfg.allow_local_rtp_bind:
+                raise MediaGatewayNotReadyError(
+                    "Current esl_rtp mode requires local RTP sockets in the backend runtime, "
+                    "but local RTP binding is disabled for this topology."
+                )
             await self._ensure_esl_connected()
 
         session_id = f"fs-{uuid.uuid4().hex[:16]}"
@@ -208,6 +214,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             handle.metadata = {
                 **(handle.metadata or {}),
                 "gateway_mode": "esl_rtp",
+                "local_rtp_bind_enabled": self._cfg.allow_local_rtp_bind,
                 "rtp_local_ip": rtp.local_ip,
                 "rtp_local_port": rtp.local_port,
                 "inbound_codec": self._cfg.rtp_inbound_codec,
@@ -385,6 +392,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             "provider": "freeswitch",
             "mode": self._cfg.mode,
             "active_sessions": len(self._handles),
+            "local_rtp_bind_enabled": self._cfg.allow_local_rtp_bind,
             "esl_connected": bool(self._esl is not None and self._esl.connected),
             "esl_host": self._cfg.esl_host,
             "esl_port": self._cfg.esl_port,
