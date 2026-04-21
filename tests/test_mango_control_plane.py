@@ -170,6 +170,40 @@ async def test_mango_event_phone_fallback_restores_provisional_leg_alias(session
 
 
 @pytest.mark.anyio
+async def test_mango_event_provider_type_heuristics_recognize_answered_with_nested_status(session: AsyncSession):
+    store = InMemoryMangoLegStateStore()
+    corr = InMemoryMangoFreeSwitchCorrelationStore()
+    processor = MangoEventProcessor(session=session, store=store, correlation_store=corr)
+
+    call = Call(
+        phone="+15555550125",
+        mode=CallMode.DIRECT,
+        status=CallStatus.CREATED,
+    )
+    call = await CallRepository(Call, session).save(call)
+    await corr.upsert_mapping(mango_leg_id="direct-cmd-900", call_id=str(call.id))
+
+    event = await processor.process(
+        {
+            "event_id": "evt-cmd-4",
+            "event": "call_connected",
+            "entry": {
+                "request_id": "direct-cmd-900",
+                "id": "leg-real-1000",
+                "state": "connected",
+                "to": {"number": "+15555550125"},
+            },
+        }
+    )
+
+    assert event.state == TelephonyLegState.ANSWERED
+    assert event.command_id == "direct-cmd-900"
+    alias_snap = await store.get_leg_state("direct-cmd-900")
+    assert alias_snap is not None
+    assert alias_snap.state == TelephonyLegState.ANSWERED
+
+
+@pytest.mark.anyio
 async def test_wait_for_answered_webhook_first():
     store = InMemoryMangoLegStateStore()
     adapter = _make_adapter(store)

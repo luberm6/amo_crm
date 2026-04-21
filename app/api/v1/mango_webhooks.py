@@ -132,6 +132,7 @@ async def mango_webhook(
         event_id=event.provider_event_id,
         provider_type=event.provider_type,
         leg_id=event.leg_id,
+        command_id=event.command_id,
         state=event.state.value if event.state else None,
         from_number=event.from_number,
         to_number=event.to_number,

@@ -32,23 +32,38 @@ _STATE_ALIASES: dict[str, TelephonyLegState] = {
     "initiating": TelephonyLegState.INITIATING,
     "calling": TelephonyLegState.INITIATING,
     "new": TelephonyLegState.INITIATING,
+    "call_start": TelephonyLegState.INITIATING,
+    "call_started": TelephonyLegState.INITIATING,
+    "call_appeared": TelephonyLegState.INITIATING,
     "ringing": TelephonyLegState.RINGING,
     "alerting": TelephonyLegState.RINGING,
+    "call_ringing": TelephonyLegState.RINGING,
     "answered": TelephonyLegState.ANSWERED,
+    "answer": TelephonyLegState.ANSWERED,
+    "call_answer": TelephonyLegState.ANSWERED,
+    "call_answered": TelephonyLegState.ANSWERED,
     "connected": TelephonyLegState.ANSWERED,
+    "call_connected": TelephonyLegState.ANSWERED,
     "in-progress": TelephonyLegState.ANSWERED,
     "in_progress": TelephonyLegState.ANSWERED,
     "bridged": TelephonyLegState.BRIDGED,
+    "call_bridge": TelephonyLegState.BRIDGED,
+    "call_bridged": TelephonyLegState.BRIDGED,
     "transferred": TelephonyLegState.BRIDGED,
     "hangup": TelephonyLegState.TERMINATED,
     "hung_up": TelephonyLegState.TERMINATED,
     "disconnected": TelephonyLegState.TERMINATED,
     "terminated": TelephonyLegState.TERMINATED,
     "completed": TelephonyLegState.TERMINATED,
+    "call_completed": TelephonyLegState.TERMINATED,
+    "call_finished": TelephonyLegState.TERMINATED,
+    "call_end": TelephonyLegState.TERMINATED,
+    "call_ended": TelephonyLegState.TERMINATED,
     "failed": TelephonyLegState.FAILED,
     "busy": TelephonyLegState.FAILED,
     "no_answer": TelephonyLegState.FAILED,
     "unavailable": TelephonyLegState.FAILED,
+    "subscriber_unavailable": TelephonyLegState.FAILED,
 }
 
 
@@ -345,6 +360,18 @@ class MangoEventProcessor:
         if transfer is None and call is not None:
             transfer = await self._transfer_repo.get_latest_for_call(call.id)
 
+        if call is None and (event.leg_id or event.command_id):
+            log.info(
+                "mango_webhook.unmatched_event",
+                provider_event_id=event.provider_event_id,
+                provider_type=event.provider_type,
+                provider_leg_id=event.leg_id,
+                command_id=event.command_id,
+                state=event.state.value if event.state else None,
+                from_number=event.from_number,
+                to_number=event.to_number,
+            )
+
         return call, transfer
 
     async def _correlate_recent_outbound_call(self, event: MangoNormalizedEvent) -> Optional[Call]:
@@ -495,15 +522,34 @@ def _extract_command_id(payload: dict[str, Any]) -> Optional[str]:
 
 
 def _extract_state(provider_type: str, payload: dict[str, Any]) -> Optional[TelephonyLegState]:
-    candidate = (provider_type or "").strip().lower()
-    if candidate in _STATE_ALIASES:
-        return _STATE_ALIASES[candidate]
-
-    status = _str_or(payload, "status", "state", "call_state")
-    if status:
-        state = _STATE_ALIASES.get(status.strip().lower())
-        if state:
-            return state
+    candidates = [_normalize_state_key(provider_type)]
+    candidates.extend(
+        _normalize_state_key(value)
+        for value in (
+            _str_or(payload, "status", "state", "call_state"),
+            _nested_str_or(payload.get("entry"), "status", "state", "call_state"),
+            _nested_str_or(payload.get("call"), "status", "state", "call_state"),
+            _nested_str_or(payload.get("data"), "status", "state", "call_state"),
+        )
+        if value
+    )
+    for candidate in candidates:
+        if not candidate:
+            continue
+        if candidate in _STATE_ALIASES:
+            return _STATE_ALIASES[candidate]
+        if "bridge" in candidate or "transfer" in candidate:
+            return TelephonyLegState.BRIDGED
+        if "answer" in candidate or "connect" in candidate:
+            return TelephonyLegState.ANSWERED
+        if "ring" in candidate or "alert" in candidate:
+            return TelephonyLegState.RINGING
+        if any(token in candidate for token in ("hangup", "hung", "disconnect", "terminat", "complet", "finish", "end")):
+            return TelephonyLegState.TERMINATED
+        if any(token in candidate for token in ("fail", "busy", "unavailable", "no_answer", "reject")):
+            return TelephonyLegState.FAILED
+        if any(token in candidate for token in ("appear", "start", "new", "initiat", "call")):
+            return TelephonyLegState.INITIATING
     return None
 
 
@@ -568,6 +614,12 @@ def _str_or(payload: dict[str, Any], *keys: str) -> Optional[str]:
     return None
 
 
+def _nested_str_or(payload: Any, *keys: str) -> Optional[str]:
+    if not isinstance(payload, dict):
+        return None
+    return _str_or(payload, *keys)
+
+
 def _extract_call_parties(payload: dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
     """
     Extract (from_number, to_number) from a Mango webhook payload.
@@ -622,3 +674,9 @@ def _normalize_phone_candidate(raw: Optional[str]) -> Optional[str]:
         return normalize_phone(raw)
     except Exception:
         return raw.strip() or None
+
+
+def _normalize_state_key(raw: Optional[str]) -> str:
+    if not raw:
+        return ""
+    return str(raw).strip().lower().replace("-", "_").replace(" ", "_")
