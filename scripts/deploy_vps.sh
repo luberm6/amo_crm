@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+log() { echo; echo "[deploy] $*"; }
+warn() { echo; echo "[warn] $*" >&2; }
+die() { echo; echo "[error] $*" >&2; exit 1; }
+
+APP_DIR="${APP_DIR:-/opt/amo_crm}"
+BRANCH="${BRANCH:-main}"
+SERVICE_NAME="${SERVICE_NAME:-amo-crm-api}"
+API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:8000/health}"
+FRONTEND_URL="${FRONTEND_URL:-http://127.0.0.1/}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+NPM_BIN="${NPM_BIN:-npm}"
+ROLLBACK_ON_FAILURE="${ROLLBACK_ON_FAILURE:-1}"
+
+LOCK_FILE="/tmp/amo_crm_deploy.lock"
+ROLLBACK_REV=""
+DEPLOY_STARTED=0
+
+dump_diagnostics() {
+  warn "Collecting diagnostics"
+  (cd "$APP_DIR" && git rev-parse --short HEAD) 2>/dev/null | sed 's/^/[git] current rev: /' || true
+  sudo systemctl --no-pager --full status "$SERVICE_NAME" || true
+  sudo journalctl -u "$SERVICE_NAME" -n 120 --no-pager || true
+  sudo nginx -t || true
+  curl -fsS "$API_HEALTH_URL" || true
+  curl -fsS "$FRONTEND_URL" || true
+}
+
+rollback() {
+  if [[ "$ROLLBACK_ON_FAILURE" != "1" || -z "$ROLLBACK_REV" || "$DEPLOY_STARTED" != "1" ]]; then
+    dump_diagnostics
+    return
+  fi
+
+  warn "Rolling back to ${ROLLBACK_REV}"
+  (
+    cd "$APP_DIR"
+    git reset --hard "$ROLLBACK_REV"
+
+    if [[ ! -d .venv ]]; then
+      "$PYTHON_BIN" -m venv .venv
+    fi
+    .venv/bin/python -m pip install --upgrade pip setuptools wheel >/dev/null
+    .venv/bin/pip install -e .
+
+    if [[ -f admin-panel/package-lock.json ]]; then
+      "$NPM_BIN" --prefix admin-panel ci
+    else
+      "$NPM_BIN" --prefix admin-panel install
+    fi
+    "$NPM_BIN" --prefix admin-panel run build
+
+    .venv/bin/alembic upgrade head
+    sudo systemctl restart "$SERVICE_NAME"
+    sudo nginx -t
+    sudo systemctl reload nginx
+  ) || warn "Rollback steps failed"
+
+  dump_diagnostics
+}
+
+on_error() {
+  local exit_code=$?
+  warn "Deploy failed on line ${BASH_LINENO[0]} with exit code ${exit_code}"
+  rollback
+  exit "$exit_code"
+}
+
+trap on_error ERR
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+
+require_command "$PYTHON_BIN"
+require_command "$NPM_BIN"
+require_command git
+require_command curl
+require_command sudo
+require_command flock
+require_command systemctl
+require_command nginx
+
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  die "Another deploy is already running"
+fi
+
+[[ -d "$APP_DIR/.git" ]] || die "Repo not found at $APP_DIR"
+
+cd "$APP_DIR"
+ROLLBACK_REV="$(git rev-parse HEAD)"
+DEPLOY_STARTED=1
+
+log "Starting deploy in $APP_DIR from branch $BRANCH"
+log "Current revision: $ROLLBACK_REV"
+
+log "Fetching latest code"
+git fetch origin "$BRANCH" --prune
+git reset --hard "origin/$BRANCH"
+
+log "Ensuring Python virtualenv"
+if [[ ! -d .venv ]]; then
+  "$PYTHON_BIN" -m venv .venv
+fi
+
+log "Installing backend dependencies"
+.venv/bin/python -m pip install --upgrade pip setuptools wheel >/dev/null
+.venv/bin/pip install -e .
+
+log "Installing frontend dependencies"
+if [[ -f admin-panel/package-lock.json ]]; then
+  "$NPM_BIN" --prefix admin-panel ci
+else
+  "$NPM_BIN" --prefix admin-panel install
+fi
+
+log "Building admin panel"
+"$NPM_BIN" --prefix admin-panel run build
+
+log "Running database migrations"
+.venv/bin/alembic upgrade head
+
+log "Restarting backend service"
+sudo systemctl restart "$SERVICE_NAME"
+sudo systemctl --no-pager --full status "$SERVICE_NAME"
+
+log "Validating backend health"
+curl -fsS "$API_HEALTH_URL"
+
+log "Validating nginx config"
+sudo nginx -t
+
+log "Reloading nginx"
+sudo systemctl reload nginx
+
+log "Validating frontend root"
+curl -fsS "$FRONTEND_URL" >/dev/null
+
+log "Deploy completed successfully"
+echo "[deploy] active revision: $(git rev-parse HEAD)"
