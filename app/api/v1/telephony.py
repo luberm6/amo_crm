@@ -4,7 +4,7 @@ import uuid
 from ipaddress import ip_address, ip_network
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -113,6 +113,12 @@ def _is_real_network_host(value: str) -> bool:
 
 
 def _has_real_freeswitch_host(value: str) -> bool:
+    if settings.freeswitch_backend_media_colocated and (value or "").strip().lower() in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }:
+        return True
     return _is_real_network_host(value)
 
 
@@ -124,6 +130,12 @@ def _has_real_freeswitch_password(value: str) -> bool:
 
 
 def _has_real_freeswitch_rtp_ip(value: str) -> bool:
+    if settings.freeswitch_backend_media_colocated and (value or "").strip().lower() in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }:
+        return True
     return _is_real_network_host(value)
 
 
@@ -180,9 +192,9 @@ def _build_route_readiness(
             ready=inbound_webhook_smoke_ready,
             status="ready" if inbound_webhook_smoke_ready else "blocked",
             summary=(
-                "Render can receive and verify Mango webhook delivery."
+                "Current backend can receive and verify Mango webhook delivery."
                 if inbound_webhook_smoke_ready
-                else "Render webhook delivery is not ready yet."
+                else "Backend webhook delivery is not ready yet."
             ),
             blockers=_requirements_to_blockers(
                 [
@@ -241,9 +253,9 @@ def _build_route_readiness(
     blocked_count = len(route_readiness) - ready_count
     overall_status = "ready" if blocked_count == 0 else "partial" if ready_count > 0 else "blocked"
     operator_summary = {
-        "ready": "Render-side Mango routing is ready for webhook and originate smoke checks.",
-        "partial": "Render-side Mango routing is partially ready. Check the blocked cards before live smoke.",
-        "blocked": "Render-side Mango routing is blocked. Fix the listed blockers before live smoke.",
+        "ready": "Current Mango routing is ready for webhook and originate smoke checks.",
+        "partial": "Current Mango routing is partially ready. Check the blocked cards before live smoke.",
+        "blocked": "Current Mango routing is blocked. Fix the listed blockers before live smoke.",
     }[overall_status]
     return route_readiness, MangoRenderReadinessSummary(
         ready_count=ready_count,
@@ -274,7 +286,7 @@ def _build_actionable_next_step(
             MangoActionableNextStep(
                 key="make_backend_url_public",
                 title="Make BACKEND_URL public",
-                description="Mango cannot deliver a webhook to a local or private BACKEND_URL. Point it to the public Render backend URL.",
+                description="Mango cannot deliver a webhook to a local or private BACKEND_URL. Point it to the public backend URL for this deployment.",
                 cta_label="Set a public BACKEND_URL",
                 scope="inbound_webhook",
             ),
@@ -344,7 +356,7 @@ def _build_actionable_next_step(
             MangoActionableNextStep(
                 key="move_media_to_freeswitch_host",
                 title="Move media handling onto the FreeSWITCH host",
-                description="Current esl_rtp mode opens RTP sockets inside the backend runtime. Because this backend and FreeSWITCH are on different hosts, inbound AI needs a FreeSWITCH-local media worker or dialplan app instead of Render-local RTP.",
+                description="Current esl_rtp mode opens RTP sockets inside the backend runtime. Because this backend and FreeSWITCH are on different hosts, inbound AI needs a FreeSWITCH-local media worker or dialplan app instead of backend-local RTP.",
                 cta_label="Deploy FreeSWITCH-local media handling",
                 scope="inbound_ai_runtime",
             ),
@@ -389,7 +401,7 @@ def _build_actionable_next_step(
         return MangoActionableNextStep(
             key="run_live_smoke",
             title="Run a live Mango smoke check",
-            description="Render-side readiness is green. The next honest step is one real webhook delivery or originate smoke.",
+            description="Readiness is green. The next honest step is one real webhook delivery or originate smoke.",
             cta_label="Run one live smoke check",
             scope="global",
         )
@@ -472,12 +484,18 @@ async def create_outbound_call(
 
 
 @router.get("/mango/readiness", response_model=MangoReadinessRead)
-async def mango_readiness() -> MangoReadinessRead:
+async def mango_readiness(request: Request) -> MangoReadinessRead:
     api_configured = bool(settings.mango_api_key and settings.mango_api_salt)
     webhook_secret_configured = bool(settings.mango_webhook_secret or settings.mango_webhook_shared_secret)
     from_ext_configured = bool(settings.mango_from_ext)
     direct_runtime_provider, telephony_runtime_real = _resolve_direct_runtime_provider()
-    backend_url = settings.effective_backend_url
+    request_backend_url = str(request.base_url).rstrip("/")
+    request_backend_host = (urlparse(request_backend_url).hostname or "").strip().lower()
+    backend_url = (
+        request_backend_url
+        if _is_public_backend_url(request_backend_url) and request_backend_host not in {"test", "testserver"}
+        else settings.effective_backend_url
+    )
     webhook_url = f"{backend_url}/v1/webhooks/mango" if backend_url else "/v1/webhooks/mango"
     webhook_url_public = _is_public_backend_url(backend_url)
     freeswitch_esl_host_configured = _has_real_freeswitch_host(settings.freeswitch_esl_host)

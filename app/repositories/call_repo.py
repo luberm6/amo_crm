@@ -4,6 +4,8 @@ CallRepository — domain-specific queries on top of the generic base.
 from __future__ import annotations
 from typing import Optional
 import uuid
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import select, update
 from app.models.call import ACTIVE_STATUSES, Call, CallStatus
 from app.repositories.base import BaseRepository
@@ -52,6 +54,27 @@ class CallRepository(BaseRepository[Call]):
         """Look up a call by provider leg ID used by telephony control-plane."""
         result = await self.session.execute(
             select(Call).where(Call.telephony_leg_id == telephony_leg_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_recent_outbound_call_by_phone(
+        self,
+        phone: str,
+        *,
+        within_seconds: int = 180,
+    ) -> Optional[Call]:
+        """
+        Best-effort lookup for a recent outbound direct call before telephony_leg_id
+        has been persisted. Used only as a webhook correlation fallback.
+        """
+        threshold = datetime.now(timezone.utc) - timedelta(seconds=max(1, within_seconds))
+        result = await self.session.execute(
+            select(Call)
+            .where(Call.phone == phone)
+            .where(Call.created_at >= threshold)
+            .where(Call.status.in_([CallStatus.CREATED, *list(ACTIVE_STATUSES)]))
+            .order_by(Call.created_at.desc(), Call.id.desc())
+            .limit(1)
         )
         return result.scalar_one_or_none()
 

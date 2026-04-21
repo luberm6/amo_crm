@@ -145,7 +145,21 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             return channel
 
         result = await self.originate_call(phone, caller_id=caller_id, metadata=metadata)
+        log.info(
+            "mango_telephony.wait_for_answer_started",
+            phone=phone,
+            leg_id=result.leg_id,
+            command_id=result.provider_response.get("command_id"),
+            internal_call_id=(metadata or {}).get("call_id"),
+        )
         answered_state = await self.wait_for_answered(result.leg_id)
+        log.info(
+            "mango_telephony.wait_for_answer_succeeded",
+            phone=phone,
+            leg_id=result.leg_id,
+            answered_state=answered_state.value,
+            internal_call_id=(metadata or {}).get("call_id"),
+        )
         channel = TelephonyChannel(
             channel_id=result.leg_id,
             phone=phone,
@@ -308,10 +322,22 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             poll_fallback=lambda: self._wait_for_leg_state_via_correlation(leg_id),
         )
         if state is None:
+            corr_state = await self._corr.get_effective_state(leg_id)
+            log.error(
+                "mango_telephony.wait_for_answer_timeout",
+                leg_id=leg_id,
+                timeout_seconds=wait_timeout,
+                correlation_state=corr_state.value if corr_state else None,
+            )
             raise TelephonyError(
                 f"Timed out waiting for leg {leg_id} to answer after {wait_timeout}s"
             )
         if state in (TelephonyLegState.FAILED, TelephonyLegState.TERMINATED):
+            log.warning(
+                "mango_telephony.wait_for_answer_failed",
+                leg_id=leg_id,
+                state=state.value,
+            )
             raise TelephonyError(
                 f"Leg {leg_id} ended before answer: {state.value}",
                 detail={"leg_id": leg_id, "state": state.value},
@@ -422,6 +448,11 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             TelephonyLegState.TERMINATED,
             TelephonyLegState.FAILED,
         }:
+            log.info(
+                "mango_telephony.wait_for_answer_correlation_hit",
+                leg_id=leg_id,
+                correlation_state=corr_state.value,
+            )
             return corr_state
         return None
 

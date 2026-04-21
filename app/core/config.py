@@ -48,6 +48,13 @@ def _is_public_http_url(url: str) -> bool:
     return True
 
 
+def _is_loopback_host(host: str) -> bool:
+    value = (host or "").strip().lower()
+    if not value:
+        return False
+    return value in {"localhost", "127.0.0.1", "::1"}
+
+
 def _resolve_host_ips(host: str) -> set[str]:
     value = (host or "").strip()
     if not value:
@@ -418,6 +425,10 @@ class Settings(BaseSettings):
         if not backend_host or not freeswitch_host:
             return False
         if backend_host == freeswitch_host:
+            return True
+        # In a colocated deployment the backend may expose a public URL while
+        # talking to FreeSWITCH over localhost. That is still the same host.
+        if _is_loopback_host(backend_host) or _is_loopback_host(freeswitch_host):
             return True
         return bool(_resolve_host_ips(backend_host) & _resolve_host_ips(freeswitch_host))
 

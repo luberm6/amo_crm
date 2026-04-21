@@ -68,4 +68,42 @@ describe('dashboard dial panel smoke', () => {
     expect(screen.getAllByText(/QUEUED/i).length).toBeGreaterThan(0)
     expect(screen.getByText(/11111111-1111-1111-1111-111111111111/i)).toBeInTheDocument()
   })
+
+  it('shows a clearer operator message for answer timeout while keeping debug payload', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'fetch').mockImplementation(async (input) => {
+      const path = typeof input === 'string' ? input : input.toString()
+      if (path.includes('/v1/admin/auth/me')) {
+        return new Response(JSON.stringify({ email: 'admin@example.com', role: 'admin' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (path.includes('/v1/calls')) {
+        return new Response(JSON.stringify({
+          detail: {
+            error: 'telephony_error',
+            message: 'Timed out waiting for leg direct-timeout-123 to answer after 30.0s',
+          },
+        }), {
+          status: 502,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      throw new Error(`Unexpected fetch path: ${path}`)
+    })
+
+    renderDashboardPage()
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /Быстрый прозвон через Mango/i })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: /^Call$/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/провайдер не подтвердил ответ абонента/i)).toBeInTheDocument()
+    })
+    expect(screen.getByText(/Timed out waiting for leg direct-timeout-123/i)).toBeInTheDocument()
+  })
 })

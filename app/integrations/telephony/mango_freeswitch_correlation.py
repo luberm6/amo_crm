@@ -66,6 +66,9 @@ class AbstractMangoFreeSwitchCorrelationStore:
     async def get(self, mango_leg_id: str) -> Optional[CorrelatedLegSnapshot]:
         raise NotImplementedError
 
+    async def find_mango_leg_id_by_call_id(self, call_id: str) -> Optional[str]:
+        raise NotImplementedError
+
     async def get_effective_state(self, mango_leg_id: str) -> Optional[TelephonyLegState]:
         snap = await self.get(mango_leg_id)
         return snap.effective_state if snap else None
@@ -74,6 +77,7 @@ class AbstractMangoFreeSwitchCorrelationStore:
 class InMemoryMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelationStore):
     def __init__(self) -> None:
         self._data: dict[str, CorrelatedLegSnapshot] = {}
+        self._call_to_leg: dict[str, str] = {}
         self._lock = asyncio.Lock()
 
     async def upsert_mapping(
@@ -88,6 +92,7 @@ class InMemoryMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelation
             current = self._data.get(mango_leg_id) or CorrelatedLegSnapshot(mango_leg_id=mango_leg_id)
             if call_id is not None:
                 current.call_id = call_id
+                self._call_to_leg[call_id] = mango_leg_id
             if freeswitch_uuid is not None:
                 current.freeswitch_uuid = freeswitch_uuid
             if freeswitch_session_id is not None:
@@ -143,9 +148,13 @@ class InMemoryMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelation
     async def get(self, mango_leg_id: str) -> Optional[CorrelatedLegSnapshot]:
         return self._data.get(mango_leg_id)
 
+    async def find_mango_leg_id_by_call_id(self, call_id: str) -> Optional[str]:
+        return self._call_to_leg.get(call_id)
+
 
 class RedisMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelationStore):
     _KEY = "mango:fs:corr:{}"
+    _CALL_KEY = "mango:fs:corr:call:{}"
 
     def __init__(self, redis: Redis) -> None:
         self._redis = redis
@@ -166,6 +175,8 @@ class RedisMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelationSto
         if freeswitch_session_id is not None:
             fields["freeswitch_session_id"] = freeswitch_session_id
         await self._merge_and_store(mango_leg_id, fields)
+        if call_id is not None:
+            await self._redis.set(self._CALL_KEY.format(call_id), mango_leg_id, ex=_TTL_SECONDS)
         snap = await self.get(mango_leg_id)
         assert snap is not None
         return snap
@@ -236,6 +247,10 @@ class RedisMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelationSto
             raw_mango_event=json.loads(raw_mango) if raw_mango else None,
             raw_freeswitch_event=json.loads(raw_fs) if raw_fs else None,
         )
+
+    async def find_mango_leg_id_by_call_id(self, call_id: str) -> Optional[str]:
+        leg_id = await self._redis.get(self._CALL_KEY.format(call_id))
+        return str(leg_id) if leg_id else None
 
     async def _merge_and_store(self, mango_leg_id: str, patch: dict[str, str]) -> None:
         key = self._KEY.format(mango_leg_id)

@@ -19,6 +19,23 @@ type OutboundCallResponse = {
   error?: unknown
 }
 
+function formatOperatorError(message: string | null, details: unknown): string | null {
+  const raw = message || ''
+  if (raw.includes('Timed out waiting for leg') && raw.includes('to answer after')) {
+    return 'Звонок запущен, но провайдер не подтвердил ответ абонента за ожидаемое время.'
+  }
+  if (raw.includes('subscriber unavailable') || raw.includes('unavailable')) {
+    return 'Абонент недоступен или провайдер завершил вызов до соединения.'
+  }
+  if (typeof details === 'object' && details && 'detail' in (details as Record<string, unknown>)) {
+    const nested = (details as { detail?: { message?: string } }).detail?.message
+    if (nested && nested !== raw) {
+      return nested
+    }
+  }
+  return message
+}
+
 export default function DashboardPage() {
   const { token } = useAuth()
   const [phoneNumber, setPhoneNumber] = useState('+17547365909')
@@ -47,7 +64,7 @@ export default function DashboardPage() {
         const details = typeof err.details === 'object' && err.details && 'detail' in (err.details as Record<string, unknown>)
           ? (err.details as { detail?: { message?: string } }).detail
           : null
-        setError(details?.message || err.message)
+        setError(formatOperatorError(details?.message || err.message, err.details))
         setResult({
           accepted: false,
           status: 'failed',

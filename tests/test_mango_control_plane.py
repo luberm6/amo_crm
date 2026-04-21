@@ -100,6 +100,76 @@ async def test_mango_event_command_id_alias_updates_provisional_leg(session: Asy
 
 
 @pytest.mark.anyio
+async def test_mango_event_nested_request_id_uses_correlation_store_call_mapping(session: AsyncSession):
+    store = InMemoryMangoLegStateStore()
+    corr = InMemoryMangoFreeSwitchCorrelationStore()
+    processor = MangoEventProcessor(session=session, store=store, correlation_store=corr)
+
+    call = Call(
+        phone="+15555550123",
+        mode=CallMode.DIRECT,
+        status=CallStatus.CREATED,
+        telephony_leg_id=None,
+    )
+    call = await CallRepository(Call, session).save(call)
+    await corr.upsert_mapping(mango_leg_id="direct-cmd-456", call_id=str(call.id))
+
+    event = await processor.process(
+        {
+            "event_id": "evt-cmd-2",
+            "event": "answered",
+            "data": {
+                "request_id": "direct-cmd-456",
+                "call_id": "leg-real-888",
+            },
+            "to_number": "+15555550123",
+        }
+    )
+
+    assert event.command_id == "direct-cmd-456"
+    alias_snap = await store.get_leg_state("direct-cmd-456")
+    real_snap = await store.get_leg_state("leg-real-888")
+    assert alias_snap is not None
+    assert alias_snap.state == TelephonyLegState.ANSWERED
+    assert real_snap is not None
+    assert real_snap.state == TelephonyLegState.ANSWERED
+
+    updated = await CallRepository(Call, session).get(call.id)
+    assert updated is not None
+    assert updated.telephony_leg_id == "leg-real-888"
+    assert updated.status == CallStatus.IN_PROGRESS
+
+
+@pytest.mark.anyio
+async def test_mango_event_phone_fallback_restores_provisional_leg_alias(session: AsyncSession):
+    store = InMemoryMangoLegStateStore()
+    corr = InMemoryMangoFreeSwitchCorrelationStore()
+    processor = MangoEventProcessor(session=session, store=store, correlation_store=corr)
+
+    call = Call(
+        phone="+15555550124",
+        mode=CallMode.DIRECT,
+        status=CallStatus.CREATED,
+    )
+    call = await CallRepository(Call, session).save(call)
+    await corr.upsert_mapping(mango_leg_id="direct-cmd-789", call_id=str(call.id))
+
+    event = await processor.process(
+        {
+            "event_id": "evt-cmd-3",
+            "event": "answered",
+            "call_id": "leg-real-999",
+            "to_number": "+15555550124",
+        }
+    )
+
+    assert event.command_id == "direct-cmd-789"
+    alias_snap = await store.get_leg_state("direct-cmd-789")
+    assert alias_snap is not None
+    assert alias_snap.state == TelephonyLegState.ANSWERED
+
+
+@pytest.mark.anyio
 async def test_wait_for_answered_webhook_first():
     store = InMemoryMangoLegStateStore()
     adapter = _make_adapter(store)

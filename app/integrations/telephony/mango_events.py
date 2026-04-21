@@ -26,6 +26,7 @@ from app.repositories.call_repo import CallRepository
 from app.repositories.transfer_repo import TransferRepository
 
 log = get_logger(__name__)
+_OUTBOUND_PHONE_CORRELATION_WINDOW_SECONDS = 180
 
 _STATE_ALIASES: dict[str, TelephonyLegState] = {
     "initiating": TelephonyLegState.INITIATING,
@@ -171,6 +172,14 @@ class MangoEventProcessor:
                 raw_event=event.raw_payload,
             )
             if event.command_id and event.command_id != event.leg_id:
+                log.info(
+                    "mango_webhook.provisional_leg_aliased",
+                    provider_event_id=event.provider_event_id,
+                    command_id=event.command_id,
+                    provider_leg_id=event.leg_id,
+                    state=event.state.value,
+                    call_id=event.call_id,
+                )
                 await self._store.set_leg_state(
                     event.command_id,
                     event.state,
@@ -272,6 +281,55 @@ class MangoEventProcessor:
         if call is None and event.command_id:
             call = await self._call_repo.get_by_telephony_leg_id(event.command_id)
 
+        if call is None and event.command_id:
+            corr = await self._corr.get(event.command_id)
+            if corr and corr.call_id:
+                event.call_id = event.call_id or corr.call_id
+                try:
+                    call = await self._call_repo.get(uuid.UUID(corr.call_id))
+                except Exception:
+                    call = None
+                if call is not None:
+                    log.info(
+                        "mango_webhook.correlation_store_match",
+                        provider_event_id=event.provider_event_id,
+                        command_id=event.command_id,
+                        call_id=str(call.id),
+                        source="command_id",
+                    )
+
+        if call is None and event.leg_id:
+            corr = await self._corr.get(event.leg_id)
+            if corr and corr.call_id:
+                event.call_id = event.call_id or corr.call_id
+                try:
+                    call = await self._call_repo.get(uuid.UUID(corr.call_id))
+                except Exception:
+                    call = None
+                if call is not None:
+                    log.info(
+                        "mango_webhook.correlation_store_match",
+                        provider_event_id=event.provider_event_id,
+                        provider_leg_id=event.leg_id,
+                        call_id=str(call.id),
+                        source="provider_leg_id",
+                    )
+
+        if call is None:
+            call = await self._correlate_recent_outbound_call(event)
+            if call is not None:
+                event.call_id = str(call.id)
+                if not event.command_id:
+                    event.command_id = await self._corr.find_mango_leg_id_by_call_id(str(call.id))
+                log.info(
+                    "mango_webhook.phone_fallback_match",
+                    provider_event_id=event.provider_event_id,
+                    provider_leg_id=event.leg_id,
+                    command_id=event.command_id,
+                    call_id=str(call.id),
+                    phone=call.phone,
+                )
+
         if event.transfer_id:
             try:
                 tid = uuid.UUID(event.transfer_id)
@@ -288,6 +346,21 @@ class MangoEventProcessor:
             transfer = await self._transfer_repo.get_latest_for_call(call.id)
 
         return call, transfer
+
+    async def _correlate_recent_outbound_call(self, event: MangoNormalizedEvent) -> Optional[Call]:
+        candidates: list[str] = []
+        for raw in (event.to_number, event.from_number):
+            normalized = _normalize_phone_candidate(raw)
+            if normalized and normalized not in candidates:
+                candidates.append(normalized)
+        for phone in candidates:
+            call = await self._call_repo.get_recent_outbound_call_by_phone(
+                phone,
+                within_seconds=_OUTBOUND_PHONE_CORRELATION_WINDOW_SECONDS,
+            )
+            if call is not None:
+                return call
+        return None
 
     async def _apply_call_state(
         self,
@@ -306,10 +379,12 @@ class MangoEventProcessor:
         if event.state == TelephonyLegState.ANSWERED and call.status not in TERMINAL_STATUSES:
             if call.status in (CallStatus.CREATED, CallStatus.QUEUED, CallStatus.DIALING, CallStatus.RINGING):
                 call.status = CallStatus.IN_PROGRESS
+                self._maybe_promote_real_telephony_leg(call, event)
                 await self._call_repo.save(call)
 
         if event.state in (TelephonyLegState.TERMINATED, TelephonyLegState.FAILED):
             if call.status not in TERMINAL_STATUSES and call.status != CallStatus.CONNECTED_TO_MANAGER:
+                self._maybe_promote_real_telephony_leg(call, event)
                 call.status = CallStatus.FAILED if event.state == TelephonyLegState.FAILED else CallStatus.COMPLETED
                 call.completed_at = datetime.now(timezone.utc)
                 await self._call_repo.save(call)
@@ -341,6 +416,16 @@ class MangoEventProcessor:
                 call.status = CallStatus.STOPPED
                 await self._transfer_repo.save(transfer)
                 await self._call_repo.save(call)
+
+    @staticmethod
+    def _maybe_promote_real_telephony_leg(call: Call, event: MangoNormalizedEvent) -> None:
+        if not event.leg_id:
+            return
+        current = (call.telephony_leg_id or "").strip()
+        if current and current == event.leg_id:
+            return
+        if current.startswith("direct-") or not current:
+            call.telephony_leg_id = event.leg_id
 
     async def _get_transfer_by_manager_leg(self, manager_leg_id: str) -> Optional[TransferRecord]:
         result = await self._session.execute(
@@ -388,7 +473,25 @@ def _extract_leg_id(payload: dict[str, Any]) -> Optional[str]:
 
 
 def _extract_command_id(payload: dict[str, Any]) -> Optional[str]:
-    return _str_or(payload, "command_id", "request_id")
+    nested_entry = payload.get("entry")
+    if isinstance(nested_entry, dict):
+        nested_id = _str_or(nested_entry, "command_id", "request_id", "callback_id")
+        if nested_id:
+            return nested_id
+
+    nested_call = payload.get("call")
+    if isinstance(nested_call, dict):
+        nested_id = _str_or(nested_call, "command_id", "request_id", "callback_id")
+        if nested_id:
+            return nested_id
+
+    nested_data = payload.get("data")
+    if isinstance(nested_data, dict):
+        nested_id = _str_or(nested_data, "command_id", "request_id", "callback_id")
+        if nested_id:
+            return nested_id
+
+    return _str_or(payload, "command_id", "request_id", "callback_id")
 
 
 def _extract_state(provider_type: str, payload: dict[str, Any]) -> Optional[TelephonyLegState]:
@@ -508,3 +611,14 @@ def _extract_call_parties(payload: dict[str, Any]) -> tuple[Optional[str], Optio
             to_n = to_n or to_call.strip()
 
     return from_n or None, to_n or None
+
+
+def _normalize_phone_candidate(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    try:
+        from app.services.phone_service import normalize_phone
+
+        return normalize_phone(raw)
+    except Exception:
+        return raw.strip() or None

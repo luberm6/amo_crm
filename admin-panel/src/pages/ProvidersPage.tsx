@@ -291,7 +291,7 @@ function mapMangoRequirementLabel(requirement: string) {
     case 'mango_webhook_secret_missing':
       return 'Не задан секрет вебхука, поэтому входящий вебхук не защищён.'
     case 'backend_url_not_public':
-      return 'BACKEND_URL не является публичным, поэтому Mango не сможет достучаться до этого backend на Render.'
+      return 'BACKEND_URL не является публичным, поэтому Mango не сможет достучаться до этого backend.'
     case 'mango_from_ext_missing':
       return 'Не задан MANGO_FROM_EXT, и стабильный fallback не найден.'
     case 'telephony_runtime_not_real':
@@ -310,13 +310,13 @@ function mapMangoRequirementLabel(requirement: string) {
 function mapReadinessBlocker(blocker: string) {
   switch (blocker) {
     case 'Mango API credentials are missing.':
-      return 'Вставьте в Render `MANGO_API_KEY` и `MANGO_API_SALT`.'
+      return 'Задайте `MANGO_API_KEY` и `MANGO_API_SALT` в текущем backend env.'
     case 'Webhook secret is missing.':
-      return 'Вставьте в Render `MANGO_WEBHOOK_SECRET` или `MANGO_WEBHOOK_SHARED_SECRET`.'
+      return 'Задайте `MANGO_WEBHOOK_SECRET` или `MANGO_WEBHOOK_SHARED_SECRET` в текущем backend env.'
     case 'BACKEND_URL is not public.':
-      return 'Сделайте `BACKEND_URL` публичным адресом Render, чтобы Mango мог доставлять вебхук.'
+      return 'Сделайте `BACKEND_URL` публичным адресом текущего backend, чтобы Mango мог доставлять вебхук.'
     case 'FROM_EXT is not configured and no stable fallback is available.':
-      return 'Задайте `MANGO_FROM_EXT` в Render, чтобы исходящий вызов шёл с предсказуемого внутреннего номера.'
+      return 'Задайте `MANGO_FROM_EXT` в текущем backend env, чтобы исходящий вызов шёл с предсказуемого внутреннего номера.'
     case 'Telephony runtime is not using a real Mango route.':
       return 'Переключите рантайм телефонии на Mango: `TELEPHONY_PROVIDER=mango`.'
     case 'MEDIA_GATEWAY_ENABLED=false.':
@@ -326,11 +326,11 @@ function mapReadinessBlocker(blocker: string) {
     case 'MEDIA_GATEWAY_MODE must be mock or esl_rtp.':
       return 'Для реального Mango-контура поставьте `MEDIA_GATEWAY_MODE=esl_rtp`.'
     case 'FREESWITCH_ESL_HOST is missing or local-only.':
-      return 'Укажите `FREESWITCH_ESL_HOST` в Render. Это должен быть доступный адрес FreeSWITCH, а не `127.0.0.1` или `localhost`.'
+      return 'Укажите корректный `FREESWITCH_ESL_HOST` в backend env. Для colocated VPS допустим `127.0.0.1`.'
     case 'FREESWITCH_ESL_PASSWORD is missing or still default.':
-      return 'Укажите `FREESWITCH_ESL_PASSWORD` в Render. Нельзя оставлять `ClueCon` или пустое значение.'
+      return 'Укажите `FREESWITCH_ESL_PASSWORD` в backend env. Нельзя оставлять `ClueCon` или пустое значение.'
     case 'FREESWITCH_RTP_IP is missing or local-only.':
-      return 'Укажите `FREESWITCH_RTP_IP` в Render. Это должен быть reachable media IP, а не `127.0.0.1` или `localhost`.'
+      return 'Укажите корректный `FREESWITCH_RTP_IP` в backend env. Для colocated VPS допустим `127.0.0.1`.'
     default:
       return blocker
   }
@@ -415,14 +415,14 @@ function mapMangoReadinessWarning(warning: string) {
 
 function mapRouteReadinessSummary(summary: string) {
   switch (summary) {
-    case 'Render webhook delivery is not ready yet.':
-      return 'Render ещё не готов принимать доставку Mango-вебхука.'
+    case 'Backend webhook delivery is not ready yet.':
+      return 'Текущий backend ещё не готов принимать доставку Mango-вебхука.'
     case 'Agent-bound Mango lines can run an outbound originate smoke.':
       return 'Линия Mango, назначенная агенту, уже готова к исходящей smoke-проверке.'
     case 'Inbound AI runtime is still blocked.':
       return 'Входящий AI-рантайм пока остаётся заблокированным.'
-    case 'Render can receive and verify Mango webhook delivery.':
-      return 'Render уже может принять и проверить Mango-вебхук.'
+    case 'Current backend can receive and verify Mango webhook delivery.':
+      return 'Текущий backend уже может принять и проверить Mango-вебхук.'
     case 'Inbound Mango webhook can reach a bound AI runtime.':
       return 'Входящий Mango-вебхук уже может довести событие до назначенного AI-рантайма.'
     default:
@@ -432,12 +432,12 @@ function mapRouteReadinessSummary(summary: string) {
 
 function mapRenderOperatorSummary(summary: string) {
   switch (summary) {
-    case 'Render-side Mango routing is ready for webhook and originate smoke checks.':
-      return 'Render-side маршрут Mango готов к честной smoke-проверке вебхука и исходящего вызова.'
-    case 'Render-side Mango routing is partially ready. Check the blocked cards before live smoke.':
-      return 'Render-side маршрут Mango частично готов. Перед live smoke нужно снять блокеры на карточках ниже.'
-    case 'Render-side Mango routing is blocked. Fix the listed blockers before live smoke.':
-      return 'Render-side маршрут Mango заблокирован. Сначала исправьте перечисленные блокеры.'
+    case 'Current Mango routing is ready for webhook and originate smoke checks.':
+      return 'Текущий Mango-маршрут готов к честной smoke-проверке вебхука и исходящего вызова.'
+    case 'Current Mango routing is partially ready. Check the blocked cards before live smoke.':
+      return 'Текущий Mango-маршрут частично готов. Перед live smoke нужно снять блокеры на карточках ниже.'
+    case 'Current Mango routing is blocked. Fix the listed blockers before live smoke.':
+      return 'Текущий Mango-маршрут заблокирован. Сначала исправьте перечисленные блокеры.'
     default:
       return summary
   }
@@ -476,8 +476,8 @@ function mapActionableNextStepDescription(description: string) {
   switch (description) {
     case 'Set MANGO_API_KEY and MANGO_API_SALT before trying to sync lines or run live routing checks.':
       return 'Сначала задайте MANGO_API_KEY и MANGO_API_SALT, и только потом запускайте синхронизацию линий и live routing checks.'
-    case 'Mango cannot deliver a webhook to a local or private BACKEND_URL. Point it to the public Render backend URL.':
-      return 'Mango не сможет доставить вебхук на локальный или приватный BACKEND_URL. Укажите публичный URL backend-сервиса на Render.'
+    case 'Mango cannot deliver a webhook to a local or private BACKEND_URL. Point it to the public backend URL for this deployment.':
+      return 'Mango не сможет доставить вебхук на локальный или приватный BACKEND_URL. Укажите публичный URL текущего backend-сервиса.'
     case 'Configure MANGO_WEBHOOK_SECRET or MANGO_WEBHOOK_SHARED_SECRET before testing inbound webhook delivery.':
       return 'Перед проверкой входящего вебхука задайте MANGO_WEBHOOK_SECRET или MANGO_WEBHOOK_SHARED_SECRET.'
     case 'Outbound originate still needs a stable source extension when auto-discovery is unavailable.':
@@ -739,7 +739,7 @@ export default function ProvidersPage() {
     [mangoReadiness],
   )
   const inboundWebhookSummary = mapRouteReadinessSummary(mangoReadiness?.route_readiness?.inbound_webhook?.summary
-    || 'Webhook Mango в backend на Render'
+    || 'Webhook Mango в текущий backend'
   )
   const outboundOriginateSummary = mapRouteReadinessSummary(mangoReadiness?.route_readiness?.outbound_originate?.summary
     || 'Линия Mango, назначенная агенту, для исходящего smoke'
@@ -770,7 +770,7 @@ export default function ProvidersPage() {
     {
       key: 'live_ready',
       title: 'Готово к live',
-      description: 'Путь входящего вебхука и исходящего вызова на Render готов к честной smoke-проверке.',
+      description: 'Путь входящего вебхука и исходящего вызова в текущем backend готов к честной smoke-проверке.',
       ready: mangoReadiness?.render_summary?.overall_status === 'ready',
     },
   ], [boundLineCount, mangoLines.length, mangoReadiness?.api_configured, mangoReadiness?.render_summary?.overall_status])
@@ -1485,21 +1485,21 @@ export default function ProvidersPage() {
                   <div className="panel-header">
                     <div>
                       <p className="eyebrow">3. Боевая готовность</p>
-                      <h4>Готовность маршрутизации на Render</h4>
+                      <h4>Готовность текущей маршрутизации</h4>
                     </div>
                   </div>
                   <div className="info-banner">
                     <strong>Честный статус боевого контура.</strong> Этот блок показывает не общую “готовность интеграции”, а можно ли
-                    уже идти в боевую smoke-проверку вебхука и исходящего вызова на Render.
+                    уже идти в боевую smoke-проверку вебхука и исходящего вызова на текущем backend.
                   </div>
                   {mangoReadiness?.render_summary ? (
                     <div className="provider-note">
                       <strong>
                         {mangoReadiness.render_summary.overall_status === 'ready'
-                          ? 'Маршрутизация на Render готова'
+                          ? 'Маршрутизация готова'
                           : mangoReadiness.render_summary.overall_status === 'partial'
-                            ? 'Маршрутизация на Render частично готова'
-                            : 'Маршрутизация на Render заблокирована'}
+                            ? 'Маршрутизация частично готова'
+                            : 'Маршрутизация заблокирована'}
                       </strong>
                       <div className="table-secondary">{mapRenderOperatorSummary(mangoReadiness.render_summary.operator_summary)}</div>
                       <div className="table-secondary">
@@ -1546,7 +1546,7 @@ export default function ProvidersPage() {
                         </span>
                       </div>
                       <ul className="readiness-list">
-                        {(outboundBlockers.length > 0 ? outboundBlockers : ['Путь исходящей smoke-проверки уже готов в текущей конфигурации Render.']).map((item) => (
+                        {(outboundBlockers.length > 0 ? outboundBlockers : ['Путь исходящей smoke-проверки уже готов в текущей конфигурации backend.']).map((item) => (
                           <li key={item}>{item}</li>
                         ))}
                       </ul>
@@ -1570,7 +1570,7 @@ export default function ProvidersPage() {
                     </article>
                   </div>
                   <div className="provider-note">
-                    <strong>Используемые Render URL</strong>
+                    <strong>Используемые backend URL</strong>
                     <div className="table-secondary">backend_url: {mangoReadiness?.backend_url || 'н/д'}</div>
                     <div className="table-secondary">URL вебхука: {mangoReadiness?.webhook_url || 'н/д'}</div>
                   </div>

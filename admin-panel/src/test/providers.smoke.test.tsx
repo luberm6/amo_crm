@@ -126,7 +126,7 @@ describe('providers page smoke', () => {
               key: 'inbound_webhook',
               ready: false,
               status: 'blocked',
-              summary: 'Render webhook delivery is not ready yet.',
+              summary: 'Backend webhook delivery is not ready yet.',
               blockers: ['Webhook secret is missing.', 'BACKEND_URL is not public.'],
             },
             outbound_originate: {
@@ -148,12 +148,12 @@ describe('providers page smoke', () => {
             ready_count: 1,
             blocked_count: 2,
             overall_status: 'partial',
-            operator_summary: 'Render-side Mango routing is partially ready. Check the blocked cards before live smoke.',
+            operator_summary: 'Current Mango routing is partially ready. Check the blocked cards before live smoke.',
           },
           actionable_next_step: {
             key: 'make_backend_url_public',
             title: 'Make BACKEND_URL public',
-            description: 'Mango cannot deliver a webhook to a local or private BACKEND_URL. Point it to the public Render backend URL.',
+            description: 'Mango cannot deliver a webhook to a local or private BACKEND_URL. Point it to the public backend URL for this deployment.',
             cta_label: 'Set a public BACKEND_URL',
             scope: 'inbound_webhook',
           },
@@ -296,8 +296,8 @@ describe('providers page smoke', () => {
     expect(screen.getByText(/Номера уже синхронизированы из Mango/i)).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /Обновить инвентарь/i }).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText(/Линия в фокусе:/i)).toBeInTheDocument()
-    expect(screen.getByText(/Готовность маршрутизации на Render/i)).toBeInTheDocument()
-    expect(screen.getByText(/Маршрутизация на Render частично готова/i)).toBeInTheDocument()
+    expect(screen.getByText(/Готовность текущей маршрутизации/i)).toBeInTheDocument()
+    expect(screen.getByText(/Маршрутизация частично готова/i)).toBeInTheDocument()
     expect(screen.getByText(/Главный следующий шаг/i)).toBeInTheDocument()
     expect(screen.getByText(/Сделайте BACKEND_URL публичным/i)).toBeInTheDocument()
     expect(screen.getByText(/Mango не сможет доставить вебхук на локальный или приватный BACKEND_URL/i)).toBeInTheDocument()
