@@ -185,11 +185,11 @@ reload_freeswitch_profile() {
     warn "FREESWITCH_ESL_PASSWORD is unavailable; skipping FreeSWITCH reload"
     return 0
   fi
-  log "Reloading FreeSWITCH XML and external SIP profile"
+  log "Reloading FreeSWITCH XML and mod_sofia"
   "$FREESWITCH_FS_CLI" -p "$esl_password" -x "reloadxml" || true
-  "$FREESWITCH_FS_CLI" -p "$esl_password" -x "sofia profile external restart reloadxml" || \
-    "$FREESWITCH_FS_CLI" -p "$esl_password" -x "sofia profile external start" || true
-  sleep 2
+  "$FREESWITCH_FS_CLI" -p "$esl_password" -x "reload mod_sofia" || true
+  "$FREESWITCH_FS_CLI" -p "$esl_password" -x "sofia profile external start" || true
+  sleep 3
   ss -ln 2>/dev/null | egrep ':(5080|5081)\b' || die "FreeSWITCH external SIP profile is still not listening on 5080/5081"
 }
 
