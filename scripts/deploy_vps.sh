@@ -211,6 +211,27 @@ log "Fetching latest code"
 git fetch origin "$BRANCH" --prune
 git reset --hard "origin/$BRANCH"
 
+if [[ "${DEPLOY_REEXECED:-0}" != "1" ]]; then
+  log "Re-executing deploy script from updated checkout"
+  exec env DEPLOY_REEXECED=1 \
+    APP_DIR="$APP_DIR" \
+    BRANCH="$BRANCH" \
+    SERVICE_NAME="$SERVICE_NAME" \
+    API_HEALTH_URL="$API_HEALTH_URL" \
+    FRONTEND_URL="$FRONTEND_URL" \
+    PYTHON_BIN="$PYTHON_BIN" \
+    NPM_BIN="$NPM_BIN" \
+    ROLLBACK_ON_FAILURE="$ROLLBACK_ON_FAILURE" \
+    HEALTH_WAIT_SECONDS="$HEALTH_WAIT_SECONDS" \
+    ENV_FILE="$ENV_FILE" \
+    FREESWITCH_CONF_DIR="$FREESWITCH_CONF_DIR" \
+    FREESWITCH_EXTERNAL_PROFILE="$FREESWITCH_EXTERNAL_PROFILE" \
+    FREESWITCH_EXTERNAL_PROFILE_OFF="$FREESWITCH_EXTERNAL_PROFILE_OFF" \
+    FREESWITCH_FS_CLI="$FREESWITCH_FS_CLI" \
+    VPS_PUBLIC_IP="$VPS_PUBLIC_IP" \
+    bash "$0"
+fi
+
 log "Enforcing colocated FreeSWITCH environment"
 ensure_env_value "BACKEND_URL" "http://84.247.184.72"
 ensure_env_value "MANGO_PRIMARY_PHONE_NUMBER" "89300350609"
