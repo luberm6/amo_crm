@@ -169,7 +169,7 @@ public_ip = sys.argv[2]
 text = path.read_text()
 for name in ("rtp-ip", "sip-ip", "ext-rtp-ip", "ext-sip-ip"):
     pattern = rf'(<param\s+name="{re.escape(name)}"\s+value=")([^"]*)(")'
-    text = re.sub(pattern, rf'\1{public_ip}\3', text)
+    text = re.sub(pattern, rf'\g<1>{public_ip}\g<3>', text)
 path.write_text(text)
 PY
 }
