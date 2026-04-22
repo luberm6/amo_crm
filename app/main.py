@@ -245,11 +245,10 @@ def create_app() -> FastAPI:
             },
         )
 
-    if settings.edge_proxy_target_url:
-        upstream_base = settings.edge_proxy_target_url.rstrip("/")
-
-        @app.middleware("http")
-        async def edge_proxy_middleware(request: Request, call_next):
+    @app.middleware("http")
+    async def edge_proxy_middleware(request: Request, call_next):
+        if settings.edge_proxy_target_url:
+            upstream_base = settings.edge_proxy_target_url.rstrip("/")
             upstream_url = urljoin(f"{upstream_base}/", request.url.path.lstrip("/"))
             if request.url.query:
                 upstream_url = f"{upstream_url}?{request.url.query}"
@@ -297,9 +296,10 @@ def create_app() -> FastAPI:
             return Response(
                 content=upstream_response.content,
                 status_code=upstream_response.status_code,
-                headers=response_headers,
+                headers={**response_headers, "x-edge-proxy-mode": "render-to-vps"},
                 media_type=upstream_response.headers.get("content-type"),
             )
+        return await call_next(request)
 
     # ── Routers ────────────────────────────────────────────────────────────────
     app.include_router(api_router)
