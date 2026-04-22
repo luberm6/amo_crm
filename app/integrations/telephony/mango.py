@@ -702,7 +702,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             f"sofia/gateway/mango_primary/{dial_number} &park()"
         )
         try:
-            esl_reply = await execute(f"originate {command}", background=False)
+            esl_reply = await execute(f"originate {command}", background=True)
         except Exception as exc:
             raise TelephonyError(
                 "FreeSWITCH SIP originate failed",
@@ -748,30 +748,25 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 },
             )
 
-        resolved_leg_id = call_uid
-        match = _UUID_RE.search(reply_text)
-        if match:
-            resolved_leg_id = match.group(0)
-
         call_id = str(metadata.get("call_id")) if metadata and metadata.get("call_id") else None
         transfer_id = str(metadata.get("transfer_id")) if metadata and metadata.get("transfer_id") else None
         role = str(metadata.get("role")) if metadata and metadata.get("role") else None
+        await self._corr.upsert_mapping(
+            mango_leg_id=call_uid,
+            call_id=call_id,
+            freeswitch_uuid=call_uid,
+        )
         await self._state.set_leg_state(
-            resolved_leg_id,
-            TelephonyLegState.ANSWERED,
+            call_uid,
+            TelephonyLegState.INITIATING,
             call_id=call_id,
             transfer_id=transfer_id,
             role=role,
         )
-        await self._corr.upsert_mapping(
-            mango_leg_id=resolved_leg_id,
-            call_id=call_id,
-            freeswitch_uuid=resolved_leg_id,
-        )
         log.info(
             "mango_telephony.call_originated",
             phone=phone,
-            mango_uid=resolved_leg_id,
+            mango_uid=call_uid,
             command_id=call_uid,
             line_number=caller_number,
             from_ext=from_ext,
@@ -785,8 +780,8 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             esl_reply=reply_text or None,
         )
         return TelephonyOriginateResult(
-            leg_id=resolved_leg_id,
-            sip_call_id=resolved_leg_id,
+            leg_id=call_uid,
+            sip_call_id=call_uid,
             provider_response={
                 "transport": "freeswitch_sip",
                 "gateway": "mango_primary",
