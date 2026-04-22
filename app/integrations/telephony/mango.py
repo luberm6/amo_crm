@@ -582,17 +582,11 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
 
             exists = str(await execute(f"uuid_exists {leg_id}", background=False)).strip().lower()
             if exists == "false":
-                await self._state.set_leg_state(leg_id, TelephonyLegState.FAILED)
-                await self._corr.set_freeswitch_state(
-                    mango_leg_id=leg_id,
-                    state=TelephonyLegState.FAILED,
-                    freeswitch_uuid=leg_id,
-                )
                 log.warning(
                     "mango_telephony.wait_for_answer_freeswitch_missing_uuid",
                     leg_id=leg_id,
                 )
-                return TelephonyLegState.FAILED
+                return None
 
             answer_state = str(
                 await execute(f"uuid_getvar {leg_id} answer_state", background=False)

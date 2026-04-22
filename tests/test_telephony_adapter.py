@@ -346,6 +346,27 @@ async def test_mango_wait_for_answered_uses_freeswitch_probe_when_sip_trunk_conf
 
 
 @pytest.mark.anyio
+async def test_mango_wait_for_answered_does_not_fail_immediately_when_freeswitch_uuid_is_late():
+    adapter = _make_mango_adapter()
+    fake_gateway = _FakeGateway(
+        replies={
+            ("uuid_exists direct-late-leg", False): "false",
+        }
+    )
+
+    with (
+        patch.object(cfg.settings, "mango_sip_login", "11"),
+        patch.object(cfg.settings, "mango_sip_password", "secret"),
+        patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
+        patch("app.integrations.telephony.mango.get_media_gateway", return_value=fake_gateway),
+    ):
+        with pytest.raises(TelephonyError) as exc:
+            await adapter.wait_for_answered("direct-late-leg", timeout=0.1)
+
+    assert "Timed out waiting for leg direct-late-leg" in str(exc.value)
+
+
+@pytest.mark.anyio
 async def test_mango_originate_call_requires_sip_trunk_when_api_disabled():
     adapter = _make_mango_adapter()
 
