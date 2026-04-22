@@ -10,6 +10,9 @@ from app.integrations.media_gateway.base import (
 )
 from app.integrations.telephony.audio_bridge import AbstractAudioBridge
 from app.integrations.telephony.base import TelephonyChannel
+from app.integrations.telephony.mango_freeswitch_correlation import (
+    get_mango_freeswitch_correlation_store,
+)
 
 log = get_logger(__name__)
 
@@ -34,18 +37,27 @@ class FreeSwitchAudioBridge(AbstractAudioBridge):
             call_id = channel.metadata.get("internal_call_id")
         if call_id is None:
             call_id = channel.channel_id
-        provider_leg_id = channel.provider_leg_id or channel.channel_id
+        mango_leg_id = channel.provider_leg_id or channel.channel_id
+        provider_leg_id = mango_leg_id
+        if mango_leg_id and str(mango_leg_id).startswith("direct-"):
+            snap = await get_mango_freeswitch_correlation_store().get(str(mango_leg_id))
+            if snap is not None and snap.freeswitch_uuid:
+                provider_leg_id = snap.freeswitch_uuid
 
         handle = await self._gateway.attach_session(
             call_id=str(call_id),
             provider_leg_id=provider_leg_id,
-            metadata={"phone": channel.phone},
+            metadata={
+                "phone": channel.phone,
+                "mango_leg_id": mango_leg_id,
+            },
         )
         self._session_id = handle.session_id
         self._is_open = True
         log.info(
             "freeswitch_bridge.opened",
             session_id=self._session_id,
+            mango_leg_id=mango_leg_id,
             provider_leg_id=provider_leg_id,
         )
 

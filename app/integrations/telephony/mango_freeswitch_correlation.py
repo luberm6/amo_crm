@@ -69,6 +69,9 @@ class AbstractMangoFreeSwitchCorrelationStore:
     async def find_mango_leg_id_by_call_id(self, call_id: str) -> Optional[str]:
         raise NotImplementedError
 
+    async def find_mango_leg_id_by_freeswitch_uuid(self, freeswitch_uuid: str) -> Optional[str]:
+        raise NotImplementedError
+
     async def get_effective_state(self, mango_leg_id: str) -> Optional[TelephonyLegState]:
         snap = await self.get(mango_leg_id)
         return snap.effective_state if snap else None
@@ -78,6 +81,7 @@ class InMemoryMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelation
     def __init__(self) -> None:
         self._data: dict[str, CorrelatedLegSnapshot] = {}
         self._call_to_leg: dict[str, str] = {}
+        self._freeswitch_to_leg: dict[str, str] = {}
         self._lock = asyncio.Lock()
 
     async def upsert_mapping(
@@ -95,6 +99,7 @@ class InMemoryMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelation
                 self._call_to_leg[call_id] = mango_leg_id
             if freeswitch_uuid is not None:
                 current.freeswitch_uuid = freeswitch_uuid
+                self._freeswitch_to_leg[freeswitch_uuid] = mango_leg_id
             if freeswitch_session_id is not None:
                 current.freeswitch_session_id = freeswitch_session_id
             current.effective_state = _effective_state(current.mango_state, current.freeswitch_state)
@@ -136,6 +141,7 @@ class InMemoryMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelation
             current.freeswitch_state = state
             if freeswitch_uuid is not None:
                 current.freeswitch_uuid = freeswitch_uuid
+                self._freeswitch_to_leg[freeswitch_uuid] = mango_leg_id
             if freeswitch_session_id is not None:
                 current.freeswitch_session_id = freeswitch_session_id
             if raw_event is not None:
@@ -151,10 +157,14 @@ class InMemoryMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelation
     async def find_mango_leg_id_by_call_id(self, call_id: str) -> Optional[str]:
         return self._call_to_leg.get(call_id)
 
+    async def find_mango_leg_id_by_freeswitch_uuid(self, freeswitch_uuid: str) -> Optional[str]:
+        return self._freeswitch_to_leg.get(freeswitch_uuid)
+
 
 class RedisMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelationStore):
     _KEY = "mango:fs:corr:{}"
     _CALL_KEY = "mango:fs:corr:call:{}"
+    _FS_KEY = "mango:fs:corr:fs:{}"
 
     def __init__(self, redis: Redis) -> None:
         self._redis = redis
@@ -177,6 +187,8 @@ class RedisMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelationSto
         await self._merge_and_store(mango_leg_id, fields)
         if call_id is not None:
             await self._redis.set(self._CALL_KEY.format(call_id), mango_leg_id, ex=_TTL_SECONDS)
+        if freeswitch_uuid is not None:
+            await self._redis.set(self._FS_KEY.format(freeswitch_uuid), mango_leg_id, ex=_TTL_SECONDS)
         snap = await self.get(mango_leg_id)
         assert snap is not None
         return snap
@@ -222,6 +234,8 @@ class RedisMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelationSto
         if raw_event is not None:
             fields["raw_freeswitch_event"] = json.dumps(raw_event, ensure_ascii=False)
         await self._merge_and_store(mango_leg_id, fields)
+        if freeswitch_uuid is not None:
+            await self._redis.set(self._FS_KEY.format(freeswitch_uuid), mango_leg_id, ex=_TTL_SECONDS)
         snap = await self.get(mango_leg_id)
         assert snap is not None
         return snap
@@ -250,6 +264,10 @@ class RedisMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelationSto
 
     async def find_mango_leg_id_by_call_id(self, call_id: str) -> Optional[str]:
         leg_id = await self._redis.get(self._CALL_KEY.format(call_id))
+        return str(leg_id) if leg_id else None
+
+    async def find_mango_leg_id_by_freeswitch_uuid(self, freeswitch_uuid: str) -> Optional[str]:
+        leg_id = await self._redis.get(self._FS_KEY.format(freeswitch_uuid))
         return str(leg_id) if leg_id else None
 
     async def _merge_and_store(self, mango_leg_id: str, patch: dict[str, str]) -> None:

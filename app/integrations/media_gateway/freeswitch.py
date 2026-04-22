@@ -173,6 +173,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             await self._ensure_esl_connected()
 
         session_id = f"fs-{uuid.uuid4().hex[:16]}"
+        mango_leg_id = str((metadata or {}).get("mango_leg_id") or provider_leg_id)
         handle = MediaSessionHandle(
             session_id=session_id,
             call_id=call_id,
@@ -183,12 +184,13 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             self._queues[session_id] = asyncio.Queue(maxsize=max(1, int(self._cfg.event_queue_max)))
             self._handles[session_id] = handle
             self._audio_out_bytes[session_id] = 0
+            self._leg_to_session[mango_leg_id] = session_id
             self._leg_to_session[provider_leg_id] = session_id
             self._uuid_to_session[provider_leg_id] = session_id
             self._correlation[session_id] = _SessionCorrelation(
                 session_id=session_id,
                 call_id=call_id,
-                mango_leg_id=provider_leg_id,
+                mango_leg_id=mango_leg_id,
                 freeswitch_uuid=provider_leg_id,
                 updated_at=datetime.now(timezone.utc),
             )
@@ -200,7 +202,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             set_fs_active_sessions(self._cfg.mode, len(self._handles))
         inc_fs_session_attach(self._cfg.mode)
         await self._corr.upsert_mapping(
-            mango_leg_id=provider_leg_id,
+            mango_leg_id=mango_leg_id,
             call_id=call_id,
             freeswitch_uuid=provider_leg_id,
             freeswitch_session_id=session_id,
@@ -257,6 +259,8 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             corr = self._correlation.pop(session_id, None)
             if corr and corr.freeswitch_uuid:
                 self._uuid_to_session.pop(corr.freeswitch_uuid, None)
+            if corr and corr.mango_leg_id:
+                self._leg_to_session.pop(corr.mango_leg_id, None)
             self._lifecycle.pop(session_id, None)
             stats = self._media_stats.pop(session_id, None)
             if stats is not None and stats.disconnect_reason is None:
@@ -736,7 +740,14 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         normalized, sid, fs_uuid = self._normalize_esl_event(event)
         if sid is None:
             mango_leg_id = self._infer_mango_leg_id_from_event(event)
+            if mango_leg_id is None and fs_uuid:
+                mango_leg_id = await self._corr.find_mango_leg_id_by_freeswitch_uuid(fs_uuid)
             if mango_leg_id is None or normalized is None:
+                return
+            session_id = self._leg_to_session.get(mango_leg_id)
+            if session_id is not None and fs_uuid:
+                await self._promote_session_uuid(session_id, mango_leg_id, fs_uuid)
+                await self._apply_normalized_event(session_id, normalized, event)
                 return
             await self._apply_correlation_only_event(mango_leg_id, normalized, event, fs_uuid)
             return
@@ -793,6 +804,43 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             return
         corr.freeswitch_uuid = fs_uuid
         corr.updated_at = datetime.now(timezone.utc)
+
+    async def _promote_session_uuid(
+        self,
+        session_id: str,
+        mango_leg_id: str,
+        fs_uuid: str,
+    ) -> None:
+        corr = self._correlation.get(session_id)
+        previous_uuid = corr.freeswitch_uuid if corr else None
+        self._update_correlation(session_id, fs_uuid)
+        await self._corr.upsert_mapping(
+            mango_leg_id=mango_leg_id,
+            freeswitch_uuid=fs_uuid,
+            freeswitch_session_id=session_id,
+        )
+        if previous_uuid == fs_uuid:
+            return
+        runtime = self._rtp.get(session_id)
+        if runtime is None:
+            return
+        try:
+            await self._run_attach_command(fs_uuid, runtime.local_ip, runtime.local_port)
+            log.info(
+                "freeswitch_gateway.session_uuid_promoted",
+                session_id=session_id,
+                mango_leg_id=mango_leg_id,
+                previous_uuid=previous_uuid,
+                freeswitch_uuid=fs_uuid,
+            )
+        except Exception as exc:
+            log.warning(
+                "freeswitch_gateway.session_uuid_promote_attach_failed",
+                session_id=session_id,
+                mango_leg_id=mango_leg_id,
+                freeswitch_uuid=fs_uuid,
+                error=str(exc),
+            )
 
     async def _apply_normalized_event(
         self,

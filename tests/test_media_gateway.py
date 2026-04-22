@@ -108,6 +108,60 @@ async def test_mango_attach_audio_bridge_uses_media_gateway_mock_mode():
 
 
 @pytest.mark.anyio
+async def test_freeswitch_bridge_prefers_correlated_real_uuid_when_available():
+    from app.integrations.telephony import freeswitch_bridge as bridge_module
+
+    class _CaptureGateway:
+        def __init__(self):
+            self.calls = []
+
+        async def attach_session(self, *, call_id: str, provider_leg_id: str, metadata=None):
+            self.calls.append((call_id, provider_leg_id, metadata))
+            from app.integrations.media_gateway.base import MediaSessionHandle
+
+            return MediaSessionHandle(
+                session_id="fs-session-1",
+                call_id=call_id,
+                provider_leg_id=provider_leg_id,
+                metadata=metadata or {},
+            )
+
+        async def detach_session(self, session_id: str) -> None:
+            return None
+
+    gateway = _CaptureGateway()
+    bridge = FreeSwitchAudioBridge(gateway=gateway)  # type: ignore[arg-type]
+    channel = TelephonyChannel(
+        channel_id="c-3",
+        phone="+79990001124",
+        provider_leg_id="direct-bridge-real",
+        state=TelephonyLegState.ANSWERED,
+        metadata={"internal_call_id": "call-bridge-real"},
+    )
+
+    class _Store:
+        async def get(self, mango_leg_id: str):
+            from app.integrations.telephony.mango_freeswitch_correlation import CorrelatedLegSnapshot
+
+            return CorrelatedLegSnapshot(
+                mango_leg_id=mango_leg_id,
+                freeswitch_uuid="fs-real-bridge",
+            )
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(bridge_module, "get_mango_freeswitch_correlation_store", lambda: _Store())
+        await bridge.open(channel)
+
+    assert gateway.calls == [
+        (
+            "call-bridge-real",
+            "fs-real-bridge",
+            {"phone": "+79990001124", "mango_leg_id": "direct-bridge-real"},
+        )
+    ]
+
+
+@pytest.mark.anyio
 async def test_rtp_helpers_build_and_extract_payload():
     pcm = b"\x55" * 640
     packet = _build_rtp_packet(
@@ -306,6 +360,75 @@ async def test_freeswitch_gateway_correlation_only_events_track_outbound_leg_bef
     assert corr_store_snap is not None
     assert corr_store_snap.freeswitch_uuid == "fs-real-1"
     assert corr_store_snap.effective_state == TelephonyLegState.ANSWERED
+
+
+@pytest.mark.anyio
+async def test_freeswitch_gateway_answer_event_can_resolve_real_uuid_after_create():
+    gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="mock"))
+
+    await gw._process_plain_event(
+        {
+            "Event-Name": "CHANNEL_CREATE",
+            "Unique-ID": "fs-real-2",
+            "variable_origination_uuid": "direct-post-create",
+        }
+    )
+    await gw._process_plain_event(
+        {
+            "Event-Name": "CHANNEL_ANSWER",
+            "Unique-ID": "fs-real-2",
+        }
+    )
+
+    corr_store_snap = await gw._corr.get("direct-post-create")  # type: ignore[attr-defined]
+    assert corr_store_snap is not None
+    assert corr_store_snap.freeswitch_uuid == "fs-real-2"
+    assert corr_store_snap.effective_state == TelephonyLegState.ANSWERED
+
+
+@pytest.mark.anyio
+async def test_freeswitch_gateway_promotes_session_uuid_and_retargets_attach_when_real_uuid_arrives():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            rtp_ip="127.0.0.1",
+            rtp_port_start=25330,
+            rtp_port_end=25430,
+        )
+    )
+    gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_attach_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_hangup_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    handle = await gw.attach_session(
+        call_id="call-promote",
+        provider_leg_id="fs-real-placeholder",
+        metadata={"mango_leg_id": "direct-promote"},
+    )
+    sid = handle.session_id
+    gw._correlation[sid].freeswitch_uuid = "direct-promote"  # type: ignore[attr-defined]
+    gw._uuid_to_session.pop("fs-real-placeholder", None)  # type: ignore[attr-defined]
+    gw._uuid_to_session["direct-promote"] = sid  # type: ignore[attr-defined]
+
+    await gw._process_plain_event(
+        {
+            "Event-Name": "CHANNEL_CREATE",
+            "Unique-ID": "fs-real-3",
+            "variable_origination_uuid": "direct-promote",
+        }
+    )
+    await gw._process_plain_event(
+        {
+            "Event-Name": "CHANNEL_ANSWER",
+            "Unique-ID": "fs-real-3",
+        }
+    )
+
+    corr = gw.get_session_correlation(sid)
+    assert corr is not None
+    assert corr["freeswitch_uuid"] == "fs-real-3"
+    gw._run_attach_command.assert_any_call("fs-real-3", gw._rtp[sid].local_ip, gw._rtp[sid].local_port)  # type: ignore[index]
+    await gw.detach_session(sid)
 
 
 @pytest.mark.anyio
