@@ -278,6 +278,33 @@ async def test_wait_for_answered_hangup_before_answer_from_freeswitch():
 
 
 @pytest.mark.anyio
+async def test_wait_for_answered_returns_answered_when_hangup_follows_immediately():
+    store = InMemoryMangoLegStateStore()
+    corr = InMemoryMangoFreeSwitchCorrelationStore()
+    adapter = _make_adapter(store, corr)
+
+    async def emit_answer_then_hangup():
+        await asyncio.sleep(0.05)
+        await corr.set_freeswitch_state(
+            mango_leg_id="leg-fs-answer-race",
+            state=TelephonyLegState.ANSWERED,
+            freeswitch_uuid="fs-uuid-race",
+            freeswitch_session_id="fs-session-race",
+        )
+        await corr.set_freeswitch_state(
+            mango_leg_id="leg-fs-answer-race",
+            state=TelephonyLegState.TERMINATED,
+            freeswitch_uuid="fs-uuid-race",
+            freeswitch_session_id="fs-session-race",
+        )
+
+    task = asyncio.create_task(emit_answer_then_hangup())
+    state = await adapter.wait_for_answered("leg-fs-answer-race", timeout=1.0)
+    await task
+    assert state == TelephonyLegState.ANSWERED
+
+
+@pytest.mark.anyio
 async def test_freeswitch_duplicate_answer_events_are_idempotent():
     corr = InMemoryMangoFreeSwitchCorrelationStore()
     await corr.set_freeswitch_state(
@@ -295,6 +322,7 @@ async def test_freeswitch_duplicate_answer_events_are_idempotent():
     snap = await corr.get("leg-fs-dup")
     assert snap is not None
     assert snap.effective_state == TelephonyLegState.ANSWERED
+    assert snap.answered_seen is True
 
 
 @pytest.mark.anyio

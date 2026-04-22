@@ -26,6 +26,8 @@ class CorrelatedLegSnapshot:
     mango_state: Optional[TelephonyLegState] = None
     freeswitch_state: Optional[TelephonyLegState] = None
     effective_state: Optional[TelephonyLegState] = None
+    answered_seen: bool = False
+    bridged_seen: bool = False
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     raw_mango_event: Optional[dict] = None
     raw_freeswitch_event: Optional[dict] = None
@@ -102,6 +104,8 @@ class InMemoryMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelation
                 self._freeswitch_to_leg[freeswitch_uuid] = mango_leg_id
             if freeswitch_session_id is not None:
                 current.freeswitch_session_id = freeswitch_session_id
+            current.answered_seen = current.answered_seen or _state_implies_answered(current.mango_state) or _state_implies_answered(current.freeswitch_state)
+            current.bridged_seen = current.bridged_seen or _state_implies_bridged(current.mango_state) or _state_implies_bridged(current.freeswitch_state)
             current.effective_state = _effective_state(current.mango_state, current.freeswitch_state)
             current.updated_at = datetime.now(timezone.utc)
             self._data[mango_leg_id] = current
@@ -122,6 +126,8 @@ class InMemoryMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelation
                 current.call_id = call_id
             if raw_event is not None:
                 current.raw_mango_event = raw_event
+            current.answered_seen = current.answered_seen or _state_implies_answered(state)
+            current.bridged_seen = current.bridged_seen or _state_implies_bridged(state)
             current.effective_state = _effective_state(current.mango_state, current.freeswitch_state)
             current.updated_at = datetime.now(timezone.utc)
             self._data[mango_leg_id] = current
@@ -146,6 +152,8 @@ class InMemoryMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelation
                 current.freeswitch_session_id = freeswitch_session_id
             if raw_event is not None:
                 current.raw_freeswitch_event = raw_event
+            current.answered_seen = current.answered_seen or _state_implies_answered(state)
+            current.bridged_seen = current.bridged_seen or _state_implies_bridged(state)
             current.effective_state = _effective_state(current.mango_state, current.freeswitch_state)
             current.updated_at = datetime.now(timezone.utc)
             self._data[mango_leg_id] = current
@@ -184,6 +192,19 @@ class RedisMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelationSto
             fields["freeswitch_uuid"] = freeswitch_uuid
         if freeswitch_session_id is not None:
             fields["freeswitch_session_id"] = freeswitch_session_id
+        current = await self.get(mango_leg_id)
+        answered_seen = (
+            (current.answered_seen if current is not None else False)
+            or _state_implies_answered(current.mango_state if current is not None else None)
+            or _state_implies_answered(current.freeswitch_state if current is not None else None)
+        )
+        bridged_seen = (
+            (current.bridged_seen if current is not None else False)
+            or _state_implies_bridged(current.mango_state if current is not None else None)
+            or _state_implies_bridged(current.freeswitch_state if current is not None else None)
+        )
+        fields["answered_seen"] = "1" if answered_seen else "0"
+        fields["bridged_seen"] = "1" if bridged_seen else "0"
         await self._merge_and_store(mango_leg_id, fields)
         if call_id is not None:
             await self._redis.set(self._CALL_KEY.format(call_id), mango_leg_id, ex=_TTL_SECONDS)
@@ -209,6 +230,10 @@ class RedisMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelationSto
             fields["call_id"] = call_id
         if raw_event is not None:
             fields["raw_mango_event"] = json.dumps(raw_event, ensure_ascii=False)
+        if _state_implies_answered(state):
+            fields["answered_seen"] = "1"
+        if _state_implies_bridged(state):
+            fields["bridged_seen"] = "1"
         await self._merge_and_store(mango_leg_id, fields)
         snap = await self.get(mango_leg_id)
         assert snap is not None
@@ -233,6 +258,10 @@ class RedisMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelationSto
             fields["freeswitch_session_id"] = freeswitch_session_id
         if raw_event is not None:
             fields["raw_freeswitch_event"] = json.dumps(raw_event, ensure_ascii=False)
+        if _state_implies_answered(state):
+            fields["answered_seen"] = "1"
+        if _state_implies_bridged(state):
+            fields["bridged_seen"] = "1"
         await self._merge_and_store(mango_leg_id, fields)
         if freeswitch_uuid is not None:
             await self._redis.set(self._FS_KEY.format(freeswitch_uuid), mango_leg_id, ex=_TTL_SECONDS)
@@ -257,6 +286,8 @@ class RedisMangoFreeSwitchCorrelationStore(AbstractMangoFreeSwitchCorrelationSto
             mango_state=mango_state,
             freeswitch_state=fs_state,
             effective_state=_state_or_none(data.get("effective_state")),
+            answered_seen=str(data.get("answered_seen", "")).strip() in {"1", "true", "True"},
+            bridged_seen=str(data.get("bridged_seen", "")).strip() in {"1", "true", "True"},
             updated_at=_parse_dt(data.get("updated_at")),
             raw_mango_event=json.loads(raw_mango) if raw_mango else None,
             raw_freeswitch_event=json.loads(raw_fs) if raw_fs else None,
@@ -328,6 +359,14 @@ def _effective_state(
     if TelephonyLegState.TERMINATING in states:
         return TelephonyLegState.TERMINATING
     return None
+
+
+def _state_implies_answered(state: Optional[TelephonyLegState]) -> bool:
+    return state in {TelephonyLegState.ANSWERED, TelephonyLegState.BRIDGED}
+
+
+def _state_implies_bridged(state: Optional[TelephonyLegState]) -> bool:
+    return state == TelephonyLegState.BRIDGED
 
 
 _fallback_store = InMemoryMangoFreeSwitchCorrelationStore()

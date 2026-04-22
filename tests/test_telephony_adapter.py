@@ -402,6 +402,33 @@ async def test_mango_wait_for_answered_does_not_fail_immediately_when_freeswitch
 
 
 @pytest.mark.anyio
+async def test_mango_wait_for_answered_prefers_answer_seen_over_immediate_terminate():
+    adapter = _make_mango_adapter()
+
+    await adapter._corr.set_freeswitch_state(
+        mango_leg_id="direct-answer-race",
+        state=TelephonyLegState.ANSWERED,
+        freeswitch_uuid="direct-answer-race",
+        freeswitch_session_id="fs-session-answer-race",
+    )
+    await adapter._corr.set_freeswitch_state(
+        mango_leg_id="direct-answer-race",
+        state=TelephonyLegState.TERMINATED,
+        freeswitch_uuid="direct-answer-race",
+        freeswitch_session_id="fs-session-answer-race",
+    )
+
+    with (
+        patch.object(cfg.settings, "mango_sip_login", "11"),
+        patch.object(cfg.settings, "mango_sip_password", "secret"),
+        patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
+    ):
+        state = await adapter.wait_for_answered("direct-answer-race", timeout=0.2)
+
+    assert state == TelephonyLegState.ANSWERED
+
+
+@pytest.mark.anyio
 async def test_mango_originate_call_requires_sip_trunk_when_api_disabled():
     adapter = _make_mango_adapter()
 

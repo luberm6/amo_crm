@@ -421,6 +421,16 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 f"Timed out waiting for leg {leg_id} to answer after {wait_timeout}s"
             )
         if state in (TelephonyLegState.FAILED, TelephonyLegState.TERMINATED):
+            answered_from_corr = await self._answered_state_observed_via_correlation(leg_id)
+            if answered_from_corr is not None:
+                await self._state.set_leg_state(leg_id, answered_from_corr)
+                log.info(
+                    "mango_telephony.wait_for_answer_promoted_terminal_state",
+                    leg_id=leg_id,
+                    promoted_state=answered_from_corr.value,
+                    terminal_state=state.value,
+                )
+                return answered_from_corr
             log.warning(
                 "mango_telephony.wait_for_answer_failed",
                 leg_id=leg_id,
@@ -544,6 +554,15 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         self,
         leg_id: str,
     ) -> Optional[TelephonyLegState]:
+        answered_state = await self._answered_state_observed_via_correlation(leg_id)
+        if answered_state is not None:
+            log.info(
+                "mango_telephony.wait_for_answer_correlation_hit",
+                leg_id=leg_id,
+                correlation_state=answered_state.value,
+            )
+            return answered_state
+
         corr_state = await self._corr.get_effective_state(leg_id)
         if corr_state in {
             TelephonyLegState.ANSWERED,
@@ -557,6 +576,19 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 correlation_state=corr_state.value,
             )
             return corr_state
+        return None
+
+    async def _answered_state_observed_via_correlation(
+        self,
+        leg_id: str,
+    ) -> Optional[TelephonyLegState]:
+        snap = await self._corr.get(leg_id)
+        if snap is None:
+            return None
+        if snap.bridged_seen:
+            return TelephonyLegState.BRIDGED
+        if snap.answered_seen:
+            return TelephonyLegState.ANSWERED
         return None
 
     async def _wait_for_leg_state_via_provider(
