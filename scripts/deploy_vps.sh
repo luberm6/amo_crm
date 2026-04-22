@@ -269,8 +269,38 @@ ensure_freeswitch_inbound_dialplan() {
 
   cat > "$FREESWITCH_INBOUND_DIALPLAN_FILE" <<EOF
 <include>
-  <extension name="amo_primary_inbound">
+  <extension name="amo_primary_probe" continue="true">
+    <condition>
+      <action application="system" data="/bin/sh -c 'printf \"%s\\n\" \"uuid=\${uuid}\" \"destination_number=\${destination_number}\" \"sip_req_user=\${sip_req_user}\" \"sip_to_user=\${sip_to_user}\" \"sip_auth_username=\${sip_auth_username}\" \"sip_from_user=\${sip_from_user}\" \"caller_id_number=\${caller_id_number}\" \"network_addr=\${network_addr}\" > /tmp/amo_freeswitch_probe_\${uuid}.log'"/>
+    </condition>
+  </extension>
+
+  <extension name="amo_primary_match_destination">
     <condition field="destination_number" expression="${route_regex}">
+      <action application="transfer" data="__amo_primary_dispatch XML public"/>
+    </condition>
+  </extension>
+
+  <extension name="amo_primary_match_req_user">
+    <condition field="sip_req_user" expression="${route_regex}">
+      <action application="transfer" data="__amo_primary_dispatch XML public"/>
+    </condition>
+  </extension>
+
+  <extension name="amo_primary_match_to_user">
+    <condition field="sip_to_user" expression="${route_regex}">
+      <action application="transfer" data="__amo_primary_dispatch XML public"/>
+    </condition>
+  </extension>
+
+  <extension name="amo_primary_match_auth_user">
+    <condition field="sip_auth_username" expression="${route_regex}">
+      <action application="transfer" data="__amo_primary_dispatch XML public"/>
+    </condition>
+  </extension>
+
+  <extension name="amo_primary_dispatch">
+    <condition field="destination_number" expression="^__amo_primary_dispatch$">
       <action application="set" data="amo_primary_number=${primary_number}"/>
       <action application="set" data="hangup_after_bridge=false"/>
       <action application="set" data="continue_on_fail=true"/>
