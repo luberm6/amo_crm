@@ -12,9 +12,12 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import asyncio
+from urllib.parse import urljoin
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from starlette.responses import Response
 import structlog
 
 from app.api.router import api_router
@@ -36,6 +39,16 @@ log = get_logger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Run startup tasks before yield, shutdown tasks after."""
     setup_logging()
+    if settings.edge_proxy_target_url:
+        log.info(
+            "app_startup_proxy_mode",
+            edge_proxy_target_url=settings.edge_proxy_target_url,
+            environment=settings.environment,
+        )
+        yield
+        log.info("app_shutdown_proxy_mode")
+        return
+
     await init_redis()
     manager_restore_task: asyncio.Task | None = None
     log.info(
@@ -231,6 +244,62 @@ def create_app() -> FastAPI:
                 "request_id": request_id,
             },
         )
+
+    if settings.edge_proxy_target_url:
+        upstream_base = settings.edge_proxy_target_url.rstrip("/")
+
+        @app.middleware("http")
+        async def edge_proxy_middleware(request: Request, call_next):
+            upstream_url = urljoin(f"{upstream_base}/", request.url.path.lstrip("/"))
+            if request.url.query:
+                upstream_url = f"{upstream_url}?{request.url.query}"
+
+            body = await request.body()
+            request_headers = {
+                key: value
+                for key, value in request.headers.items()
+                if key.lower() not in {"host", "content-length"}
+            }
+            request_headers["x-forwarded-host"] = request.headers.get("host", "")
+            request_headers["x-forwarded-proto"] = request.url.scheme
+
+            timeout = httpx.Timeout(60.0, connect=10.0)
+            try:
+                async with httpx.AsyncClient(follow_redirects=False, timeout=timeout) as client:
+                    upstream_response = await client.request(
+                        method=request.method,
+                        url=upstream_url,
+                        headers=request_headers,
+                        content=body,
+                    )
+            except httpx.HTTPError as exc:
+                log.warning(
+                    "edge_proxy.upstream_failed",
+                    method=request.method,
+                    path=request.url.path,
+                    upstream_url=upstream_url,
+                    error=str(exc),
+                )
+                return JSONResponse(
+                    status_code=502,
+                    content={
+                        "error": "edge_proxy_upstream_unavailable",
+                        "message": "HTTPS edge proxy could not reach the VPS backend.",
+                    },
+                )
+
+            response_headers = {
+                key: value
+                for key, value in upstream_response.headers.items()
+                if key.lower()
+                not in {"content-length", "transfer-encoding", "connection", "content-encoding"}
+            }
+            return Response(
+                content=upstream_response.content,
+                status_code=upstream_response.status_code,
+                headers=response_headers,
+                media_type=upstream_response.headers.get("content-type"),
+            )
 
     # ── Routers ────────────────────────────────────────────────────────────────
     app.include_router(api_router)

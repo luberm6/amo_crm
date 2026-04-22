@@ -116,6 +116,10 @@ class Settings(BaseSettings):
     # environment, runtime can safely fall back to this value for readiness,
     # callbacks and webhook diagnostics.
     render_external_url: str = ""
+    # Optional upstream URL for edge-proxy mode. When set, this process acts as
+    # a thin HTTPS proxy in front of the real backend instead of running the
+    # full telephony runtime locally.
+    edge_proxy_target_url: str = ""
     # Render-managed Postgres URL. This stays empty locally, but on Render we can
     # bind it from the managed database and use it as a guard against accidental
     # localhost DATABASE_URL overrides.
@@ -455,6 +459,9 @@ class Settings(BaseSettings):
 
     @property
     def effective_backend_url(self) -> str:
+        proxy_target = (self.edge_proxy_target_url or "").strip().rstrip("/")
+        if _is_public_http_url(proxy_target):
+            return proxy_target
         configured = (self.backend_url or "").strip().rstrip("/")
         render_url = (self.render_external_url or "").strip().rstrip("/")
         if _is_public_http_url(configured):
