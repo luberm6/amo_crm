@@ -120,7 +120,13 @@ class FreeSwitchEslClient:
         """
         await self.send_raw(f"bgapi {command}\n\n")
 
-    async def subscribe_events(self, events: str = "CHANNEL_HANGUP_COMPLETE CUSTOM HEARTBEAT") -> None:
+    async def subscribe_events(
+        self,
+        events: str = (
+            "CHANNEL_CREATE CHANNEL_ANSWER CHANNEL_BRIDGE "
+            "CHANNEL_HANGUP CHANNEL_HANGUP_COMPLETE CUSTOM HEARTBEAT"
+        ),
+    ) -> None:
         await self.send_raw(f"event plain {events}\n\n")
         frame = await self.read_frame()
         reply = frame.headers.get("Reply-Text", "")

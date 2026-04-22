@@ -53,7 +53,10 @@ class FreeSwitchGatewayConfig:
         "uuid_media_reneg {uuid} ={rtp_ip}:{rtp_port}"
     )
     hangup_command_template: str = "uuid_kill {uuid}"
-    esl_events: str = "CHANNEL_HANGUP_COMPLETE CUSTOM HEARTBEAT"
+    esl_events: str = (
+        "CHANNEL_CREATE CHANNEL_ANSWER CHANNEL_BRIDGE "
+        "CHANNEL_HANGUP CHANNEL_HANGUP_COMPLETE CUSTOM HEARTBEAT"
+    )
     esl_connect_timeout_seconds: float = 5.0
     esl_reconnect_enabled: bool = True
     esl_reconnect_initial_delay_seconds: float = 0.5
@@ -732,6 +735,10 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         inc_fs_esl_event(name)
         normalized, sid, fs_uuid = self._normalize_esl_event(event)
         if sid is None:
+            mango_leg_id = self._infer_mango_leg_id_from_event(event)
+            if mango_leg_id is None or normalized is None:
+                return
+            await self._apply_correlation_only_event(mango_leg_id, normalized, event, fs_uuid)
             return
         self._update_correlation(sid, fs_uuid)
         await self._apply_normalized_event(sid, normalized, event)
@@ -745,8 +752,6 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             or event.get("variable_uuid")
         )
         sid = self._uuid_to_session.get(fs_uuid or "")
-        if sid is None:
-            return None, None, fs_uuid
         if name == "CHANNEL_CREATE":
             return "channel_create", sid, fs_uuid
         if name == "CHANNEL_ANSWER":
@@ -764,6 +769,20 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         if name == "HEARTBEAT":
             return "heartbeat", sid, fs_uuid
         return "unmapped", sid, fs_uuid
+
+    @staticmethod
+    def _infer_mango_leg_id_from_event(event: dict[str, str]) -> Optional[str]:
+        candidates = [
+            event.get("variable_origination_uuid"),
+            event.get("variable_originating_leg_uuid"),
+            event.get("Channel-Call-UUID"),
+            event.get("Unique-ID"),
+        ]
+        for candidate in candidates:
+            value = str(candidate or "").strip()
+            if value.startswith("direct-"):
+                return value
+        return None
 
     def _update_correlation(self, session_id: str, fs_uuid: Optional[str]) -> None:
         if not fs_uuid:
@@ -863,13 +882,51 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
                 )
             )
             return
-
-        await self._queue_event(
-            session_id,
-            MediaEvent(
-                type=MediaEventType.HEARTBEAT,
-                payload={"normalized_event": normalized, "raw": raw_event},
+        elif normalized == "heartbeat":
+            await self._queue_event(
+                session_id,
+                MediaEvent(
+                    type=MediaEventType.HEARTBEAT,
+                    payload={"normalized_event": normalized, "raw": raw_event},
+                )
             )
+            return
+
+    async def _apply_correlation_only_event(
+        self,
+        mango_leg_id: str,
+        normalized: str,
+        raw_event: dict[str, str],
+        fs_uuid: Optional[str],
+    ) -> None:
+        state: Optional[TelephonyLegState] = None
+        if normalized == "channel_create":
+            state = TelephonyLegState.INITIATING
+        elif normalized == "channel_answer":
+            state = TelephonyLegState.ANSWERED
+        elif normalized == "channel_bridge":
+            state = TelephonyLegState.BRIDGED
+        elif normalized == "channel_hangup":
+            state = TelephonyLegState.TERMINATED
+        if state is None:
+            return
+
+        await self._corr.upsert_mapping(
+            mango_leg_id=mango_leg_id,
+            freeswitch_uuid=fs_uuid,
+        )
+        await self._corr.set_freeswitch_state(
+            mango_leg_id=mango_leg_id,
+            state=state,
+            freeswitch_uuid=fs_uuid,
+            raw_event=raw_event,
+        )
+        log.info(
+            "freeswitch_gateway.correlation_only_event",
+            mango_leg_id=mango_leg_id,
+            fs_event=normalized,
+            fs_uuid=fs_uuid,
+            state=state.value,
         )
 
     async def _open_rtp_runtime(self, session_id: str) -> _RtpRuntime:

@@ -284,6 +284,31 @@ async def test_freeswitch_gateway_event_normalization_updates_lifecycle_and_corr
 
 
 @pytest.mark.anyio
+async def test_freeswitch_gateway_correlation_only_events_track_outbound_leg_before_session_attach():
+    gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="mock"))
+
+    await gw._process_plain_event(
+        {
+            "Event-Name": "CHANNEL_CREATE",
+            "Unique-ID": "fs-real-1",
+            "variable_origination_uuid": "direct-pre-answer",
+        }
+    )
+    await gw._process_plain_event(
+        {
+            "Event-Name": "CHANNEL_ANSWER",
+            "Unique-ID": "fs-real-1",
+            "variable_origination_uuid": "direct-pre-answer",
+        }
+    )
+
+    corr_store_snap = await gw._corr.get("direct-pre-answer")  # type: ignore[attr-defined]
+    assert corr_store_snap is not None
+    assert corr_store_snap.freeswitch_uuid == "fs-real-1"
+    assert corr_store_snap.effective_state == TelephonyLegState.ANSWERED
+
+
+@pytest.mark.anyio
 async def test_freeswitch_gateway_hangup_event_propagates_to_media_stream():
     gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="mock"))
     handle = await gw.attach_session(call_id="call-hang", provider_leg_id="leg-hang")

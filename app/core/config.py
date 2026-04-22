@@ -219,7 +219,10 @@ class Settings(BaseSettings):
     # {uuid} -> channel UUID, {rtp_ip}/{rtp_port} -> backend RTP bind endpoint.
     freeswitch_attach_command_template: str = "uuid_media_reneg {uuid} ={rtp_ip}:{rtp_port}"
     freeswitch_hangup_command_template: str = "uuid_kill {uuid}"
-    freeswitch_esl_events: str = "CHANNEL_HANGUP_COMPLETE CUSTOM HEARTBEAT"
+    freeswitch_esl_events: str = (
+        "CHANNEL_CREATE CHANNEL_ANSWER CHANNEL_BRIDGE "
+        "CHANNEL_HANGUP CHANNEL_HANGUP_COMPLETE CUSTOM HEARTBEAT"
+    )
     freeswitch_esl_connect_timeout_seconds: float = 5.0
     freeswitch_esl_reconnect_enabled: bool = True
     freeswitch_esl_reconnect_initial_delay_seconds: float = 0.5
