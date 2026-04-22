@@ -502,7 +502,36 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         await self._ensure_esl_connected()
         if self._esl is None:
             raise MediaGatewayNotReadyError("ESL not connected")
-        return await self._esl.send_api(command, background=background)
+        if background:
+            return await self._esl.send_api(command, background=True)
+        if self._esl_reader_task is not None and not self._esl_reader_task.done():
+            return await self._execute_command_via_ephemeral_esl(command)
+        return await self._esl.send_api(command, background=False)
+
+    async def _execute_command_via_ephemeral_esl(self, command: str) -> str:
+        """
+        Run synchronous `api` commands on a short-lived ESL connection.
+
+        The long-lived gateway connection starts a background reader task that
+        continuously awaits `read_frame()`. Reusing that same connection for
+        synchronous `api` requests can deadlock because the reader owns the
+        next inbound frame. A dedicated probe connection keeps command/reply
+        traffic isolated from the event stream.
+        """
+        client = self._build_esl_client()
+        try:
+            await client.connect()
+            reply = await client.send_api(command, background=False)
+            log.debug(
+                "freeswitch_gateway.esl_sync_probe_succeeded",
+                command=command,
+            )
+            return reply
+        finally:
+            try:
+                await client.close()
+            except Exception:
+                pass
 
     # Test-only hooks for deterministic architecture tests.
     async def inject_inbound_audio(self, session_id: str, pcm: bytes) -> None:
