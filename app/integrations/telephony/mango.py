@@ -59,6 +59,17 @@ def _mango_digits(value: Optional[str]) -> str:
     return "".join(ch for ch in str(value).strip() if ch.isdigit())
 
 
+def _mango_ru_trunk_number(value: Optional[str]) -> str:
+    digits = _mango_digits(value)
+    if not digits:
+        return ""
+    if len(digits) == 10:
+        return f"8{digits}"
+    if len(digits) == 11 and digits.startswith("7"):
+        return f"8{digits[1:]}"
+    return digits
+
+
 def _is_mango_sip_trunk_configured() -> bool:
     return bool(
         (settings.mango_sip_login or "").strip()
@@ -248,7 +259,10 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         if not from_ext:
             raise TelephonyError("MANGO_FROM_EXT is not configured.")
 
-        line_number = _mango_digits(settings.mango_primary_phone_e164 or settings.mango_primary_phone_number) or "0"
+        primary_line_number = _mango_ru_trunk_number(
+            settings.mango_primary_phone_number or settings.mango_primary_phone_e164
+        )
+        line_number = primary_line_number or "0"
         if metadata:
             explicit_line = (
                 metadata.get("telephony_line_phone_number")
@@ -259,10 +273,10 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 or metadata.get("line_number")
             )
             if explicit_line:
-                normalized_line = _mango_digits(str(explicit_line))
+                normalized_line = _mango_ru_trunk_number(str(explicit_line))
                 line_number = normalized_line or str(explicit_line)
 
-        normalized_primary_line = _mango_digits(settings.mango_primary_phone_e164 or settings.mango_primary_phone_number)
+        normalized_primary_line = primary_line_number
         if normalized_primary_line and _mango_digits(line_number) != normalized_primary_line:
             raise TelephonyError(
                 "Direct Mango originate blocked by single-number policy.",
@@ -665,8 +679,8 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             )
 
         call_uid = f"direct-{uuid.uuid4().hex}"
-        dial_number = _mango_digits(phone) or phone
-        caller_number = _mango_digits(line_number) or line_number
+        dial_number = _mango_ru_trunk_number(phone) or phone
+        caller_number = _mango_ru_trunk_number(line_number) or line_number
         originate_timeout = max(5, int(settings.mango_answer_wait_timeout_seconds))
         command = (
             "{"
