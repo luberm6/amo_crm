@@ -244,9 +244,15 @@ EOF
 }
 
 ensure_freeswitch_inbound_dialplan() {
-  local provider_secret primary_number sip_login sip_user route_regex
+  local provider_secret primary_number backend_number sip_login sip_user route_regex
   provider_secret="$(get_env_value PROVIDER_SETTINGS_SECRET || true)"
   primary_number="$(get_env_value MANGO_PRIMARY_PHONE_NUMBER || true)"
+  backend_number="$primary_number"
+  if [[ "$primary_number" =~ ^8[0-9]{10}$ ]]; then
+    backend_number="+7${primary_number#8}"
+  elif [[ "$primary_number" =~ ^7[0-9]{10}$ ]]; then
+    backend_number="+${primary_number}"
+  fi
   sip_login="$(get_env_value MANGO_SIP_LOGIN || true)"
   sip_user="${sip_login%@*}"
   if [[ "$sip_user" == "$sip_login" ]]; then
@@ -270,7 +276,7 @@ ensure_freeswitch_inbound_dialplan() {
       <action application="set" data="continue_on_fail=true"/>
       <action application="answer"/>
       <action application="sleep" data="150"/>
-      <action application="system" data="/usr/bin/curl -fsS -m 5 -X POST -H 'Content-Type: application/json' -H 'x-provider-settings-secret: ${provider_secret}' -d '{\"call_uuid\":\"\${uuid}\",\"to_number\":\"${primary_number}\",\"from_number\":\"\${caller_id_number}\",\"provider\":\"mango\",\"line_phone_number\":\"${primary_number}\"}' http://127.0.0.1:8000/v1/webhooks/freeswitch/inbound-sip > /tmp/amo_freeswitch_inbound_\${uuid}.log 2>&1"/>
+      <action application="system" data="/usr/bin/curl -fsS -m 5 -X POST -H 'Content-Type: application/json' -H 'x-provider-settings-secret: ${provider_secret}' -d '{\"call_uuid\":\"\${uuid}\",\"to_number\":\"${backend_number}\",\"from_number\":\"\${caller_id_number}\",\"provider\":\"mango\",\"line_phone_number\":\"${backend_number}\"}' http://127.0.0.1:8000/v1/webhooks/freeswitch/inbound-sip > /tmp/amo_freeswitch_inbound_\${uuid}.log 2>&1"/>
       <action application="park"/>
     </condition>
   </extension>
