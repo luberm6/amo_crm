@@ -18,6 +18,7 @@ ENV_FILE="${ENV_FILE:-/opt/amo_crm/.env}"
 FREESWITCH_CONF_DIR="${FREESWITCH_CONF_DIR:-/usr/local/freeswitch/conf}"
 FREESWITCH_EXTERNAL_PROFILE="${FREESWITCH_EXTERNAL_PROFILE:-$FREESWITCH_CONF_DIR/sip_profiles/external.xml}"
 FREESWITCH_EXTERNAL_PROFILE_OFF="${FREESWITCH_EXTERNAL_PROFILE_OFF:-$FREESWITCH_CONF_DIR/sip_profiles/external.xml.off}"
+FREESWITCH_MANGO_GATEWAY_FILE="${FREESWITCH_MANGO_GATEWAY_FILE:-$FREESWITCH_CONF_DIR/sip_profiles/external/mango_primary.xml}"
 FREESWITCH_FS_CLI="${FREESWITCH_FS_CLI:-/usr/local/freeswitch/bin/fs_cli}"
 VPS_PUBLIC_IP="${VPS_PUBLIC_IP:-84.247.184.72}"
 
@@ -193,6 +194,56 @@ reload_freeswitch_profile() {
   ss -ln 2>/dev/null | egrep ':(5080|5081)\b' || die "FreeSWITCH external SIP profile is still not listening on 5080/5081"
 }
 
+ensure_mango_gateway_config() {
+  local sip_login sip_password sip_server
+  sip_login="$(get_env_value MANGO_SIP_LOGIN || true)"
+  sip_password="$(get_env_value MANGO_SIP_PASSWORD || true)"
+  sip_server="$(get_env_value MANGO_SIP_SERVER || true)"
+
+  if [[ -z "$sip_login" || -z "$sip_password" || -z "$sip_server" ]]; then
+    log "MANGO_SIP_* are not fully configured; skipping FreeSWITCH Mango gateway bootstrap"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$FREESWITCH_MANGO_GATEWAY_FILE")"
+  cat > "$FREESWITCH_MANGO_GATEWAY_FILE" <<EOF
+<include>
+  <gateway name="mango_primary">
+    <param name="username" value="${sip_login}"/>
+    <param name="realm" value="${sip_server}"/>
+    <param name="from-user" value="${sip_login}"/>
+    <param name="from-domain" value="${sip_server}"/>
+    <param name="password" value="${sip_password}"/>
+    <param name="extension" value="${sip_login}"/>
+    <param name="proxy" value="${sip_server}"/>
+    <param name="register-proxy" value="${sip_server}"/>
+    <param name="expire-seconds" value="60"/>
+    <param name="register" value="true"/>
+    <param name="register-transport" value="udp"/>
+    <param name="retry-seconds" value="30"/>
+    <param name="ping" value="25"/>
+    <param name="caller-id-in-from" value="true"/>
+    <param name="extension-in-contact" value="true"/>
+    <param name="contact-params" value="transport=udp"/>
+  </gateway>
+</include>
+EOF
+  log "Wrote FreeSWITCH Mango gateway config: $FREESWITCH_MANGO_GATEWAY_FILE"
+}
+
+verify_mango_gateway_status() {
+  local esl_password
+  esl_password="$(get_env_value FREESWITCH_ESL_PASSWORD || true)"
+  [[ -x "$FREESWITCH_FS_CLI" ]] || return 0
+  [[ -n "$esl_password" ]] || return 0
+  if [[ ! -f "$FREESWITCH_MANGO_GATEWAY_FILE" ]]; then
+    return 0
+  fi
+
+  log "Checking FreeSWITCH Mango gateway status"
+  "$FREESWITCH_FS_CLI" -p "$esl_password" -x "sofia status gateway mango_primary" || true
+}
+
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   die "Another deploy is already running"
@@ -240,7 +291,9 @@ ensure_env_value "FREESWITCH_ESL_HOST" "127.0.0.1"
 ensure_env_value "FREESWITCH_RTP_IP" "127.0.0.1"
 grep -E '^(BACKEND_URL|MANGO_PRIMARY_PHONE_NUMBER|MANGO_FROM_EXT|FREESWITCH_ESL_HOST|FREESWITCH_RTP_IP)=' "$ENV_FILE" || true
 ensure_freeswitch_public_profile
+ensure_mango_gateway_config
 reload_freeswitch_profile
+verify_mango_gateway_status
 
 log "Ensuring Python virtualenv"
 if [[ ! -d .venv ]]; then

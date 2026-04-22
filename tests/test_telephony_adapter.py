@@ -102,6 +102,16 @@ def _make_mango_adapter():
     return adapter
 
 
+class _FakeGateway:
+    def __init__(self, replies=None):
+        self.commands = []
+        self.replies = replies or {}
+
+    async def execute_command(self, command: str, *, background: bool = True) -> str:
+        self.commands.append((command, background))
+        return self.replies.get((command, background), self.replies.get(command, "+OK"))
+
+
 @pytest.mark.anyio
 async def test_mango_originate_call_posts_to_callback():
     """originate_call делает POST /commands/callback и возвращает TelephonyOriginateResult."""
@@ -184,6 +194,56 @@ async def test_mango_originate_call_accepts_result_1000_without_uid():
     assert result.leg_id == signed_payload["command_id"]
     assert result.provider_response["command_id"] == signed_payload["command_id"]
     assert result.provider_response["callback_uid_present"] is False
+
+
+@pytest.mark.anyio
+async def test_mango_originate_call_uses_freeswitch_sip_gateway_when_configured():
+    adapter = _make_mango_adapter()
+    fake_gateway = _FakeGateway(replies={})
+
+    with (
+        patch.object(cfg.settings, "mango_sip_login", "11"),
+        patch.object(cfg.settings, "mango_sip_password", "secret"),
+        patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
+        patch("app.integrations.telephony.mango.get_media_gateway", return_value=fake_gateway),
+    ):
+        result = await adapter.originate_call(
+            "+79991234567",
+            metadata={"call_id": "call-1", "telephony_line_phone_number": "+79300350609"},
+        )
+
+    assert result.provider_response["transport"] == "freeswitch_sip"
+    assert result.provider_response["gateway"] == "mango_primary"
+    assert result.provider_response["line_number"] == "79300350609"
+    assert fake_gateway.commands
+    command, background = fake_gateway.commands[0]
+    assert background is True
+    assert "originate " in command
+    assert "sofia/gateway/mango_primary/79991234567" in command
+    assert "origination_caller_id_number=79300350609" in command
+
+
+@pytest.mark.anyio
+async def test_mango_wait_for_answered_uses_freeswitch_probe_when_sip_trunk_configured():
+    adapter = _make_mango_adapter()
+    fake_gateway = _FakeGateway(
+        replies={
+            ("uuid_exists direct-test-leg", False): "true",
+            ("uuid_getvar direct-test-leg answer_state", False): "answered",
+            ("uuid_getvar direct-test-leg channel_call_state", False): "ACTIVE",
+            ("uuid_getvar direct-test-leg endpoint_disposition", False): "ANSWER",
+        }
+    )
+
+    with (
+        patch.object(cfg.settings, "mango_sip_login", "11"),
+        patch.object(cfg.settings, "mango_sip_password", "secret"),
+        patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
+        patch("app.integrations.telephony.mango.get_media_gateway", return_value=fake_gateway),
+    ):
+        state = await adapter.wait_for_answered("direct-test-leg", timeout=0.2)
+
+    assert state == TelephonyLegState.ANSWERED
 
 
 @pytest.mark.anyio

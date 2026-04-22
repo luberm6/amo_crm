@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.core.exceptions import EngineError
 from app.core.logging import get_logger
 from app.core.redis_client import get_redis
+from app.integrations.media_gateway.base import MediaGatewayNotReadyError
 from app.integrations.media_gateway.factory import get_media_gateway
 from app.integrations.telephony.base import (
     AbstractTelephonyAdapter,
@@ -56,6 +57,14 @@ def _mango_digits(value: Optional[str]) -> str:
     if not value:
         return ""
     return "".join(ch for ch in str(value).strip() if ch.isdigit())
+
+
+def _is_mango_sip_trunk_configured() -> bool:
+    return bool(
+        (settings.mango_sip_login or "").strip()
+        and (settings.mango_sip_password or "").strip()
+        and (settings.mango_sip_server or "").strip()
+    )
 
 
 class TelephonyError(EngineError):
@@ -263,6 +272,15 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 },
             )
 
+        if _is_mango_sip_trunk_configured():
+            return await self._originate_call_via_freeswitch_sip(
+                phone=phone,
+                from_ext=from_ext,
+                line_number=line_number,
+                metadata=metadata,
+                resolved_from_ext=resolved_from_ext,
+            )
+
         expected_sip_host = (urlparse(settings.effective_backend_url).hostname or "").strip() or "84.247.184.72"
         validation_client = MangoClient.from_settings()
         try:
@@ -358,7 +376,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             accepted={TelephonyLegState.ANSWERED, TelephonyLegState.BRIDGED},
             failed={TelephonyLegState.FAILED, TelephonyLegState.TERMINATED},
             timeout=wait_timeout,
-            poll_fallback=lambda: self._wait_for_leg_state_via_correlation(leg_id),
+            poll_fallback=lambda: self._wait_for_leg_state_via_provider(leg_id),
         )
         if state is None:
             corr_state = await self._corr.get_effective_state(leg_id)
@@ -457,6 +475,21 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         if current and current.state == TelephonyLegState.TERMINATED:
             return
 
+        if _is_mango_sip_trunk_configured():
+            try:
+                gateway = get_media_gateway()
+                execute = getattr(gateway, "execute_command", None)
+                if execute is not None:
+                    await execute(f"uuid_kill {leg_id}", background=True)
+            except Exception as exc:
+                log.warning(
+                    "mango_telephony.terminate_leg_freeswitch_failed",
+                    leg_id=leg_id,
+                    error=str(exc),
+                )
+            await self._state.set_leg_state(leg_id, TelephonyLegState.TERMINATED)
+            return
+
         try:
             await self._post("/commands/hangup", {"call_id": leg_id})
         except TelephonyError as exc:
@@ -495,6 +528,80 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             return corr_state
         return None
 
+    async def _wait_for_leg_state_via_provider(
+        self,
+        leg_id: str,
+    ) -> Optional[TelephonyLegState]:
+        corr_state = await self._wait_for_leg_state_via_correlation(leg_id)
+        if corr_state is not None:
+            return corr_state
+        if _is_mango_sip_trunk_configured():
+            return await self._wait_for_leg_state_via_freeswitch(leg_id)
+        return None
+
+    async def _wait_for_leg_state_via_freeswitch(
+        self,
+        leg_id: str,
+    ) -> Optional[TelephonyLegState]:
+        try:
+            gateway = get_media_gateway()
+            execute = getattr(gateway, "execute_command", None)
+            if execute is None:
+                return None
+
+            exists = str(await execute(f"uuid_exists {leg_id}", background=False)).strip().lower()
+            if exists == "false":
+                await self._state.set_leg_state(leg_id, TelephonyLegState.FAILED)
+                await self._corr.set_freeswitch_state(
+                    mango_leg_id=leg_id,
+                    state=TelephonyLegState.FAILED,
+                    freeswitch_uuid=leg_id,
+                )
+                log.warning(
+                    "mango_telephony.wait_for_answer_freeswitch_missing_uuid",
+                    leg_id=leg_id,
+                )
+                return TelephonyLegState.FAILED
+
+            answer_state = str(
+                await execute(f"uuid_getvar {leg_id} answer_state", background=False)
+            ).strip().lower()
+            call_state = str(
+                await execute(f"uuid_getvar {leg_id} channel_call_state", background=False)
+            ).strip().upper()
+            endpoint_disposition = str(
+                await execute(f"uuid_getvar {leg_id} endpoint_disposition", background=False)
+            ).strip().upper()
+
+            if answer_state == "answered" or call_state in {"ACTIVE", "HELD"} or endpoint_disposition == "ANSWER":
+                await self._state.set_leg_state(leg_id, TelephonyLegState.ANSWERED)
+                await self._corr.set_freeswitch_state(
+                    mango_leg_id=leg_id,
+                    state=TelephonyLegState.ANSWERED,
+                    freeswitch_uuid=leg_id,
+                )
+                log.info(
+                    "mango_telephony.wait_for_answer_freeswitch_hit",
+                    leg_id=leg_id,
+                    answer_state=answer_state or None,
+                    call_state=call_state or None,
+                    endpoint_disposition=endpoint_disposition or None,
+                )
+                return TelephonyLegState.ANSWERED
+
+            if call_state in {"RINGING", "EARLY"}:
+                await self._state.set_leg_state(leg_id, TelephonyLegState.RINGING)
+            return None
+        except MediaGatewayNotReadyError:
+            return None
+        except Exception as exc:
+            log.warning(
+                "mango_telephony.wait_for_answer_freeswitch_probe_failed",
+                leg_id=leg_id,
+                error=str(exc),
+            )
+            return None
+
     async def _wait_for_bridge_confirmation(self, customer_leg_id: str, manager_leg_id: str) -> None:
         bridge_key = MangoEventProcessor.bridge_key(customer_leg_id, manager_leg_id)
         wait_timeout = float(settings.mango_bridge_confirm_timeout_seconds)
@@ -523,6 +630,101 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 "bridge_status": status,
                 "customer_state": customer.value,
                 "manager_state": manager.value,
+            },
+        )
+
+    async def _originate_call_via_freeswitch_sip(
+        self,
+        *,
+        phone: str,
+        from_ext: str,
+        line_number: str,
+        metadata: Optional[dict],
+        resolved_from_ext,
+    ) -> TelephonyOriginateResult:
+        gateway = get_media_gateway()
+        execute = getattr(gateway, "execute_command", None)
+        if execute is None:
+            raise TelephonyError(
+                "FreeSWITCH media gateway does not expose command execution for SIP originate."
+            )
+
+        call_uid = f"direct-{uuid.uuid4().hex}"
+        dial_number = _mango_digits(phone) or phone
+        caller_number = _mango_digits(line_number) or line_number
+        originate_timeout = max(5, int(settings.mango_answer_wait_timeout_seconds))
+        command = (
+            "{"
+            f"ignore_early_media=true,"
+            f"originate_timeout={originate_timeout},"
+            f"origination_uuid={call_uid},"
+            f"origination_caller_id_number={caller_number},"
+            f"origination_caller_id_name={caller_number},"
+            f"effective_caller_id_number={caller_number},"
+            f"effective_caller_id_name={caller_number},"
+            f"origination_callee_id_number={dial_number},"
+            f"mango_primary_number={caller_number},"
+            f"mango_from_extension={from_ext}"
+            "}"
+            f"sofia/gateway/mango_primary/{dial_number} &park()"
+        )
+        try:
+            esl_reply = await execute(f"originate {command}", background=True)
+        except Exception as exc:
+            raise TelephonyError(
+                "FreeSWITCH SIP originate failed",
+                detail={
+                    "gateway": "mango_primary",
+                    "dial_number": dial_number,
+                    "line_number": caller_number,
+                    "from_extension": from_ext,
+                    "error": str(exc),
+                },
+            ) from exc
+
+        call_id = str(metadata.get("call_id")) if metadata and metadata.get("call_id") else None
+        transfer_id = str(metadata.get("transfer_id")) if metadata and metadata.get("transfer_id") else None
+        role = str(metadata.get("role")) if metadata and metadata.get("role") else None
+        await self._state.set_leg_state(
+            call_uid,
+            TelephonyLegState.INITIATING,
+            call_id=call_id,
+            transfer_id=transfer_id,
+            role=role,
+        )
+        await self._corr.upsert_mapping(
+            mango_leg_id=call_uid,
+            call_id=call_id,
+            freeswitch_uuid=call_uid,
+        )
+        log.info(
+            "mango_telephony.call_originated",
+            phone=phone,
+            mango_uid=call_uid,
+            command_id=call_uid,
+            line_number=caller_number,
+            from_ext=from_ext,
+            from_ext_source=resolved_from_ext.source,
+            from_ext_candidate_count=resolved_from_ext.candidate_count,
+            callback_result=None,
+            callback_uid_present=True,
+            transport="freeswitch_sip",
+            gateway="mango_primary",
+            esl_reply=esl_reply or None,
+        )
+        return TelephonyOriginateResult(
+            leg_id=call_uid,
+            sip_call_id=call_uid,
+            provider_response={
+                "transport": "freeswitch_sip",
+                "gateway": "mango_primary",
+                "command_id": call_uid,
+                "line_number": caller_number,
+                "from_extension": from_ext,
+                "from_extension_source": resolved_from_ext.source,
+                "dial_number": dial_number,
+                "esl_reply": esl_reply,
+                "callback_uid_present": True,
             },
         )
 

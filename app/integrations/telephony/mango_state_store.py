@@ -93,6 +93,8 @@ class AbstractMangoLegStateStore:
                     polled_state = await poll_fallback()
                     if polled_state is not None:
                         await self.set_leg_state(leg_id, polled_state)
+                        if polled_state in accepted or polled_state in failed:
+                            return polled_state
                 except Exception as exc:
                     log.debug(
                         "mango_state_store.poll_fallback_error",
