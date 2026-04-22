@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from typing import TYPE_CHECKING, AsyncIterator, Optional
 from urllib.parse import urlparse
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
     from app.integrations.telephony.audio_bridge import AbstractAudioBridge
 
 log = get_logger(__name__)
+_UUID_RE = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 
 
 def _mango_digits(value: Optional[str]) -> str:
@@ -700,7 +702,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             f"sofia/gateway/mango_primary/{dial_number} &park()"
         )
         try:
-            esl_reply = await execute(f"originate {command}", background=True)
+            esl_reply = await execute(f"originate {command}", background=False)
         except Exception as exc:
             raise TelephonyError(
                 "FreeSWITCH SIP originate failed",
@@ -713,25 +715,63 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 },
             ) from exc
 
+        reply_text = str(esl_reply or "").strip()
+        if reply_text.upper().startswith("-ERR"):
+            failure_cause = reply_text[4:].strip() or "originate_failed"
+            await self._state.set_leg_state(call_uid, TelephonyLegState.FAILED)
+            await self._corr.set_freeswitch_state(
+                mango_leg_id=call_uid,
+                state=TelephonyLegState.FAILED,
+                freeswitch_uuid=call_uid,
+            )
+            log.warning(
+                "mango_telephony.call_originate_failed",
+                phone=phone,
+                mango_uid=call_uid,
+                gateway="mango_primary",
+                sip_from_user=sip_from_user,
+                line_number=caller_number,
+                dial_number=dial_number,
+                failure_cause=failure_cause,
+                esl_reply=reply_text,
+            )
+            raise TelephonyError(
+                f"FreeSWITCH SIP originate failed: {failure_cause}",
+                detail={
+                    "gateway": "mango_primary",
+                    "dial_number": dial_number,
+                    "line_number": caller_number,
+                    "from_extension": from_ext,
+                    "sip_from_user": sip_from_user,
+                    "failure_cause": failure_cause,
+                    "esl_reply": reply_text,
+                },
+            )
+
+        resolved_leg_id = call_uid
+        match = _UUID_RE.search(reply_text)
+        if match:
+            resolved_leg_id = match.group(0)
+
         call_id = str(metadata.get("call_id")) if metadata and metadata.get("call_id") else None
         transfer_id = str(metadata.get("transfer_id")) if metadata and metadata.get("transfer_id") else None
         role = str(metadata.get("role")) if metadata and metadata.get("role") else None
         await self._state.set_leg_state(
-            call_uid,
-            TelephonyLegState.INITIATING,
+            resolved_leg_id,
+            TelephonyLegState.ANSWERED,
             call_id=call_id,
             transfer_id=transfer_id,
             role=role,
         )
         await self._corr.upsert_mapping(
-            mango_leg_id=call_uid,
+            mango_leg_id=resolved_leg_id,
             call_id=call_id,
-            freeswitch_uuid=call_uid,
+            freeswitch_uuid=resolved_leg_id,
         )
         log.info(
             "mango_telephony.call_originated",
             phone=phone,
-            mango_uid=call_uid,
+            mango_uid=resolved_leg_id,
             command_id=call_uid,
             line_number=caller_number,
             from_ext=from_ext,
@@ -741,11 +781,12 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             callback_uid_present=True,
             transport="freeswitch_sip",
             gateway="mango_primary",
-            esl_reply=esl_reply or None,
+            sip_from_user=sip_from_user,
+            esl_reply=reply_text or None,
         )
         return TelephonyOriginateResult(
-            leg_id=call_uid,
-            sip_call_id=call_uid,
+            leg_id=resolved_leg_id,
+            sip_call_id=resolved_leg_id,
             provider_response={
                 "transport": "freeswitch_sip",
                 "gateway": "mango_primary",
@@ -753,11 +794,11 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 "line_number": caller_number,
                 "from_extension": from_ext,
                 "from_extension_source": resolved_from_ext.source,
-                    "dial_number": dial_number,
-                    "sip_from_user": sip_from_user,
-                    "esl_reply": esl_reply,
-                    "callback_uid_present": True,
-                },
+                "dial_number": dial_number,
+                "sip_from_user": sip_from_user,
+                "esl_reply": reply_text,
+                "callback_uid_present": True,
+            },
         )
 
     def _sign(self, params: dict) -> dict:
