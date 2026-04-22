@@ -195,12 +195,23 @@ reload_freeswitch_profile() {
 }
 
 ensure_mango_gateway_config() {
-  local sip_login sip_password sip_server
+  local sip_login sip_password sip_server sip_username sip_login_domain
   sip_login="$(get_env_value MANGO_SIP_LOGIN || true)"
   sip_password="$(get_env_value MANGO_SIP_PASSWORD || true)"
   sip_server="$(get_env_value MANGO_SIP_SERVER || true)"
+  sip_username="${sip_login%@*}"
+  if [[ "$sip_username" == "$sip_login" ]]; then
+    sip_username="$sip_login"
+  fi
+  sip_login_domain=""
+  if [[ "$sip_login" == *"@"* ]]; then
+    sip_login_domain="${sip_login#*@}"
+  fi
+  if [[ -z "$sip_server" && -n "$sip_login_domain" ]]; then
+    sip_server="$sip_login_domain"
+  fi
 
-  if [[ -z "$sip_login" || -z "$sip_password" || -z "$sip_server" ]]; then
+  if [[ -z "$sip_username" || -z "$sip_password" || -z "$sip_server" ]]; then
     log "MANGO_SIP_* are not fully configured; skipping FreeSWITCH Mango gateway bootstrap"
     return 0
   fi
@@ -209,12 +220,12 @@ ensure_mango_gateway_config() {
   cat > "$FREESWITCH_MANGO_GATEWAY_FILE" <<EOF
 <include>
   <gateway name="mango_primary">
-    <param name="username" value="${sip_login}"/>
+    <param name="username" value="${sip_username}"/>
     <param name="realm" value="${sip_server}"/>
-    <param name="from-user" value="${sip_login}"/>
+    <param name="from-user" value="${sip_username}"/>
     <param name="from-domain" value="${sip_server}"/>
     <param name="password" value="${sip_password}"/>
-    <param name="extension" value="${sip_login}"/>
+    <param name="extension" value="${sip_username}"/>
     <param name="proxy" value="${sip_server}"/>
     <param name="register-proxy" value="${sip_server}"/>
     <param name="expire-seconds" value="60"/>

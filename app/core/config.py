@@ -239,9 +239,30 @@ class Settings(BaseSettings):
         return bool(self.mango_api_key and self.mango_api_salt)
 
     @property
+    def mango_sip_username(self) -> str:
+        login = (self.mango_sip_login or "").strip()
+        if not login:
+            return ""
+        return login.split("@", 1)[0].strip().lower()
+
+    @property
+    def mango_sip_login_domain(self) -> str:
+        login = (self.mango_sip_login or "").strip().lower()
+        if "@" not in login:
+            return ""
+        return login.split("@", 1)[1].strip().lower()
+
+    @property
+    def mango_sip_realm(self) -> str:
+        configured = (self.mango_sip_server or "").strip().lower()
+        if configured:
+            return configured
+        return self.mango_sip_login_domain
+
+    @property
     def mango_sip_trunk_configured(self) -> bool:
         """True when SIP trunk credentials for Mango/FreeSWITCH are present."""
-        return bool(self.mango_sip_login and self.mango_sip_password and self.mango_sip_server)
+        return bool(self.mango_sip_username and self.mango_sip_password and self.mango_sip_realm)
 
     @property
     def mango_runtime_configured(self) -> bool:

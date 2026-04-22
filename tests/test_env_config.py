@@ -69,6 +69,13 @@ class TestMangoSipRuntimeConfigured:
         assert s.mango_sip_trunk_configured is True
         assert s.mango_runtime_configured is True
 
+    def test_sip_runtime_parses_login_with_domain(self):
+        s = make(mango_sip_login="ilya@vpbx400350317.mangosip.ru", mango_sip_password="secret", mango_sip_server="")
+        assert s.mango_sip_username == "ilya"
+        assert s.mango_sip_login_domain == "vpbx400350317.mangosip.ru"
+        assert s.mango_sip_realm == "vpbx400350317.mangosip.ru"
+        assert s.mango_sip_trunk_configured is True
+
     def test_runtime_true_when_only_api_present(self):
         s = make(mango_api_key="key123", mango_api_salt="salt456")
         assert s.mango_runtime_configured is True
