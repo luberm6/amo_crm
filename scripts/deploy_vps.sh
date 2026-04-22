@@ -20,6 +20,7 @@ FREESWITCH_EXTERNAL_PROFILE="${FREESWITCH_EXTERNAL_PROFILE:-$FREESWITCH_CONF_DIR
 FREESWITCH_EXTERNAL_PROFILE_OFF="${FREESWITCH_EXTERNAL_PROFILE_OFF:-$FREESWITCH_CONF_DIR/sip_profiles/external.xml.off}"
 FREESWITCH_MANGO_GATEWAY_FILE="${FREESWITCH_MANGO_GATEWAY_FILE:-$FREESWITCH_CONF_DIR/sip_profiles/external/mango_primary.xml}"
 FREESWITCH_INBOUND_DIALPLAN_FILE="${FREESWITCH_INBOUND_DIALPLAN_FILE:-$FREESWITCH_CONF_DIR/dialplan/public/00_amo_primary_inbound.xml}"
+FREESWITCH_DIRECTORY_FILE="${FREESWITCH_DIRECTORY_FILE:-$FREESWITCH_CONF_DIR/directory/default/00_amo_mango.xml}"
 FREESWITCH_FS_CLI="${FREESWITCH_FS_CLI:-/usr/local/freeswitch/bin/fs_cli}"
 VPS_PUBLIC_IP="${VPS_PUBLIC_IP:-84.247.184.72}"
 
@@ -315,6 +316,77 @@ EOF
   log "Wrote FreeSWITCH inbound dialplan: $FREESWITCH_INBOUND_DIALPLAN_FILE"
 }
 
+ensure_freeswitch_directory_users() {
+  local primary_number canonical_number sip_login sip_user sip_password
+  primary_number="$(get_env_value MANGO_PRIMARY_PHONE_NUMBER || true)"
+  sip_login="$(get_env_value MANGO_SIP_LOGIN || true)"
+  sip_password="$(get_env_value MANGO_SIP_PASSWORD || true)"
+  sip_user="${sip_login%@*}"
+  if [[ "$sip_user" == "$sip_login" ]]; then
+    sip_user="$sip_login"
+  fi
+  canonical_number="$primary_number"
+  if [[ "$primary_number" =~ ^8[0-9]{10}$ ]]; then
+    canonical_number="7${primary_number#8}"
+  elif [[ "$primary_number" =~ ^\+7[0-9]{10}$ ]]; then
+    canonical_number="${primary_number#+}"
+  fi
+
+  if [[ -z "$primary_number" || -z "$sip_user" ]]; then
+    log "FreeSWITCH directory bootstrap skipped: MANGO_PRIMARY_PHONE_NUMBER or MANGO_SIP_LOGIN missing"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$FREESWITCH_DIRECTORY_FILE")"
+  cat > "$FREESWITCH_DIRECTORY_FILE" <<EOF
+<include>
+  <user id="${sip_user}">
+    <params>
+      <param name="password" value="${sip_password}"/>
+    </params>
+    <variables>
+      <variable name="user_context" value="public"/>
+      <variable name="effective_caller_id_number" value="${primary_number}"/>
+      <variable name="accountcode" value="${primary_number}"/>
+      <variable name="number-alias" value="11"/>
+    </variables>
+  </user>
+  <user id="11">
+    <params>
+      <param name="password" value="${sip_password}"/>
+    </params>
+    <variables>
+      <variable name="user_context" value="public"/>
+      <variable name="effective_caller_id_number" value="${primary_number}"/>
+      <variable name="accountcode" value="${primary_number}"/>
+      <variable name="number-alias" value="${sip_user}"/>
+    </variables>
+  </user>
+  <user id="${primary_number}">
+    <params>
+      <param name="password" value="${sip_password}"/>
+    </params>
+    <variables>
+      <variable name="user_context" value="public"/>
+      <variable name="effective_caller_id_number" value="${primary_number}"/>
+      <variable name="accountcode" value="${primary_number}"/>
+    </variables>
+  </user>
+  <user id="${canonical_number}">
+    <params>
+      <param name="password" value="${sip_password}"/>
+    </params>
+    <variables>
+      <variable name="user_context" value="public"/>
+      <variable name="effective_caller_id_number" value="${primary_number}"/>
+      <variable name="accountcode" value="${primary_number}"/>
+    </variables>
+  </user>
+</include>
+EOF
+  log "Wrote FreeSWITCH directory users: $FREESWITCH_DIRECTORY_FILE"
+}
+
 verify_mango_gateway_status() {
   local esl_password
   esl_password="$(get_env_value FREESWITCH_ESL_PASSWORD || true)"
@@ -377,6 +449,7 @@ grep -E '^(BACKEND_URL|MANGO_PRIMARY_PHONE_NUMBER|MANGO_FROM_EXT|FREESWITCH_ESL_
 ensure_freeswitch_public_profile
 ensure_mango_gateway_config
 ensure_freeswitch_inbound_dialplan
+ensure_freeswitch_directory_users
 reload_freeswitch_profile
 verify_mango_gateway_status
 
