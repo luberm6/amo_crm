@@ -681,17 +681,19 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         call_uid = f"direct-{uuid.uuid4().hex}"
         dial_number = _mango_ru_trunk_number(phone) or phone
         caller_number = _mango_ru_trunk_number(line_number) or line_number
+        sip_from_user = (settings.mango_sip_username or from_ext or "").strip() or from_ext
         originate_timeout = max(5, int(settings.mango_answer_wait_timeout_seconds))
         command = (
             "{"
             f"ignore_early_media=true,"
             f"originate_timeout={originate_timeout},"
             f"origination_uuid={call_uid},"
-            f"origination_caller_id_number={caller_number},"
-            f"origination_caller_id_name={caller_number},"
+            f"origination_caller_id_number={sip_from_user},"
+            f"origination_caller_id_name={sip_from_user},"
             f"effective_caller_id_number={caller_number},"
             f"effective_caller_id_name={caller_number},"
             f"origination_callee_id_number={dial_number},"
+            f"sip_cid_type=pid,"
             f"mango_primary_number={caller_number},"
             f"mango_from_extension={from_ext}"
             "}"
@@ -751,10 +753,11 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 "line_number": caller_number,
                 "from_extension": from_ext,
                 "from_extension_source": resolved_from_ext.source,
-                "dial_number": dial_number,
-                "esl_reply": esl_reply,
-                "callback_uid_present": True,
-            },
+                    "dial_number": dial_number,
+                    "sip_from_user": sip_from_user,
+                    "esl_reply": esl_reply,
+                    "callback_uid_present": True,
+                },
         )
 
     def _sign(self, params: dict) -> dict:

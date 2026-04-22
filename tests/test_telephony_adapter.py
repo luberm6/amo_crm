@@ -216,12 +216,15 @@ async def test_mango_originate_call_uses_freeswitch_sip_gateway_when_configured(
     assert result.provider_response["transport"] == "freeswitch_sip"
     assert result.provider_response["gateway"] == "mango_primary"
     assert result.provider_response["line_number"] == "89300350609"
+    assert result.provider_response["sip_from_user"] == "11"
     assert fake_gateway.commands
     command, background = fake_gateway.commands[0]
     assert background is True
     assert "originate " in command
     assert "sofia/gateway/mango_primary/89991234567" in command
-    assert "origination_caller_id_number=89300350609" in command
+    assert "origination_caller_id_number=11" in command
+    assert "effective_caller_id_number=89300350609" in command
+    assert "sip_cid_type=pid" in command
 
 
 @pytest.mark.anyio
@@ -245,7 +248,29 @@ async def test_mango_originate_call_coerces_ru_line_and_dial_numbers_to_trunk_fo
     command, background = fake_gateway.commands[0]
     assert background is True
     assert "sofia/gateway/mango_primary/89265229998" in command
-    assert "origination_caller_id_number=89300350609" in command
+    assert "origination_caller_id_number=11" in command
+    assert "effective_caller_id_number=89300350609" in command
+
+
+@pytest.mark.anyio
+async def test_mango_originate_call_uses_sip_login_localpart_as_from_user():
+    adapter = _make_mango_adapter()
+    fake_gateway = _FakeGateway(replies={})
+
+    with (
+        patch.object(cfg.settings, "mango_primary_phone_number", "89300350609"),
+        patch.object(cfg.settings, "mango_sip_login", "ilya@vpbx400350317.mangosip.ru"),
+        patch.object(cfg.settings, "mango_sip_password", "secret"),
+        patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
+        patch("app.integrations.telephony.mango.get_media_gateway", return_value=fake_gateway),
+    ):
+        result = await adapter.originate_call("+79265229998")
+
+    assert result.provider_response["sip_from_user"] == "ilya"
+    command, background = fake_gateway.commands[0]
+    assert background is True
+    assert "origination_caller_id_number=ilya" in command
+    assert "effective_caller_id_number=89300350609" in command
 
 
 @pytest.mark.anyio
