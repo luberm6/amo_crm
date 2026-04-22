@@ -467,6 +467,7 @@ def normalize_mango_phone(number: Optional[str]) -> str:
     Normalize a Mango phone number to E.164 +7... format.
 
     Mango API returns Russian numbers without the leading '+':
+      "89300350609" → "+79300350609"  (11-digit RU number with trunk prefix 8)
       "79300350609" → "+79300350609"
       "9300350609"  → "+79300350609"  (10-digit RU mobile, prepend +7)
       "+79300350609" → "+79300350609" (already canonical, unchanged)
@@ -482,6 +483,8 @@ def normalize_mango_phone(number: Optional[str]) -> str:
         return cleaned
     # Strip any non-digit characters (spaces, dashes, parens)
     digits_only = "".join(ch for ch in cleaned if ch.isdigit())
+    if len(digits_only) == 11 and digits_only.startswith("8"):
+        return f"+7{digits_only[1:]}"
     if len(digits_only) == 11 and digits_only.startswith("7"):
         return f"+{digits_only}"
     if len(digits_only) == 10:

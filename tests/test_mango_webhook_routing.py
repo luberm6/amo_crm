@@ -266,6 +266,47 @@ async def test_freeswitch_inbound_sip_launches_direct_call_for_bound_agent(sessi
 
 
 @pytest.mark.anyio
+async def test_freeswitch_inbound_sip_resolves_primary_number_with_trunk_prefix(session: AsyncSession) -> None:
+    app = _make_app(session)
+    line = await _make_line(session, phone_number="+79300350609")
+    agent = await _make_agent(session, line=line)
+
+    async def _stub_engine():
+        return StubEngine()
+
+    with (
+        patch.object(cfg.settings, "provider_settings_secret", "fs-secret"),
+        patch.object(cfg.settings, "gemini_api_key", "gemini-key"),
+        patch.object(cfg.settings, "media_gateway_enabled", True),
+        patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
+        patch.object(cfg.settings, "media_gateway_mode", "esl_rtp"),
+        patch.object(cfg.settings, "backend_url", "https://voice.example.com"),
+        patch.object(cfg.settings, "freeswitch_esl_host", "voice.example.com"),
+        patch.object(cfg.settings, "mango_primary_phone_number", "89300350609"),
+        patch("app.services.mango_inbound_call_service.get_call_engine", _stub_engine),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post(
+                "/v1/webhooks/freeswitch/inbound-sip",
+                json={
+                    "call_uuid": "fs-uuid-893",
+                    "to_number": "89300350609",
+                    "from_number": "+79261234567",
+                    "provider": "mango",
+                    "line_phone_number": "89300350609",
+                },
+                headers={"x-provider-settings-secret": "fs-secret"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["accepted"] is True
+    assert body["status"] == "started"
+    assert body["agent_found"] is True
+    assert body["agent_id"] == str(agent.id)
+
+
+@pytest.mark.anyio
 async def test_webhook_sha256_prefix_accepted(session: AsyncSession) -> None:
     """Signature with 'sha256=' prefix is also accepted."""
     secret = "test-webhook-secret"

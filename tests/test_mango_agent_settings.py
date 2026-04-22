@@ -618,6 +618,7 @@ async def test_mango_lines_endpoint_lists_cached_inventory(
 
 @pytest.mark.anyio
 async def test_normalize_mango_phone_variants() -> None:
+    assert normalize_mango_phone("89300350609") == "+79300350609"
     assert normalize_mango_phone("79300350609") == "+79300350609"
     assert normalize_mango_phone("+79300350609") == "+79300350609"
     assert normalize_mango_phone("9300350609") == "+79300350609"
