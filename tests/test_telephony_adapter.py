@@ -346,6 +346,41 @@ async def test_mango_wait_for_answered_uses_freeswitch_probe_when_sip_trunk_conf
 
 
 @pytest.mark.anyio
+async def test_mango_wait_for_answered_probes_real_freeswitch_uuid_from_correlation():
+    adapter = _make_mango_adapter()
+    fake_gateway = _FakeGateway(
+        replies={
+            ("uuid_exists fs-real-42", False): "true",
+            ("uuid_getvar fs-real-42 answer_state", False): "answered",
+            ("uuid_getvar fs-real-42 channel_call_state", False): "ACTIVE",
+            ("uuid_getvar fs-real-42 endpoint_disposition", False): "ANSWER",
+        }
+    )
+
+    await adapter._corr.upsert_mapping(
+        mango_leg_id="direct-real-uuid",
+        call_id="call-real-uuid",
+        freeswitch_uuid="fs-real-42",
+    )
+
+    with (
+        patch.object(cfg.settings, "mango_sip_login", "11"),
+        patch.object(cfg.settings, "mango_sip_password", "secret"),
+        patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
+        patch("app.integrations.telephony.mango.get_media_gateway", return_value=fake_gateway),
+    ):
+        state = await adapter.wait_for_answered("direct-real-uuid", timeout=0.2)
+
+    assert state == TelephonyLegState.ANSWERED
+    assert fake_gateway.commands == [
+        ("uuid_exists fs-real-42", False),
+        ("uuid_getvar fs-real-42 answer_state", False),
+        ("uuid_getvar fs-real-42 channel_call_state", False),
+        ("uuid_getvar fs-real-42 endpoint_disposition", False),
+    ]
+
+
+@pytest.mark.anyio
 async def test_mango_wait_for_answered_does_not_fail_immediately_when_freeswitch_uuid_is_late():
     adapter = _make_mango_adapter()
     fake_gateway = _FakeGateway(

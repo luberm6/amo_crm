@@ -580,22 +580,30 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             if execute is None:
                 return None
 
-            exists = str(await execute(f"uuid_exists {leg_id}", background=False)).strip().lower()
+            corr_snap = await self._corr.get(leg_id)
+            probe_leg_id = (
+                str(corr_snap.freeswitch_uuid).strip()
+                if corr_snap is not None and corr_snap.freeswitch_uuid
+                else leg_id
+            )
+
+            exists = str(await execute(f"uuid_exists {probe_leg_id}", background=False)).strip().lower()
             if exists == "false":
                 log.warning(
                     "mango_telephony.wait_for_answer_freeswitch_missing_uuid",
                     leg_id=leg_id,
+                    probe_leg_id=probe_leg_id,
                 )
                 return None
 
             answer_state = str(
-                await execute(f"uuid_getvar {leg_id} answer_state", background=False)
+                await execute(f"uuid_getvar {probe_leg_id} answer_state", background=False)
             ).strip().lower()
             call_state = str(
-                await execute(f"uuid_getvar {leg_id} channel_call_state", background=False)
+                await execute(f"uuid_getvar {probe_leg_id} channel_call_state", background=False)
             ).strip().upper()
             endpoint_disposition = str(
-                await execute(f"uuid_getvar {leg_id} endpoint_disposition", background=False)
+                await execute(f"uuid_getvar {probe_leg_id} endpoint_disposition", background=False)
             ).strip().upper()
 
             if answer_state == "answered" or call_state in {"ACTIVE", "HELD"} or endpoint_disposition == "ANSWER":
@@ -603,11 +611,12 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 await self._corr.set_freeswitch_state(
                     mango_leg_id=leg_id,
                     state=TelephonyLegState.ANSWERED,
-                    freeswitch_uuid=leg_id,
+                    freeswitch_uuid=probe_leg_id,
                 )
                 log.info(
                     "mango_telephony.wait_for_answer_freeswitch_hit",
                     leg_id=leg_id,
+                    probe_leg_id=probe_leg_id,
                     answer_state=answer_state or None,
                     call_state=call_state or None,
                     endpoint_disposition=endpoint_disposition or None,
