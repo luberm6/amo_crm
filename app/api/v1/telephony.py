@@ -148,17 +148,17 @@ def _resolve_direct_runtime_provider() -> tuple[str, bool]:
     preferred = (settings.telephony_provider or "auto").strip().lower() or "auto"
     if (
         preferred == "stub"
-        and settings.mango_configured
+        and settings.mango_runtime_configured
         and settings.gemini_configured
         and not settings.is_testing
     ):
         return "mango", True
     if preferred == "mango":
-        return "mango", bool(settings.mango_configured)
+        return "mango", bool(settings.mango_runtime_configured)
     if preferred == "stub":
         return preferred, preferred != "stub"
     if preferred == "auto":
-        return ("mango", True) if settings.mango_configured else ("stub", False)
+        return ("mango", True) if settings.mango_runtime_configured else ("stub", False)
     return preferred, preferred not in {"stub", ""}
 
 
@@ -168,6 +168,7 @@ def _requirements_to_blockers(
 ) -> list[str]:
     mapping = {
         "mango_api_credentials_missing": "Mango API credentials are missing.",
+        "mango_sip_trunk_missing": "Mango SIP trunk credentials are missing.",
         "mango_webhook_secret_missing": "Webhook secret is missing.",
         "backend_url_not_public": "BACKEND_URL is not public.",
         "mango_from_ext_missing": "FROM_EXT is not configured and no stable fallback is available.",
@@ -222,6 +223,7 @@ def _build_route_readiness(
             blockers=_requirements_to_blockers(
                 [
                     "mango_api_credentials_missing",
+                    "mango_sip_trunk_missing",
                     "mango_from_ext_missing",
                     "telephony_runtime_not_real",
                 ],
@@ -491,6 +493,7 @@ async def create_outbound_call(
 @router.get("/mango/readiness", response_model=MangoReadinessRead)
 async def mango_readiness(request: Request) -> MangoReadinessRead:
     api_configured = bool(settings.mango_api_key and settings.mango_api_salt)
+    sip_trunk_configured = bool(settings.mango_sip_trunk_configured)
     webhook_secret_configured = bool(settings.mango_webhook_secret or settings.mango_webhook_shared_secret)
     from_ext_configured = bool(settings.mango_from_ext)
     direct_runtime_provider, telephony_runtime_real = _resolve_direct_runtime_provider()
@@ -538,9 +541,12 @@ async def mango_readiness(request: Request) -> MangoReadinessRead:
 
     warnings: list[str] = []
     missing_requirements: list[str] = []
-    if not api_configured:
+    if not api_configured and not sip_trunk_configured:
         warnings.append("Mango API credentials (MANGO_API_KEY / MANGO_API_SALT) are not configured.")
         missing_requirements.append("mango_api_credentials_missing")
+    if not sip_trunk_configured:
+        warnings.append("Mango SIP trunk credentials (MANGO_SIP_LOGIN / MANGO_SIP_PASSWORD / MANGO_SIP_SERVER) are not configured.")
+        missing_requirements.append("mango_sip_trunk_missing")
     if not webhook_secret_configured:
         warnings.append("Inbound webhook verification is not configured (MANGO_WEBHOOK_SECRET is empty).")
         missing_requirements.append("mango_webhook_secret_missing")
@@ -591,7 +597,7 @@ async def mango_readiness(request: Request) -> MangoReadinessRead:
 
     inbound_webhook_smoke_ready = bool(api_configured and webhook_secret_configured and webhook_url_public)
     outbound_originate_smoke_ready = bool(
-        api_configured
+        sip_trunk_configured
         and telephony_runtime_real
         and (from_ext_configured or from_ext_auto_discoverable)
     )
@@ -798,7 +804,7 @@ async def mango_debug_resolve_outbound(
     from_ext_source = None
     if line is not None:
         resolution = await resolve_mango_from_ext(
-            explicit_from_ext=(binding.agent.telephony_extension or "").strip() or None,
+            explicit_from_ext=((settings.mango_from_ext or binding.agent.telephony_extension or "").strip() or None),
             metadata={
                 "telephony_remote_line_id": line.remote_line_id,
                 "telephony_line_phone_number": line.phone_number,

@@ -160,14 +160,18 @@ class DirectVoicePreflightService:
                 "GEMINI_API_KEY is missing.",
             )
 
-        if settings.mango_configured:
-            self._add_check(checks, "mango_credentials", "pass", "Mango credentials are configured.")
+        if settings.mango_runtime_configured:
+            details = {
+                "api_configured": settings.mango_configured,
+                "sip_trunk_configured": settings.mango_sip_trunk_configured,
+            }
+            self._add_check(checks, "mango_credentials", "pass", "Mango transport credentials are configured.", details=details)
         else:
             self._add_check(
                 checks,
                 "mango_credentials",
                 "fail",
-                "Mango credentials are missing.",
+                "Mango API credentials and SIP trunk credentials are both missing.",
             )
 
         if settings.mango_from_ext:

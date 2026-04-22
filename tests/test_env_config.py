@@ -61,6 +61,24 @@ class TestMangoConfigured:
         assert s.mango_configured is False
 
 
+
+
+class TestMangoSipRuntimeConfigured:
+    def test_sip_trunk_true_when_all_three_present(self):
+        s = make(mango_sip_login="11", mango_sip_password="secret", mango_sip_server="pbx.example.com")
+        assert s.mango_sip_trunk_configured is True
+        assert s.mango_runtime_configured is True
+
+    def test_runtime_true_when_only_api_present(self):
+        s = make(mango_api_key="key123", mango_api_salt="salt456")
+        assert s.mango_runtime_configured is True
+
+    def test_runtime_false_when_neither_api_nor_sip_present(self):
+        s = make()
+        assert s.mango_sip_trunk_configured is False
+        assert s.mango_runtime_configured is False
+
+
 # ---------------------------------------------------------------------------
 # vapi_configured
 # ---------------------------------------------------------------------------

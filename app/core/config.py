@@ -238,6 +238,16 @@ class Settings(BaseSettings):
         """True when Mango API credentials are present."""
         return bool(self.mango_api_key and self.mango_api_salt)
 
+    @property
+    def mango_sip_trunk_configured(self) -> bool:
+        """True when SIP trunk credentials for Mango/FreeSWITCH are present."""
+        return bool(self.mango_sip_login and self.mango_sip_password and self.mango_sip_server)
+
+    @property
+    def mango_runtime_configured(self) -> bool:
+        """True when at least one supported Mango transport is configured."""
+        return self.mango_configured or self.mango_sip_trunk_configured
+
     # ── Security ──────────────────────────────────────────────────────────────
     # Shared API key for bot → backend communication.
     # Set a non-empty value to require X-API-Key header on mutating endpoints.

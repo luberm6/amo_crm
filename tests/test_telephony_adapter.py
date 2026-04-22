@@ -247,6 +247,27 @@ async def test_mango_wait_for_answered_uses_freeswitch_probe_when_sip_trunk_conf
 
 
 @pytest.mark.anyio
+async def test_mango_originate_call_requires_sip_trunk_when_api_disabled():
+    adapter = _make_mango_adapter()
+
+    with (
+        patch.object(cfg.settings, "mango_api_key", ""),
+        patch.object(cfg.settings, "mango_api_salt", ""),
+        patch.object(cfg.settings, "mango_sip_login", ""),
+        patch.object(cfg.settings, "mango_sip_password", ""),
+        patch.object(cfg.settings, "mango_sip_server", ""),
+    ):
+        with pytest.raises(TelephonyError) as exc:
+            await adapter.originate_call(
+                "+79991234567",
+                caller_id="11",
+                metadata={"telephony_line_phone_number": "+79300350609"},
+            )
+
+    assert "Mango SIP trunk is not configured" in str(exc.value)
+
+
+@pytest.mark.anyio
 async def test_mango_originate_call_rejects_extension_target_outside_vps():
     adapter = _make_mango_adapter()
 

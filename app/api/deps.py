@@ -187,7 +187,7 @@ async def get_call_engine() -> AbstractCallEngine:
             telephony_preference = settings.telephony_provider
             if (
                 telephony_preference == "stub"
-                and settings.mango_configured
+                and settings.mango_runtime_configured
                 and not settings.is_testing
             ):
                 log.warning(
@@ -289,7 +289,7 @@ def get_transfer_engine() -> AbstractTransferEngine:
     Otherwise: StubTransferEngine fallback.
     """
     global _mango_transfer_engine
-    if settings.mango_configured:
+    if settings.mango_runtime_configured:
         if _mango_transfer_engine is None:
             from sqlalchemy.ext.asyncio import async_sessionmaker
             from app.integrations.telephony.mango import MangoTelephonyAdapter

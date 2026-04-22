@@ -281,6 +281,21 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 resolved_from_ext=resolved_from_ext,
             )
 
+        if not settings.mango_configured:
+            raise TelephonyError(
+                "Mango SIP trunk is not configured and Mango API control-plane is disabled.",
+                detail={
+                    "required_env": [
+                        "MANGO_SIP_LOGIN",
+                        "MANGO_SIP_PASSWORD",
+                        "MANGO_SIP_SERVER",
+                    ],
+                    "primary_number": settings.mango_primary_phone_number,
+                    "from_extension": from_ext,
+                    "line_number": line_number,
+                },
+            )
+
         expected_sip_host = (urlparse(settings.effective_backend_url).hostname or "").strip() or "84.247.184.72"
         validation_client = MangoClient.from_settings()
         try:

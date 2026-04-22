@@ -726,6 +726,9 @@ async def test_mango_readiness_reports_direct_override_to_mango(
         patch.object(cfg.settings, "telephony_provider", "stub"),
         patch.object(cfg.settings, "backend_url", "https://voice.example.com"),
         patch.object(cfg.settings, "mango_webhook_secret", "whsec"),
+        patch.object(cfg.settings, "mango_sip_login", "11"),
+        patch.object(cfg.settings, "mango_sip_password", "secret"),
+        patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
         patch.object(cfg.settings, "mango_from_ext", ""),
         patch.object(cfg.settings, "media_gateway_enabled", True),
         patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
@@ -810,6 +813,9 @@ async def test_mango_readiness_blocks_inbound_ai_runtime_when_freeswitch_runtime
         patch.object(cfg.settings, "telephony_provider", "mango"),
         patch.object(cfg.settings, "backend_url", "https://voice.example.com"),
         patch.object(cfg.settings, "mango_webhook_secret", "whsec"),
+        patch.object(cfg.settings, "mango_sip_login", "11"),
+        patch.object(cfg.settings, "mango_sip_password", "secret"),
+        patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
         patch.object(cfg.settings, "mango_from_ext", "101"),
         patch.object(cfg.settings, "media_gateway_enabled", True),
         patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
@@ -848,6 +854,9 @@ async def test_mango_readiness_accepts_colocated_local_freeswitch_media_settings
         patch.object(cfg.settings, "telephony_provider", "mango"),
         patch.object(cfg.settings, "backend_url", "https://voice.example.com"),
         patch.object(cfg.settings, "mango_webhook_secret", "whsec"),
+        patch.object(cfg.settings, "mango_sip_login", "11"),
+        patch.object(cfg.settings, "mango_sip_password", "secret"),
+        patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
         patch.object(cfg.settings, "mango_from_ext", "101"),
         patch.object(cfg.settings, "media_gateway_enabled", True),
         patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
@@ -971,3 +980,83 @@ async def test_mango_readiness_uses_render_external_url_when_backend_url_is_loca
     assert "backend_url_not_public" not in body["missing_requirements"]
     assert body["route_readiness"]["inbound_webhook"]["ready"] is True
     assert body["actionable_next_step"]["key"] in {"use_real_mango_runtime", "enable_media_gateway", "run_live_smoke"}
+
+
+@pytest.mark.anyio
+async def test_mango_readiness_accepts_sip_only_outbound_runtime(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    app = _make_app(session)
+    with (
+        patch.object(cfg.settings, "mango_api_key", ""),
+        patch.object(cfg.settings, "mango_api_salt", ""),
+        patch.object(cfg.settings, "mango_sip_login", "11"),
+        patch.object(cfg.settings, "mango_sip_password", "secret"),
+        patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
+        patch.object(cfg.settings, "telephony_provider", "mango"),
+        patch.object(cfg.settings, "backend_url", "https://voice.example.com"),
+        patch.object(cfg.settings, "mango_webhook_secret", ""),
+        patch.object(cfg.settings, "mango_webhook_shared_secret", ""),
+        patch.object(cfg.settings, "mango_from_ext", "11"),
+        patch.object(cfg.settings, "media_gateway_enabled", True),
+        patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
+        patch.object(cfg.settings, "media_gateway_mode", "esl_rtp"),
+        patch.object(cfg.settings, "freeswitch_esl_host", "127.0.0.1"),
+        patch.object(cfg.settings, "freeswitch_esl_password", "super-secret"),
+        patch.object(cfg.settings, "freeswitch_rtp_ip", "127.0.0.1"),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            token = await _admin_login(ac)
+            resp = await ac.get(
+                "/v1/telephony/mango/readiness",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["telephony_runtime_provider"] == "mango"
+    assert body["telephony_runtime_real"] is True
+    assert body["outbound_originate_smoke_ready"] is True
+    assert "mango_api_credentials_missing" not in body["missing_requirements"]
+    assert "mango_sip_trunk_missing" not in body["missing_requirements"]
+
+
+@pytest.mark.anyio
+async def test_mango_readiness_blocks_outbound_when_sip_trunk_missing_even_if_api_is_disabled(
+    session: AsyncSession,
+    admin_auth_settings,
+) -> None:
+    app = _make_app(session)
+    with (
+        patch.object(cfg.settings, "mango_api_key", ""),
+        patch.object(cfg.settings, "mango_api_salt", ""),
+        patch.object(cfg.settings, "mango_sip_login", ""),
+        patch.object(cfg.settings, "mango_sip_password", ""),
+        patch.object(cfg.settings, "mango_sip_server", ""),
+        patch.object(cfg.settings, "telephony_provider", "mango"),
+        patch.object(cfg.settings, "backend_url", "https://voice.example.com"),
+        patch.object(cfg.settings, "mango_webhook_secret", ""),
+        patch.object(cfg.settings, "mango_webhook_shared_secret", ""),
+        patch.object(cfg.settings, "mango_from_ext", "11"),
+        patch.object(cfg.settings, "media_gateway_enabled", True),
+        patch.object(cfg.settings, "media_gateway_provider", "freeswitch"),
+        patch.object(cfg.settings, "media_gateway_mode", "esl_rtp"),
+        patch.object(cfg.settings, "freeswitch_esl_host", "127.0.0.1"),
+        patch.object(cfg.settings, "freeswitch_esl_password", "super-secret"),
+        patch.object(cfg.settings, "freeswitch_rtp_ip", "127.0.0.1"),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            token = await _admin_login(ac)
+            resp = await ac.get(
+                "/v1/telephony/mango/readiness",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["telephony_runtime_provider"] == "mango"
+    assert body["telephony_runtime_real"] is False
+    assert body["outbound_originate_smoke_ready"] is False
+    assert "mango_api_credentials_missing" in body["missing_requirements"]
+    assert "mango_sip_trunk_missing" in body["missing_requirements"]

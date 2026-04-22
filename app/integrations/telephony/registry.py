@@ -165,7 +165,7 @@ def build_default_registry() -> TelephonyProviderRegistry:
       "stub"   — StubTelephonyAdapter (dev/test, always available)
 
     Conditionally registered (based on settings):
-      "mango"  — MangoTelephonyAdapter  (if settings.mango_configured)
+      "mango"  — MangoTelephonyAdapter  (if Mango API or SIP trunk is configured)
       "twilio" — TwilioTelephonyAdapter (if settings.twilio_configured — placeholder)
     """
     from app.core.config import settings
@@ -177,8 +177,8 @@ def build_default_registry() -> TelephonyProviderRegistry:
     # Stub is always available
     registry.register("stub", StubTelephonyAdapter)
 
-    # Mango — register if credentials are set
-    if settings.mango_configured:
+    # Mango — register if API or SIP trunk credentials are set
+    if settings.mango_runtime_configured:
         from app.integrations.telephony.mango import MangoTelephonyAdapter
         registry.register("mango", MangoTelephonyAdapter)
         log.info("telephony_registry.mango_registered")
