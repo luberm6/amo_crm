@@ -64,6 +64,28 @@ class _FailingEngine(AbstractCallEngine):
         return call.status
 
 
+class _StatusRefreshEngine(AbstractCallEngine):
+    def __init__(self, status: CallStatus) -> None:
+        self.status = status
+
+    async def initiate_call(self, call: Call) -> EngineCallResult:
+        return EngineCallResult(
+            external_id="direct-test-id",
+            initial_status=CallStatus.IN_PROGRESS,
+            route_used="direct",
+            telephony_leg_id="direct-leg-test",
+        )
+
+    async def stop_call(self, call: Call) -> None:
+        pass
+
+    async def send_instruction(self, call: Call, instruction: str) -> None:
+        pass
+
+    async def get_status(self, call: Call) -> CallStatus:
+        return self.status
+
+
 # ── create_call ───────────────────────────────────────────────────────────────
 
 @pytest.mark.anyio
@@ -176,6 +198,17 @@ async def test_create_call_quiet_hours_raises_when_enforced(session: AsyncSessio
                 await svc.create_call(raw_phone="+79991234567")
 
     assert exc_info.value.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_get_call_refreshes_terminal_status_from_engine(session: AsyncSession):
+    svc = CallService(session=session, engine=_StatusRefreshEngine(CallStatus.FAILED))
+    call = await svc.create_call(raw_phone="+79991234568")
+
+    refreshed = await svc.get_call(call.id)
+
+    assert refreshed.status == CallStatus.FAILED
+    assert refreshed.completed_at is not None
 
 
 # ── steer_call ────────────────────────────────────────────────────────────────

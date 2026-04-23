@@ -19,6 +19,7 @@ import pytest
 from app.integrations.call_engine.base import EngineCallResult
 from app.integrations.direct.engine import DirectGeminiEngine
 from app.integrations.direct.session_manager import DirectSessionManager, DirectSession
+from app.integrations.telephony.base import TelephonyLegState
 from app.integrations.telephony.stub import StubTelephonyAdapter
 from app.integrations.voice.stub import StubVoiceProvider
 from app.models.agent_profile import AgentProfile
@@ -36,6 +37,7 @@ def _make_call(
     c.phone = "+79991234567"
     c.mango_call_id = mango_call_id
     c.status = CallStatus.IN_PROGRESS
+    c.telephony_leg_id = None
     return c
 
 
@@ -142,8 +144,8 @@ async def test_send_instruction_delegates_to_session_manager():
 
 
 @pytest.mark.anyio
-async def test_get_status_returns_completed_when_no_session():
-    """get_status → call.status когда сессия не найдена."""
+async def test_get_status_returns_call_status_when_no_session_and_no_leg():
+    """get_status returns persisted call.status when no session and no telephony leg are available."""
     mock_sm = MagicMock(spec=DirectSessionManager)
     mock_sm.get_session.return_value = None
 
@@ -158,6 +160,30 @@ async def test_get_status_returns_completed_when_no_session():
     status = await engine.get_status(call)
 
     assert status == CallStatus.IN_PROGRESS
+
+
+@pytest.mark.anyio
+async def test_get_status_probes_telephony_leg_when_session_missing():
+    mock_sm = MagicMock(spec=DirectSessionManager)
+    mock_sm.get_session.return_value = None
+
+    telephony = AsyncMock(spec=StubTelephonyAdapter)
+    telephony.get_leg_state.return_value = TelephonyLegState.TERMINATED
+
+    engine = DirectGeminiEngine(
+        session_manager=mock_sm,
+        telephony=telephony,
+        voice=StubVoiceProvider(),
+        session_factory=AsyncMock(),
+    )
+
+    call = _make_call(mango_call_id="missing-session")
+    call.telephony_leg_id = "direct-stale"
+
+    status = await engine.get_status(call)
+
+    assert status == CallStatus.FAILED
+    telephony.get_leg_state.assert_awaited_once_with("direct-stale")
 
 
 @pytest.mark.anyio

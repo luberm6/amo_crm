@@ -352,6 +352,22 @@ class DirectGeminiEngine(AbstractCallEngine):
 
         session = self._sm.get_session(session_id)
         if session is None:
+            leg_id = str(getattr(call, "telephony_leg_id", "") or "").strip()
+            if leg_id:
+                try:
+                    leg_state = await self._telephony.get_leg_state(leg_id)
+                except Exception as exc:
+                    log.warning(
+                        "direct_engine.get_status_leg_probe_failed",
+                        call_id=str(call.id),
+                        leg_id=leg_id,
+                        error=str(exc),
+                    )
+                else:
+                    if leg_state.name in {"TERMINATED", "FAILED"}:
+                        return CallStatus.FAILED
+                    if leg_state.name in {"ANSWERED", "BRIDGED", "RINGING", "INITIATING"}:
+                        return CallStatus.IN_PROGRESS
             return call.status
 
         return session.current_status

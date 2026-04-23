@@ -178,6 +178,21 @@ class CallService:
         call = await self.repo.get(call_id)
         if call is None:
             raise NotFoundError(f"Call {call_id} not found")
+        if not call.is_terminal():
+            try:
+                live_status = await self.engine.get_status(call)
+            except Exception as exc:
+                log.warning(
+                    "call_status_refresh_failed",
+                    call_id=str(call_id),
+                    error=str(exc),
+                )
+                return call
+            if live_status != call.status:
+                call.status = live_status
+                if live_status in TERMINAL_STATUSES and call.completed_at is None:
+                    call.completed_at = datetime.now(timezone.utc)
+                await self.repo.save(call)
         return call
 
     async def get_active_calls(self) -> list[Call]:
