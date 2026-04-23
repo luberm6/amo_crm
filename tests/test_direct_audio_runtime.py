@@ -851,7 +851,6 @@ async def test_gemini_response_timeout_terminates_call_with_failed_status(test_s
         settings.direct_model_response_timeout_seconds = old_resp_timeout
 
 
-@pytest.mark.anyio
 async def test_bridge_reader_exception_triggers_auto_terminate(test_session_factory):
     old_el_enabled = settings.elevenlabs_enabled
     old_el_key = settings.elevenlabs_api_key

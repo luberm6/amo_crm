@@ -220,6 +220,30 @@ async def test_terminate_session_terminates_telephony_leg(mock_session_factory):
 
 
 @pytest.mark.anyio
+async def test_terminate_session_still_finalizes_when_gemini_close_fails(mock_session_factory):
+    sm = DirectSessionManager()
+    session_id = await _create_session(sm, mock_session_factory)
+
+    session = sm.get_session(session_id)
+    assert session is not None
+    assert session.event_handler is not None
+    assert session.gemini_client is not None
+
+    session.event_handler.flush = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    session.event_handler.finalize_call = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    session.gemini_client.close = AsyncMock(side_effect=RuntimeError("close exploded"))  # type: ignore[method-assign]
+
+    await sm.terminate_session(
+        session_id,
+        final_status=CallStatus.FAILED,
+        stage="test_close_failure",
+        reason="forced",
+    )
+
+    session.event_handler.finalize_call.assert_awaited_once_with(CallStatus.FAILED)
+
+
+@pytest.mark.anyio
 async def test_telephony_leg_monitor_terminates_failed_session(mock_session_factory):
     """If the provider leg dies underneath the session, DirectSessionManager must clean up."""
     sm = DirectSessionManager()

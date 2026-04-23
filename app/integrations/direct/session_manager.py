@@ -821,7 +821,15 @@ class DirectSessionManager:
             session.tts_tasks.clear()
 
         if session.event_handler:
-            await session.event_handler.flush(timeout=3.0)
+            try:
+                await session.event_handler.flush(timeout=3.0)
+            except Exception as exc:
+                log.error(
+                    "session_manager.event_flush_failed",
+                    session_id=session_id,
+                    call_id=str(session.call_id),
+                    error=str(exc),
+                )
 
         # Signal the browser that the call ended normally before closing.
         if session.audio_bridge and hasattr(session.audio_bridge, "send_control"):
@@ -831,7 +839,15 @@ class DirectSessionManager:
             })
 
         if session.gemini_client:
-            await session.gemini_client.close()
+            try:
+                await session.gemini_client.close()
+            except Exception as exc:
+                log.error(
+                    "session_manager.gemini_close_failed",
+                    session_id=session_id,
+                    call_id=str(session.call_id),
+                    error=str(exc),
+                )
 
         # ── Detach audio bridge ───────────────────────────────────────────────
         if session.audio_bridge:
@@ -860,7 +876,15 @@ class DirectSessionManager:
 
         # ── Finalize call in DB ───────────────────────────────────────────────
         if session.event_handler:
-            await session.event_handler.finalize_call(resolved_final_status)
+            try:
+                await session.event_handler.finalize_call(resolved_final_status)
+            except Exception as exc:
+                log.error(
+                    "session_manager.finalize_call_failed",
+                    session_id=session_id,
+                    call_id=str(session.call_id),
+                    error=str(exc),
+                )
 
         # ── Release distributed ownership ─────────────────────────────────────
         if self._coordinator is not None:
