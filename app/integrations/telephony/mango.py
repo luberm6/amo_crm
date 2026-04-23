@@ -652,7 +652,12 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 await execute(f"uuid_getvar {probe_leg_id} endpoint_disposition", background=False)
             ).strip().upper()
 
-            if answer_state == "answered" or call_state in {"ACTIVE", "HELD"} or endpoint_disposition == "ANSWER":
+            # The originate A-leg parked in FreeSWITCH can report ACTIVE /
+            # endpoint_disposition=ANSWER before the callee actually answers.
+            # For direct PSTN we treat only explicit answer_state as a true
+            # provider confirmation; everything else must come from correlation
+            # events (CHANNEL_ANSWER / CHANNEL_BRIDGE).
+            if answer_state == "answered":
                 await self._state.set_leg_state(leg_id, TelephonyLegState.ANSWERED)
                 await self._corr.set_freeswitch_state(
                     mango_leg_id=leg_id,

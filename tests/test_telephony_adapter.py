@@ -405,6 +405,30 @@ async def test_mango_wait_for_answered_does_not_fail_immediately_when_freeswitch
 
 
 @pytest.mark.anyio
+async def test_mango_wait_for_answered_does_not_treat_active_a_leg_as_answered():
+    adapter = _make_mango_adapter()
+    fake_gateway = _FakeGateway(
+        replies={
+            ("uuid_exists direct-fs-active", False): "true",
+            ("uuid_getvar direct-fs-active answer_state", False): "",
+            ("uuid_getvar direct-fs-active channel_call_state", False): "ACTIVE",
+            ("uuid_getvar direct-fs-active endpoint_disposition", False): "ANSWER",
+        }
+    )
+
+    with (
+        patch.object(cfg.settings, "mango_sip_login", "11"),
+        patch.object(cfg.settings, "mango_sip_password", "secret"),
+        patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
+        patch("app.integrations.telephony.mango.get_media_gateway", return_value=fake_gateway),
+    ):
+        with pytest.raises(TelephonyError) as exc:
+            await adapter.wait_for_answered("direct-fs-active", timeout=0.1)
+
+    assert "Timed out waiting for leg direct-fs-active" in str(exc.value)
+
+
+@pytest.mark.anyio
 async def test_mango_wait_for_answered_prefers_answered_seen_when_hangup_follows_immediately():
     adapter = _make_mango_adapter()
 
