@@ -999,11 +999,35 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             if current is not None and current.freeswitch_uuid
             else None
         )
+        incoming_uuid = str(fs_uuid or "").strip() or None
         incoming_is_provisional = bool(fs_uuid and str(fs_uuid).strip() == mango_leg_id)
         current_has_real_uuid = bool(
             current_real_uuid
             and current_real_uuid != mango_leg_id
         )
+        incoming_is_foreign_uuid = bool(
+            current_has_real_uuid
+            and incoming_uuid
+            and incoming_uuid != current_real_uuid
+        )
+
+        # Ignore terminal/answer/create events coming from child/foreign UUIDs once
+        # the canonical SIP leg UUID is already known. FreeSWITCH can emit
+        # correlation-only events for auxiliary/internal legs that carry the same
+        # variable_origination_uuid=direct-..., but they must not overwrite the
+        # main call-leg mapping or terminate the call prematurely.
+        if incoming_is_foreign_uuid:
+            log.info(
+                "freeswitch_gateway.correlation_only_event_ignored_foreign_uuid",
+                mango_leg_id=mango_leg_id,
+                fs_event=normalized,
+                incoming_fs_uuid=incoming_uuid,
+                preserved_freeswitch_uuid=current_real_uuid,
+                state=state.value,
+                **_event_diagnostics(raw_event),
+            )
+            return
+
         if incoming_is_provisional and current_has_real_uuid:
             effective_fs_uuid = current_real_uuid
 

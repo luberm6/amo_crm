@@ -145,6 +145,19 @@ async def test_create_call_writes_audit_events(session: AsyncSession):
 
 
 @pytest.mark.anyio
+async def test_get_active_calls_refreshes_terminal_status(session: AsyncSession):
+    svc = CallService(session=session, engine=_StatusRefreshEngine(CallStatus.FAILED))
+    call = await svc.create_call(raw_phone="+79991234567", mode=CallMode.DIRECT)
+
+    active = await svc.get_active_calls()
+    assert active == []
+
+    refreshed = await svc.get_call(call.id)
+    assert refreshed.status == CallStatus.FAILED
+    assert refreshed.completed_at is not None
+
+
+@pytest.mark.anyio
 async def test_create_call_engine_failure_marks_call_failed(session: AsyncSession):
     svc = CallService(session=session, engine=_FailingEngine())
 

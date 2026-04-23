@@ -196,7 +196,27 @@ class CallService:
         return call
 
     async def get_active_calls(self) -> list[Call]:
-        return await self.repo.get_active_calls()
+        calls = await self.repo.get_active_calls()
+        refreshed: list[Call] = []
+        for call in calls:
+            try:
+                live_status = await self.engine.get_status(call)
+            except Exception as exc:
+                log.warning(
+                    "active_call_status_refresh_failed",
+                    call_id=str(call.id),
+                    error=str(exc),
+                )
+                continue
+            if live_status != call.status:
+                call.status = live_status
+                if live_status in TERMINAL_STATUSES and call.completed_at is None:
+                    call.completed_at = datetime.now(timezone.utc)
+                await self.repo.save(call)
+            if call.status in TERMINAL_STATUSES:
+                continue
+            refreshed.append(call)
+        return refreshed
 
     # ── Steer ─────────────────────────────────────────────────────────────────
 
