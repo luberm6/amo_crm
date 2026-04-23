@@ -1739,13 +1739,32 @@ class DirectSessionManager:
             return
 
         path = session.voice_state.initial_greeting_path
-        if path in {"tts_primary", "tts_fallback", "gemini_native"} and session.gemini_client is not None:
-            # Inject instruction so Gemini speaks the greeting.
-            # For tts_primary/tts_fallback: Gemini's audio is discarded; the outputAudioTranscription
-            # text fires on_text → ElevenLabs synthesis (single synthesis, no noise).
-            # For gemini_native: Gemini's native audio is played directly via on_audio.
-            # Previously tts_primary had an explicit _synthesize_to_audio_queue call here,
-            # which ran in parallel with Gemini's autonomous greeting → interleaved chunks → noise.
+        if path in {"tts_primary", "tts_fallback"} and session.voice_provider is not None:
+            # For TTS-first strategies, synthesize the greeting directly.
+            # This avoids coupling call survival to Gemini's first-token latency
+            # right after answer, which can otherwise terminate a live PSTN leg
+            # before the caller hears anything.
+            task = asyncio.create_task(
+                self._synthesize_to_audio_queue(
+                    session,
+                    session.voice_provider,
+                    greeting,
+                    source_override=path,
+                ),
+                name=f"initial_greeting_tts_{session.session_id}",
+            )
+            session.tts_tasks.add(task)
+            task.add_done_callback(lambda t: session.tts_tasks.discard(t))
+            log.info(
+                "session_manager.initial_greeting_started",
+                session_id=session.session_id,
+                voice_strategy=session.voice_state.strategy,
+                path=path,
+                mode="direct_tts",
+            )
+            return
+
+        if path == "gemini_native" and session.gemini_client is not None:
             instruction = (
                 "Сразу после соединения поздоровайся с клиентом этой фразой "
                 f"без изменений: {greeting}"
@@ -1756,6 +1775,7 @@ class DirectSessionManager:
                 session_id=session.session_id,
                 voice_strategy=session.voice_state.strategy,
                 path=path,
+                mode="gemini_instruction",
             )
 
     async def _check_model_response_timeout(self, session: DirectSession) -> None:

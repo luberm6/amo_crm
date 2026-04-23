@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
@@ -17,6 +17,10 @@ type OutboundCallResponse = {
   id?: string | null
   status?: string | null
   error?: unknown
+  phone?: string | null
+  mode?: string | null
+  route_used?: string | null
+  telephony_leg_id?: string | null
 }
 
 function formatOperatorError(message: string | null, details: unknown): string | null {
@@ -42,6 +46,64 @@ export default function DashboardPage() {
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<OutboundCallResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const pollTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current !== null) {
+        window.clearTimeout(pollTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const callId = result?.call_id || result?.id
+    const status = result?.status || null
+    if (!callId || !status || !token) {
+      return
+    }
+    if (status !== 'IN_PROGRESS' && status !== 'RINGING' && status !== 'DIALING' && status !== 'CREATED') {
+      return
+    }
+
+    let cancelled = false
+
+    async function pollCall(): Promise<void> {
+      try {
+        const next = await apiFetch<OutboundCallResponse>(`/v1/calls/${callId}`, undefined, token)
+        if (cancelled) {
+          return
+        }
+        setResult((current) => ({
+          ...(current || {}),
+          ...next,
+          accepted: current?.accepted ?? true,
+          call_id: current?.call_id || current?.id || callId,
+          id: current?.id || current?.call_id || callId,
+        }))
+        if (next.status && !['IN_PROGRESS', 'RINGING', 'DIALING', 'CREATED'].includes(next.status)) {
+          return
+        }
+      } catch {
+        return
+      }
+      pollTimerRef.current = window.setTimeout(() => {
+        void pollCall()
+      }, 2000)
+    }
+
+    pollTimerRef.current = window.setTimeout(() => {
+      void pollCall()
+    }, 2000)
+
+    return () => {
+      cancelled = true
+      if (pollTimerRef.current !== null) {
+        window.clearTimeout(pollTimerRef.current)
+        pollTimerRef.current = null
+      }
+    }
+  }, [result?.call_id, result?.id, result?.status, token])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

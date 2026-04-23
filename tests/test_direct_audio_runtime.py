@@ -170,6 +170,56 @@ async def test_tts_voiced_first_gate_trims_leading_silence_but_preserves_mid_utt
     )
 
 
+@pytest.mark.anyio
+async def test_initial_greeting_for_tts_primary_uses_direct_tts_without_gemini_instruction(
+    test_session_factory,
+) -> None:
+    old_el_enabled = settings.elevenlabs_enabled
+    old_el_key = settings.elevenlabs_api_key
+    old_el_voice = settings.elevenlabs_voice_id
+    old_greeting_enabled = settings.direct_initial_greeting_enabled
+    old_greeting_text = settings.direct_initial_greeting_text
+    old_voice_strategy = settings.direct_voice_strategy
+    try:
+        settings.direct_voice_strategy = "tts_primary"
+        settings.elevenlabs_enabled = True
+        settings.elevenlabs_api_key = "k"
+        settings.elevenlabs_voice_id = "v"
+        settings.direct_initial_greeting_enabled = True
+        settings.direct_initial_greeting_text = "Здравствуйте!"
+
+        sm = DirectSessionManager()
+        bridge = _AudioBridge()
+        telephony = BridgeTelephonyAdapter(bridge=bridge)
+        voice = _VoiceProvider()
+
+        with patch("app.integrations.direct.session_manager.GeminiLiveClient", new=MockGeminiLiveClient):
+            sid = await sm.create_session(
+                call_id=uuid.uuid4(),
+                phone="+79991230001",
+                telephony=telephony,
+                voice=voice,
+                session_factory=test_session_factory,
+                system_prompt="test",
+            )
+
+        session = sm.get_session(sid)
+        assert session is not None
+        await asyncio.sleep(0.05)
+        assert session.instruction_queue.empty()
+        await sm._drain_audio_out_queue(session)
+        assert bridge.played
+        assert session.metrics.awaiting_model_response is False
+        await sm.terminate_session(sid)
+    finally:
+        settings.direct_voice_strategy = old_voice_strategy
+        settings.elevenlabs_enabled = old_el_enabled
+        settings.elevenlabs_api_key = old_el_key
+        settings.elevenlabs_voice_id = old_el_voice
+        settings.direct_initial_greeting_enabled = old_greeting_enabled
+        settings.direct_initial_greeting_text = old_greeting_text
+
+
 class BridgeTelephonyAdapter(AbstractTelephonyAdapter):
     def __init__(self, bridge: AbstractAudioBridge, fail_attach: bool = False) -> None:
         self._bridge = bridge
@@ -468,12 +518,10 @@ async def test_initial_greeting_plays_immediately_over_tts(test_session_factory)
             assert session is not None
             assert session.gemini_client is not None
             await asyncio.sleep(0.05)
-            assert session.gemini_client.injected_instructions
-            assert "Здравствуйте" in session.gemini_client.injected_instructions[0]
-
-            session.gemini_client.simulate_text("assistant", "Здравствуйте")
-            await asyncio.sleep(0.05)
+            assert session.gemini_client.injected_instructions == []
+            await sm._drain_audio_out_queue(session)
             assert bridge.played[:2] == [b"\x22" * 640, b"\x33" * 640]
+            assert session.metrics.awaiting_model_response is False
         finally:
             await sm.terminate_session(sid)
     finally:
