@@ -402,7 +402,7 @@ async def test_mango_wait_for_answered_does_not_fail_immediately_when_freeswitch
 
 
 @pytest.mark.anyio
-async def test_mango_wait_for_answered_prefers_answer_seen_over_immediate_terminate():
+async def test_mango_wait_for_answered_prefers_terminal_state_when_leg_already_hung_up():
     adapter = _make_mango_adapter()
 
     await adapter._corr.set_freeswitch_state(
@@ -423,9 +423,10 @@ async def test_mango_wait_for_answered_prefers_answer_seen_over_immediate_termin
         patch.object(cfg.settings, "mango_sip_password", "secret"),
         patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
     ):
-        state = await adapter.wait_for_answered("direct-answer-race", timeout=0.2)
+        with pytest.raises(TelephonyError) as exc:
+            await adapter.wait_for_answered("direct-answer-race", timeout=0.2)
 
-    assert state == TelephonyLegState.ANSWERED
+    assert "ended before answer: terminated" in str(exc.value)
 
 
 @pytest.mark.anyio

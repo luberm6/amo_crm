@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.integrations.telephony.base import TelephonyLegState
 from app.integrations.telephony.mango import MangoTelephonyAdapter, TelephonyError
 from app.integrations.telephony.mango_events import MangoEventProcessor
+from app.integrations.telephony.mango_events import verify_mango_webhook_guard
 from app.integrations.telephony.mango_freeswitch_correlation import (
     InMemoryMangoFreeSwitchCorrelationStore,
 )
@@ -299,9 +300,13 @@ async def test_wait_for_answered_returns_answered_when_hangup_follows_immediatel
         )
 
     task = asyncio.create_task(emit_answer_then_hangup())
-    state = await adapter.wait_for_answered("leg-fs-answer-race", timeout=1.0)
+    with pytest.raises(TelephonyError):
+        await adapter.wait_for_answered("leg-fs-answer-race", timeout=1.0)
     await task
-    assert state == TelephonyLegState.ANSWERED
+    snap = await corr.get("leg-fs-answer-race")
+    assert snap is not None
+    assert snap.effective_state == TelephonyLegState.TERMINATED
+    assert snap.answered_seen is True
 
 
 @pytest.mark.anyio
@@ -405,22 +410,34 @@ async def test_restart_state_restore_in_memory_shared_backing():
     assert snap.state == TelephonyLegState.ANSWERED
 
 
-@pytest.mark.anyio
-async def test_mango_webhook_endpoint_shared_secret_guard(client: AsyncClient):
+def test_mango_webhook_endpoint_shared_secret_guard():
     old_secret = settings.mango_webhook_shared_secret
+    old_signature_secret = settings.mango_webhook_secret
+    old_allowlist = settings.mango_webhook_ip_allowlist
     try:
         settings.mango_webhook_shared_secret = "test-secret"
-        payload = {"event_id": "evt-endpoint-1", "event": "ringing", "call_id": "leg-500"}
+        settings.mango_webhook_secret = ""
+        settings.mango_webhook_ip_allowlist = ""
+        payload = b'{"event_id":"evt-endpoint-1","event":"ringing","call_id":"leg-500"}'
 
-        denied = await client.post("/v1/webhooks/mango", json=payload)
-        assert denied.status_code == 401
-
-        allowed = await client.post(
-            "/v1/webhooks/mango",
-            json=payload,
-            headers={"x-mango-webhook-secret": "test-secret"},
+        ok, reason = verify_mango_webhook_guard(
+            raw_body=payload,
+            source_ip="127.0.0.1",
+            signature_header=None,
+            secret_header=None,
         )
-        assert allowed.status_code == 200
-        assert allowed.json()["status"] == "ok"
+        assert ok is False
+        assert reason == "missing_shared_secret"
+
+        ok, reason = verify_mango_webhook_guard(
+            raw_body=payload,
+            source_ip="127.0.0.1",
+            signature_header=None,
+            secret_header="test-secret",
+        )
+        assert ok is True
+        assert reason is None
     finally:
         settings.mango_webhook_shared_secret = old_secret
+        settings.mango_webhook_secret = old_signature_secret
+        settings.mango_webhook_ip_allowlist = old_allowlist

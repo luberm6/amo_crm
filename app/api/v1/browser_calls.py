@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import math
 import uuid
+from urllib.parse import urlparse
 
 from fastapi import (
     APIRouter,
@@ -13,6 +14,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+import websockets
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audio_utils import Pcm16ChunkAligner, dump_pcm16le_wav, pcm16le_stats
@@ -37,12 +39,64 @@ from app.schemas.browser_call import (
 from app.schemas.transcript import TranscriptEntryRead
 from app.services.call_service import CallService
 from app.core.logging import get_logger
+from app.core.config import settings
 from app.integrations.voice.stub import StubVoiceProvider
 
 router = APIRouter(prefix="/browser-calls", tags=["browser-calls"])
 log = get_logger(__name__)
 _PCM_SAMPLE_RATE = 16000
 _PCM_CHUNK_BYTES = 4096
+
+
+def _build_edge_proxy_ws_url(call_id: uuid.UUID, token: str) -> str:
+    base = (settings.edge_proxy_target_url or "").strip().rstrip("/")
+    parsed = urlparse(base)
+    scheme = "wss" if parsed.scheme == "https" else "ws"
+    netloc = parsed.netloc or parsed.path
+    return f"{scheme}://{netloc}/v1/browser-calls/{call_id}/ws?token={token}"
+
+
+async def _proxy_browser_websocket(websocket: WebSocket, call_id: uuid.UUID, token: str) -> None:
+    upstream_url = _build_edge_proxy_ws_url(call_id, token)
+    await websocket.accept()
+    log.info("browser_call.websocket_proxy_connecting", call_id=str(call_id), upstream_url=upstream_url)
+
+    try:
+        async with websockets.connect(upstream_url, ping_interval=20, ping_timeout=20, open_timeout=15) as upstream:
+            log.info("browser_call.websocket_proxy_connected", call_id=str(call_id), upstream_url=upstream_url)
+
+            async def _client_to_upstream() -> None:
+                while True:
+                    message = await websocket.receive()
+                    msg_type = message.get("type")
+                    if msg_type == "websocket.disconnect":
+                        break
+                    if message.get("bytes") is not None:
+                        await upstream.send(message["bytes"])
+                    elif message.get("text") is not None:
+                        await upstream.send(message["text"])
+
+            async def _upstream_to_client() -> None:
+                async for message in upstream:
+                    if isinstance(message, bytes):
+                        await websocket.send_bytes(message)
+                    else:
+                        await websocket.send_text(message)
+
+            await asyncio.gather(_client_to_upstream(), _upstream_to_client())
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        log.warning(
+            "browser_call.websocket_proxy_failed",
+            call_id=str(call_id),
+            upstream_url=upstream_url,
+            error=str(exc),
+        )
+        try:
+            await websocket.close(code=1011, reason="browser ws proxy failed")
+        except Exception:
+            pass
 
 
 def _chunk_pcm16(pcm: bytes, chunk_bytes: int = _PCM_CHUNK_BYTES) -> list[bytes]:
@@ -438,6 +492,10 @@ async def browser_call_ws(
     token: str,
     registry=Depends(get_browser_registry),
 ) -> None:
+    if settings.edge_proxy_target_url:
+        await _proxy_browser_websocket(websocket, call_id, token)
+        return
+
     bridge = registry.get_bridge_by_token(call_id, token)
     if bridge is None:
         await websocket.close(code=4404, reason="browser session not found")
