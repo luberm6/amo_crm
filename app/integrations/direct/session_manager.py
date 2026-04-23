@@ -73,7 +73,11 @@ from app.integrations.direct.voice_strategy import (
     make_session_voice_state_for_strategy,
 )
 from app.integrations.telephony.audio_bridge import NullAudioBridge
-from app.integrations.telephony.base import AbstractTelephonyAdapter, TelephonyChannel
+from app.integrations.telephony.base import (
+    AbstractTelephonyAdapter,
+    TelephonyChannel,
+    TelephonyLegState,
+)
 from app.integrations.voice.base import AbstractVoiceProvider
 from app.models.call import CallStatus, TERMINAL_STATUSES
 
@@ -301,6 +305,7 @@ class DirectSession:
     capabilities: DirectSessionCapabilities = field(default_factory=DirectSessionCapabilities)
     metrics: DirectSessionMetrics = field(default_factory=DirectSessionMetrics)
     bridge_reader_task: Optional[asyncio.Task] = None
+    leg_monitor_task: Optional[asyncio.Task] = None
     tts_tasks: set[asyncio.Task] = field(default_factory=set)
     audio_out_aligners: dict[str, Pcm16ChunkAligner] = field(default_factory=dict)
     voice_state: Optional[SessionVoiceState] = None
@@ -801,6 +806,13 @@ class DirectSessionManager:
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
 
+        if session.leg_monitor_task and not session.leg_monitor_task.done():
+            session.leg_monitor_task.cancel()
+            try:
+                await asyncio.wait_for(session.leg_monitor_task, timeout=1.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+
         if session.tts_tasks:
             for task in list(session.tts_tasks):
                 if not task.done():
@@ -927,6 +939,15 @@ class DirectSessionManager:
                     self._bridge_audio_reader(session),
                     name=f"bridge_reader_{session.session_id}",
                 )
+            if (
+                session.telephony_adapter is not None
+                and session.telephony_channel is not None
+                and session.telephony_channel.provider_leg_id
+            ):
+                session.leg_monitor_task = asyncio.create_task(
+                    self._telephony_leg_monitor(session),
+                    name=f"leg_monitor_{session.session_id}",
+                )
 
             while not session.stop_event.is_set():
                 await self._drain_instruction_queue(session)
@@ -1036,6 +1057,64 @@ class DirectSessionManager:
                 session,
                 stage="bridge_reader",
                 error=f"bridge reader failed: {exc}",
+            )
+
+    async def _telephony_leg_monitor(self, session: DirectSession) -> None:
+        assert session.telephony_adapter is not None
+        assert session.telephony_channel is not None
+        leg_id = str(session.telephony_channel.provider_leg_id or "").strip()
+        if not leg_id:
+            return
+
+        last_state: Optional[TelephonyLegState] = None
+        try:
+            while not session.stop_event.is_set():
+                state = await session.telephony_adapter.get_leg_state(leg_id)
+                if state != last_state:
+                    log.info(
+                        "session_manager.telephony_leg_state_observed",
+                        session_id=session.session_id,
+                        call_id=str(session.call_id),
+                        leg_id=leg_id,
+                        state=state.value,
+                    )
+                    last_state = state
+
+                if state in {TelephonyLegState.ANSWERED, TelephonyLegState.BRIDGED}:
+                    if session.current_status != CallStatus.IN_PROGRESS:
+                        session.current_status = CallStatus.IN_PROGRESS
+                elif state in {TelephonyLegState.TERMINATED, TelephonyLegState.FAILED}:
+                    if session.stop_event.is_set():
+                        return
+                    session.stop_event.set()
+                    log.warning(
+                        "session_manager.telephony_leg_terminated",
+                        session_id=session.session_id,
+                        call_id=str(session.call_id),
+                        leg_id=leg_id,
+                        state=state.value,
+                    )
+                    asyncio.create_task(
+                        self.terminate_session(
+                            session.session_id,
+                            final_status=CallStatus.FAILED,
+                            stage="telephony_leg_terminated",
+                            reason=f"telephony leg terminated: {state.value}",
+                        ),
+                        name=f"terminate_on_leg_state_{session.session_id}",
+                    )
+                    return
+
+                await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            log.warning(
+                "session_manager.telephony_leg_monitor_failed",
+                session_id=session.session_id,
+                call_id=str(session.call_id),
+                leg_id=leg_id,
+                error=str(exc),
             )
 
     async def _enqueue_audio_in(self, session: DirectSession, chunk: bytes) -> None:

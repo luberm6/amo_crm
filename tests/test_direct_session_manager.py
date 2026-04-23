@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -216,3 +217,101 @@ async def test_terminate_session_terminates_telephony_leg(mock_session_factory):
     leg_id = session.telephony_channel.provider_leg_id
     await sm.terminate_session(session_id)
     assert await telephony.get_leg_state(leg_id) == TelephonyLegState.TERMINATED
+
+
+@pytest.mark.anyio
+async def test_telephony_leg_monitor_terminates_failed_session(mock_session_factory):
+    """If the provider leg dies underneath the session, DirectSessionManager must clean up."""
+    sm = DirectSessionManager()
+    telephony = StubTelephonyAdapter()
+    voice = StubVoiceProvider()
+
+    old_el_enabled = settings.elevenlabs_enabled
+    old_el_key = settings.elevenlabs_api_key
+    old_el_voice = settings.elevenlabs_voice_id
+    old_greeting_enabled = settings.direct_initial_greeting_enabled
+    old_voice_strategy = settings.direct_voice_strategy
+    try:
+        settings.direct_voice_strategy = "tts_primary"
+        settings.elevenlabs_enabled = True
+        settings.elevenlabs_api_key = "k"
+        settings.elevenlabs_voice_id = "v"
+        settings.direct_initial_greeting_enabled = False
+        with patch(
+            "app.integrations.direct.session_manager.GeminiLiveClient",
+            new=MockGeminiLiveClient,
+        ):
+            session_id = await sm.create_session(
+                call_id=uuid.uuid4(),
+                phone="+79991234567",
+                telephony=telephony,
+                voice=voice,
+                session_factory=mock_session_factory,
+                system_prompt="Тест",
+            )
+    finally:
+        settings.elevenlabs_enabled = old_el_enabled
+        settings.elevenlabs_api_key = old_el_key
+        settings.elevenlabs_voice_id = old_el_voice
+        settings.direct_initial_greeting_enabled = old_greeting_enabled
+        settings.direct_voice_strategy = old_voice_strategy
+
+    session = sm.get_session(session_id)
+    assert session is not None
+    await asyncio.sleep(0.05)
+    assert session.leg_monitor_task is not None
+    leg_id = session.telephony_channel.provider_leg_id
+
+    await telephony.terminate_leg(leg_id)
+
+    async def _wait_until_gone() -> None:
+        while sm.get_session(session_id) is not None:
+            await asyncio.sleep(0.05)
+
+    await asyncio.wait_for(_wait_until_gone(), timeout=2.0)
+    assert sm.active_count() == 0
+
+
+@pytest.mark.anyio
+async def test_terminate_session_cancels_leg_monitor(mock_session_factory):
+    sm = DirectSessionManager()
+    telephony = StubTelephonyAdapter()
+    voice = StubVoiceProvider()
+
+    old_el_enabled = settings.elevenlabs_enabled
+    old_el_key = settings.elevenlabs_api_key
+    old_el_voice = settings.elevenlabs_voice_id
+    old_greeting_enabled = settings.direct_initial_greeting_enabled
+    old_voice_strategy = settings.direct_voice_strategy
+    try:
+        settings.direct_voice_strategy = "tts_primary"
+        settings.elevenlabs_enabled = True
+        settings.elevenlabs_api_key = "k"
+        settings.elevenlabs_voice_id = "v"
+        settings.direct_initial_greeting_enabled = False
+        with patch(
+            "app.integrations.direct.session_manager.GeminiLiveClient",
+            new=MockGeminiLiveClient,
+        ):
+            session_id = await sm.create_session(
+                call_id=uuid.uuid4(),
+                phone="+79991234567",
+                telephony=telephony,
+                voice=voice,
+                session_factory=mock_session_factory,
+                system_prompt="Тест",
+            )
+    finally:
+        settings.elevenlabs_enabled = old_el_enabled
+        settings.elevenlabs_api_key = old_el_key
+        settings.elevenlabs_voice_id = old_el_voice
+        settings.direct_initial_greeting_enabled = old_greeting_enabled
+        settings.direct_voice_strategy = old_voice_strategy
+
+    session = sm.get_session(session_id)
+    assert session is not None
+    await asyncio.sleep(0.05)
+    assert session.leg_monitor_task is not None
+
+    await sm.terminate_session(session_id)
+    assert session.leg_monitor_task.done()

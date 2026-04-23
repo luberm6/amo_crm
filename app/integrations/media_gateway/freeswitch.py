@@ -36,6 +36,20 @@ from app.integrations.media_gateway.base import (
 log = get_logger(__name__)
 
 
+def _event_diagnostics(raw_event: dict[str, str]) -> dict[str, Optional[str]]:
+    return {
+        "hangup_cause": raw_event.get("Hangup-Cause"),
+        "endpoint_disposition": raw_event.get("variable_endpoint_disposition"),
+        "originate_disposition": raw_event.get("variable_originate_disposition"),
+        "sip_hangup_disposition": raw_event.get("variable_sip_hangup_disposition"),
+        "sip_term_status": raw_event.get("variable_sip_term_status"),
+        "sip_hangup_phrase": raw_event.get("variable_sip_hangup_phrase"),
+        "channel_call_state": raw_event.get("Channel-Call-State"),
+        "call_direction": raw_event.get("Call-Direction"),
+        "answer_state": raw_event.get("Answer-State"),
+    }
+
+
 @dataclass
 class FreeSwitchGatewayConfig:
     mode: str = "disabled"  # disabled | mock | scaffold | esl_rtp
@@ -863,6 +877,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             session_id=session_id,
             fs_event=normalized,
             fs_uuid=raw_event.get("Unique-ID"),
+            **_event_diagnostics(raw_event),
         )
 
         if normalized == "channel_create":
@@ -991,6 +1006,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             fs_uuid=effective_fs_uuid,
             state=state.value,
             preserved_real_uuid=bool(incoming_is_provisional and current_has_real_uuid),
+            **_event_diagnostics(raw_event),
         )
 
     async def _open_rtp_runtime(self, session_id: str) -> _RtpRuntime:

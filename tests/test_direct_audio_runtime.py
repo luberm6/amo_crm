@@ -112,11 +112,22 @@ async def _create_call_record(session_factory, call_id, phone="+79991234567"):
 
 def test_session_manager_audio_out_alignment_preserves_pcm16_stream() -> None:
     sm = DirectSessionManager()
-    direct_session = DirectSession(
-        session_id="test-direct",
-        call_id=uuid.uuid4(),
-        phone="+79991230000",
-    )
+    loop = asyncio.new_event_loop()
+    previous_loop = None
+    try:
+        try:
+            previous_loop = asyncio.get_event_loop()
+        except RuntimeError:
+            previous_loop = None
+        asyncio.set_event_loop(loop)
+        direct_session = DirectSession(
+            session_id="test-direct",
+            call_id=uuid.uuid4(),
+            phone="+79991230000",
+        )
+    finally:
+        asyncio.set_event_loop(previous_loop)
+        loop.close()
 
     first = sm._enqueue_audio_out(direct_session, b"\x01", "tts_primary")
     second = sm._enqueue_audio_out(direct_session, b"\x02\x03", "tts_primary")

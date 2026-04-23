@@ -46,7 +46,7 @@ def test_public_request_origin_prefers_original_proxy_headers():
     assert netloc == "amo-crm-api-4v37.onrender.com"
 
 
-def test_wait_for_answer_prefers_terminal_over_answer_seen_when_call_already_ended():
+def test_wait_for_answer_prefers_answer_seen_over_terminal_race():
     corr = InMemoryMangoFreeSwitchCorrelationStore()
     adapter = MangoTelephonyAdapter.__new__(MangoTelephonyAdapter)
     adapter._corr = corr
@@ -69,4 +69,4 @@ def test_wait_for_answer_prefers_terminal_over_answer_seen_when_call_already_end
         return state
 
     state = asyncio.run(scenario())
-    assert state == TelephonyLegState.TERMINATED
+    assert state == TelephonyLegState.ANSWERED
