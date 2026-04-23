@@ -140,6 +140,31 @@ print(f"[freeswitch-xml] OK {root}")
 PY
 }
 
+repair_known_freeswitch_xml_issues() {
+  local av_config="$FREESWITCH_CONF_DIR/autoload_configs/av.conf.xml"
+
+  if [[ -f "$av_config" ]]; then
+    python3 - "$av_config" <<'PY'
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
+
+path = Path(sys.argv[1])
+try:
+    ET.parse(path)
+except ET.ParseError:
+    path.write_text(
+        "<configuration name=\"av.conf\" description=\"Audio/video settings\">\n"
+        "  <settings/>\n"
+        "</configuration>\n"
+    )
+    print(f"[freeswitch-xml] rewrote malformed {path}")
+else:
+    print(f"[freeswitch-xml] kept valid {path}")
+PY
+  fi
+}
+
 ensure_env_value() {
   local key="$1"
   local value="$2"
@@ -309,12 +334,6 @@ ensure_freeswitch_inbound_dialplan() {
 
   cat > "$FREESWITCH_INBOUND_DIALPLAN_FILE" <<EOF
 <include>
-  <extension name="amo_primary_probe" continue="true">
-    <condition field="\${uuid}" expression="^.+$">
-      <action application="system" data="/bin/sh -c 'printf \"%s\\n\" \"uuid=\${uuid}\" \"destination_number=\${destination_number}\" \"sip_req_user=\${sip_req_user}\" \"sip_to_user=\${sip_to_user}\" \"sip_auth_username=\${sip_auth_username}\" \"sip_from_user=\${sip_from_user}\" \"caller_id_number=\${caller_id_number}\" \"network_addr=\${network_addr}\" > /tmp/amo_freeswitch_probe_\${uuid}.log'"/>
-    </condition>
-  </extension>
-
   <extension name="amo_primary_match_destination">
     <condition field="destination_number" expression="${route_regex}">
       <action application="transfer" data="__amo_primary_dispatch XML public"/>
@@ -489,6 +508,7 @@ ensure_freeswitch_public_profile
 ensure_mango_gateway_config
 ensure_freeswitch_inbound_dialplan
 ensure_freeswitch_directory_users
+repair_known_freeswitch_xml_issues
 validate_freeswitch_xml_tree
 reload_freeswitch_profile
 verify_mango_gateway_status
