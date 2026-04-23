@@ -23,6 +23,9 @@ FREESWITCH_INBOUND_DIALPLAN_FILE="${FREESWITCH_INBOUND_DIALPLAN_FILE:-$FREESWITC
 FREESWITCH_DIRECTORY_FILE="${FREESWITCH_DIRECTORY_FILE:-$FREESWITCH_CONF_DIR/directory/default/00_amo_mango.xml}"
 FREESWITCH_FS_CLI="${FREESWITCH_FS_CLI:-/usr/local/freeswitch/bin/fs_cli}"
 VPS_PUBLIC_IP="${VPS_PUBLIC_IP:-84.247.184.72}"
+NGINX_TEMPLATE_FILE="${NGINX_TEMPLATE_FILE:-$APP_DIR/infra/nginx/amo_crm.conf}"
+NGINX_SITE_FILE="${NGINX_SITE_FILE:-/etc/nginx/sites-available/default}"
+NGINX_ENABLED_LINK="${NGINX_ENABLED_LINK:-/etc/nginx/sites-enabled/default}"
 
 LOCK_FILE="/tmp/amo_crm_deploy.lock"
 ROLLBACK_REV=""
@@ -154,6 +157,17 @@ for line in path.read_text().splitlines():
     raise SystemExit(0)
 raise SystemExit(1)
 PY
+}
+
+ensure_nginx_config() {
+  if [[ ! -f "$NGINX_TEMPLATE_FILE" ]]; then
+    warn "Nginx template not found at $NGINX_TEMPLATE_FILE; leaving existing config unchanged"
+    return 0
+  fi
+
+  log "Syncing nginx site config from repo template"
+  sudo cp "$NGINX_TEMPLATE_FILE" "$NGINX_SITE_FILE"
+  sudo ln -sf "$NGINX_SITE_FILE" "$NGINX_ENABLED_LINK"
 }
 
 ensure_freeswitch_public_profile() {
@@ -482,6 +496,8 @@ sudo systemctl --no-pager --full status "$SERVICE_NAME"
 log "Validating backend health"
 wait_for_http "$API_HEALTH_URL" "$HEALTH_WAIT_SECONDS"
 curl -fsS "$API_HEALTH_URL"
+
+ensure_nginx_config
 
 log "Validating nginx config"
 sudo nginx -t
