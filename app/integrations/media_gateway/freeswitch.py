@@ -959,22 +959,38 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         if state is None:
             return
 
+        current = await self._corr.get(mango_leg_id)
+        effective_fs_uuid = fs_uuid
+        current_real_uuid = (
+            str(current.freeswitch_uuid).strip()
+            if current is not None and current.freeswitch_uuid
+            else None
+        )
+        incoming_is_provisional = bool(fs_uuid and str(fs_uuid).strip() == mango_leg_id)
+        current_has_real_uuid = bool(
+            current_real_uuid
+            and current_real_uuid != mango_leg_id
+        )
+        if incoming_is_provisional and current_has_real_uuid:
+            effective_fs_uuid = current_real_uuid
+
         await self._corr.upsert_mapping(
             mango_leg_id=mango_leg_id,
-            freeswitch_uuid=fs_uuid,
+            freeswitch_uuid=effective_fs_uuid,
         )
         await self._corr.set_freeswitch_state(
             mango_leg_id=mango_leg_id,
             state=state,
-            freeswitch_uuid=fs_uuid,
+            freeswitch_uuid=effective_fs_uuid,
             raw_event=raw_event,
         )
         log.info(
             "freeswitch_gateway.correlation_only_event",
             mango_leg_id=mango_leg_id,
             fs_event=normalized,
-            fs_uuid=fs_uuid,
+            fs_uuid=effective_fs_uuid,
             state=state.value,
+            preserved_real_uuid=bool(incoming_is_provisional and current_has_real_uuid),
         )
 
     async def _open_rtp_runtime(self, session_id: str) -> _RtpRuntime:

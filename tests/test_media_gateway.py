@@ -20,6 +20,9 @@ from app.integrations.media_gateway.freeswitch import (
 from app.integrations.telephony.base import TelephonyChannel, TelephonyLegState
 from app.integrations.telephony.freeswitch_bridge import FreeSwitchAudioBridge
 from app.integrations.telephony.mango import MangoTelephonyAdapter
+from app.integrations.telephony.mango_freeswitch_correlation import (
+    CorrelatedLegSnapshot,
+)
 
 
 @pytest.mark.anyio
@@ -264,6 +267,58 @@ async def test_freeswitch_gateway_buffers_outbound_audio_until_first_inbound_rtp
     assert _extract_rtp_payload(packet) == b"\x21" * 640
     assert runtime.pending_outbound == []
     await gw.detach_session(sid)
+
+
+@pytest.mark.anyio
+async def test_freeswitch_correlation_only_event_preserves_real_uuid_when_provisional_hangup_arrives_late():
+    gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="mock"))
+
+    class _Store:
+        def __init__(self) -> None:
+            self.snap = CorrelatedLegSnapshot(
+                mango_leg_id="direct-leg-1",
+                freeswitch_uuid="fs-real-1",
+            )
+            self.upserts = []
+            self.states = []
+
+        async def get(self, mango_leg_id: str):
+            assert mango_leg_id == "direct-leg-1"
+            return self.snap
+
+        async def upsert_mapping(self, **kwargs):
+            self.upserts.append(kwargs)
+            if kwargs.get("freeswitch_uuid"):
+                self.snap.freeswitch_uuid = kwargs["freeswitch_uuid"]
+            return self.snap
+
+        async def set_freeswitch_state(self, **kwargs):
+            self.states.append(kwargs)
+            if kwargs.get("freeswitch_uuid"):
+                self.snap.freeswitch_uuid = kwargs["freeswitch_uuid"]
+            return self.snap
+
+    store = _Store()
+    gw._corr = store  # type: ignore[assignment]
+
+    await gw._apply_correlation_only_event(
+        "direct-leg-1",
+        "channel_hangup",
+        {"Event-Name": "CHANNEL_HANGUP", "Unique-ID": "direct-leg-1"},
+        "direct-leg-1",
+    )
+
+    assert store.upserts == [
+        {"mango_leg_id": "direct-leg-1", "freeswitch_uuid": "fs-real-1"}
+    ]
+    assert store.states == [
+        {
+            "mango_leg_id": "direct-leg-1",
+            "state": TelephonyLegState.TERMINATED,
+            "freeswitch_uuid": "fs-real-1",
+            "raw_event": {"Event-Name": "CHANNEL_HANGUP", "Unique-ID": "direct-leg-1"},
+        }
+    ]
 
 
 @pytest.mark.anyio

@@ -554,6 +554,15 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         self,
         leg_id: str,
     ) -> Optional[TelephonyLegState]:
+        answered_state = await self._answered_state_observed_via_correlation(leg_id)
+        if answered_state is not None:
+            log.info(
+                "mango_telephony.wait_for_answer_correlation_hit",
+                leg_id=leg_id,
+                correlation_state=answered_state.value,
+            )
+            return answered_state
+
         snap = await self._corr.get(leg_id)
         if snap is not None and snap.effective_state in {
             TelephonyLegState.TERMINATED,
@@ -565,15 +574,6 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 correlation_state=snap.effective_state.value,
             )
             return snap.effective_state
-
-        answered_state = await self._answered_state_observed_via_correlation(leg_id)
-        if answered_state is not None:
-            log.info(
-                "mango_telephony.wait_for_answer_correlation_hit",
-                leg_id=leg_id,
-                correlation_state=answered_state.value,
-            )
-            return answered_state
 
         corr_state = await self._corr.get_effective_state(leg_id)
         if corr_state in {

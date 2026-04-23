@@ -432,6 +432,28 @@ async def test_mango_wait_for_answered_prefers_answered_seen_when_hangup_follows
 
 
 @pytest.mark.anyio
+async def test_mango_wait_for_answered_correlation_poll_prefers_answered_seen_over_terminal_effective_state():
+    adapter = _make_mango_adapter()
+
+    await adapter._corr.set_freeswitch_state(
+        mango_leg_id="direct-answer-poll-race",
+        state=TelephonyLegState.ANSWERED,
+        freeswitch_uuid="fs-real-answer-poll-race",
+        freeswitch_session_id="fs-session-answer-poll-race",
+    )
+    await adapter._corr.set_freeswitch_state(
+        mango_leg_id="direct-answer-poll-race",
+        state=TelephonyLegState.TERMINATED,
+        freeswitch_uuid="fs-real-answer-poll-race",
+        freeswitch_session_id="fs-session-answer-poll-race",
+    )
+
+    state = await adapter._wait_for_leg_state_via_correlation("direct-answer-poll-race")
+
+    assert state == TelephonyLegState.ANSWERED
+
+
+@pytest.mark.anyio
 async def test_mango_originate_call_requires_sip_trunk_when_api_disabled():
     adapter = _make_mango_adapter()
 
