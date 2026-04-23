@@ -115,6 +115,31 @@ wait_for_http() {
   done
 }
 
+validate_freeswitch_xml_tree() {
+  [[ -d "$FREESWITCH_CONF_DIR" ]] || return 0
+  log "Validating FreeSWITCH XML tree"
+  python3 - "$FREESWITCH_CONF_DIR" <<'PY'
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
+
+root = Path(sys.argv[1])
+bad = []
+for path in sorted(root.rglob("*.xml")):
+    try:
+        ET.parse(path)
+    except ET.ParseError as exc:
+        bad.append((str(path), str(exc)))
+
+if bad:
+    for path, error in bad:
+        print(f"[freeswitch-xml] INVALID {path}: {error}")
+    raise SystemExit(1)
+
+print(f"[freeswitch-xml] OK {root}")
+PY
+}
+
 ensure_env_value() {
   local key="$1"
   local value="$2"
@@ -464,6 +489,7 @@ ensure_freeswitch_public_profile
 ensure_mango_gateway_config
 ensure_freeswitch_inbound_dialplan
 ensure_freeswitch_directory_users
+validate_freeswitch_xml_tree
 reload_freeswitch_profile
 verify_mango_gateway_status
 
