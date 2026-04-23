@@ -528,6 +528,7 @@ export default function AgentEditorPage() {
     () => (mangoReadiness?.warnings || []).map(mapMangoWarning),
     [mangoReadiness],
   )
+  const mangoApiSyncAvailable = Boolean(mangoReadiness?.api_configured)
 
   const focusedRemoteLineId = searchParams.get('mango_line') || ''
   const cameFromProviders = searchParams.get('from') === 'providers'
@@ -750,8 +751,22 @@ export default function AgentEditorPage() {
                   <h4>Привязка номера</h4>
                   <p className="compact-copy">Здесь агент получает конкретный номер Mango для основы входящей и исходящей маршрутизации.</p>
                 </div>
-                <button type="button" className="ghost-link-button" onClick={() => void handleSyncNumbers()} disabled={syncingTelephony}>
-                  {syncingTelephony ? 'Синхронизация…' : 'Синхронизировать номера из Mango'}
+                <button
+                  type="button"
+                  className="ghost-link-button"
+                  onClick={() => void handleSyncNumbers()}
+                  disabled={syncingTelephony || telephonyLoading || !mangoApiSyncAvailable}
+                  title={
+                    mangoApiSyncAvailable
+                      ? undefined
+                      : 'Синхронизация через Mango API недоступна. Текущая привязка линии остаётся рабочей через SIP runtime.'
+                  }
+                >
+                  {syncingTelephony
+                    ? 'Синхронизация…'
+                    : mangoApiSyncAvailable
+                      ? 'Синхронизировать номера из Mango'
+                      : 'Синхронизация Mango API недоступна'}
                 </button>
               </div>
 
@@ -792,6 +807,13 @@ export default function AgentEditorPage() {
                   >
                     {getTelephonyLineBadge(selectedTelephonyLine) || 'Назначено'}
                   </span>
+                </div>
+              ) : null}
+
+              {!mangoApiSyncAvailable && (selectedTelephonyLine || form.telephonyRemoteLineId) ? (
+                <div className="info-banner">
+                  <strong>Mango API sync сейчас отключён.</strong> Direct runtime использует уже сохранённую привязку линии и SIP trunk,
+                  поэтому эта ошибка не означает, что сам звонковый путь выключен.
                 </div>
               ) : null}
 

@@ -877,7 +877,7 @@ describe('agent editor telephony smoke', () => {
 
       if (path.includes('/v1/telephony/mango/readiness')) {
         return new Response(JSON.stringify({
-          api_configured: true,
+          api_configured: false,
           webhook_secret_configured: false,
           from_ext_configured: false,
           from_ext_auto_discoverable: true,
@@ -949,6 +949,8 @@ describe('agent editor telephony smoke', () => {
 
     expect(screen.queryByText(/^Mango не настроен/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Не удалось загрузить список номеров Mango/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Синхронизация Mango API недоступна/i })).toBeDisabled()
+    expect(screen.getByText(/Direct runtime использует уже сохранённую привязку линии и SIP trunk/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Назад к Mango для этой линии/i })).toBeInTheDocument()
   })
 
