@@ -21,7 +21,9 @@ from httpx import ASGITransport
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_call_engine
+from types import SimpleNamespace
+
+from app.api.deps import get_call_engine, get_direct_session_manager
 from app.integrations.call_engine.stub import StubEngine
 from app.models.audit import AuditEvent
 from app.models.agent_profile import AgentProfile
@@ -185,6 +187,60 @@ async def test_get_call_includes_latest_direct_runtime_diagnostics(client: Async
     assert data["last_failure_reason"] == "telephony leg terminated: terminated"
     assert data["last_disconnect_reason"] == "NORMAL_CLEARING"
     assert data["last_runtime_error"] == "Leg direct-test ended before answer: terminated"
+
+
+@pytest.mark.anyio
+async def test_get_call_includes_live_direct_session_state(
+    app: FastAPI,
+    client: AsyncClient,
+    session: AsyncSession,
+):
+    create_resp = await client.post("/v1/calls", json={"phone": "+79991234567"})
+    call_id = create_resp.json()["id"]
+
+    from app.models.call import Call
+
+    call = await session.get(Call, uuid.UUID(call_id))
+    call.mango_call_id = f"{call_id}-direct"
+    await session.flush()
+
+    fake_session = SimpleNamespace(
+        session_id=f"{call_id}-direct",
+        current_status=SimpleNamespace(value="IN_PROGRESS"),
+        last_failure_stage="bridge_attach",
+        last_error="audio bridge still waiting for RTP remote",
+        telephony_channel=SimpleNamespace(provider_leg_id="direct-test"),
+        audio_bridge=SimpleNamespace(is_open=True, hangup_reason=None),
+        voice_state=SimpleNamespace(strategy="tts_primary", active_path="tts_primary"),
+        metrics=SimpleNamespace(awaiting_model_response=False, model_turn_active=True),
+        capabilities=SimpleNamespace(
+            mode="pstn",
+            audio_in=True,
+            audio_out=True,
+            real_audio_in=True,
+            real_audio_out=True,
+        ),
+    )
+
+    class _DSM:
+        def get_session(self, session_id: str):
+            assert session_id == f"{call_id}-direct"
+            return fake_session
+
+    app.dependency_overrides[get_direct_session_manager] = lambda: _DSM()
+    try:
+        resp = await client.get(f"/v1/calls/{call_id}")
+    finally:
+        app.dependency_overrides.pop(get_direct_session_manager, None)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["live_session"]["session_id"] == f"{call_id}-direct"
+    assert data["live_session"]["status"] == "IN_PROGRESS"
+    assert data["live_session"]["last_failure_stage"] == "bridge_attach"
+    assert data["live_session"]["telephony_leg_id"] == "direct-test"
+    assert data["live_session"]["voice_strategy"] == "tts_primary"
+    assert data["live_session"]["capabilities"]["real_audio_out"] is True
 
 
 @pytest.mark.anyio

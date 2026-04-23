@@ -14,7 +14,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.admin_auth import require_admin_auth
 from app.api.auth import require_api_key
-from app.api.deps import get_abuse_policy, get_call_service, get_db
+from app.api.deps import (
+    get_abuse_policy,
+    get_call_service,
+    get_db,
+    get_direct_session_manager,
+)
 from app.core.exceptions import AppError
 from app.core.rate_limit import AbusePolicy
 from app.models.audit import AuditEvent
@@ -186,6 +191,7 @@ async def get_call(
     call_id: uuid.UUID,
     service: CallService = Depends(get_call_service),
     session: AsyncSession = Depends(get_db),
+    direct_session_manager=Depends(get_direct_session_manager),
 ) -> CallRead:
     """
     Fetch full call details including all transcript entries.
@@ -220,6 +226,40 @@ async def get_call(
         call_data.last_failure_reason = payload.get("reason")
         call_data.last_disconnect_reason = payload.get("disconnect_reason")
         call_data.last_runtime_error = payload.get("last_error")
+    direct_session_id = str(call.mango_call_id or "").strip()
+    if direct_session_id:
+        live_session = direct_session_manager.get_session(direct_session_id)
+        if live_session is not None:
+            bridge = live_session.audio_bridge
+            voice_state = live_session.voice_state
+            capabilities = live_session.capabilities
+            metrics = live_session.metrics
+            call_data.live_session = {
+                "session_id": live_session.session_id,
+                "status": live_session.current_status.value,
+                "last_failure_stage": live_session.last_failure_stage,
+                "last_runtime_error": live_session.last_error,
+                "telephony_leg_id": (
+                    live_session.telephony_channel.provider_leg_id
+                    if live_session.telephony_channel is not None
+                    else None
+                ),
+                "bridge_open": bool(bridge.is_open) if bridge is not None else False,
+                "bridge_hangup_reason": (
+                    getattr(bridge, "hangup_reason", None) if bridge is not None else None
+                ),
+                "voice_strategy": voice_state.strategy if voice_state is not None else None,
+                "active_voice_path": voice_state.active_path if voice_state is not None else None,
+                "awaiting_model_response": metrics.awaiting_model_response,
+                "model_turn_active": metrics.model_turn_active,
+                "capabilities": {
+                    "mode": capabilities.mode,
+                    "audio_in": capabilities.audio_in,
+                    "audio_out": capabilities.audio_out,
+                    "real_audio_in": capabilities.real_audio_in,
+                    "real_audio_out": capabilities.real_audio_out,
+                },
+            }
     return call_data
 @router.post(
     "/{call_id}/steer",
