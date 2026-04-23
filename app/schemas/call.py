@@ -86,6 +86,10 @@ class CallRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
+    last_failure_stage: Optional[str] = None
+    last_failure_reason: Optional[str] = None
+    last_disconnect_reason: Optional[str] = None
+    last_runtime_error: Optional[str] = None
     # Computed: seconds from created_at to completed_at (or now if still active)
     duration_seconds: Optional[int] = None
     # Structured transcript entries — populated when fetching individual call

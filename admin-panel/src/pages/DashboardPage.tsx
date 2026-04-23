@@ -21,6 +21,10 @@ type OutboundCallResponse = {
   mode?: string | null
   route_used?: string | null
   telephony_leg_id?: string | null
+  last_failure_stage?: string | null
+  last_failure_reason?: string | null
+  last_disconnect_reason?: string | null
+  last_runtime_error?: string | null
 }
 
 function formatOperatorError(message: string | null, details: unknown): string | null {
@@ -196,6 +200,10 @@ export default function DashboardPage() {
             <p><strong>call_id:</strong> {result.call_id || result.id || '—'}</p>
             <p><strong>status:</strong> {result.status || '—'}</p>
             <p><strong>error:</strong> {result.error ? JSON.stringify(result.error) : '—'}</p>
+            <p><strong>failure_stage:</strong> {result.last_failure_stage || '—'}</p>
+            <p><strong>failure_reason:</strong> {result.last_failure_reason || '—'}</p>
+            <p><strong>disconnect_reason:</strong> {result.last_disconnect_reason || '—'}</p>
+            <p><strong>runtime_error:</strong> {result.last_runtime_error || '—'}</p>
           </div>
         ) : null}
       </article>

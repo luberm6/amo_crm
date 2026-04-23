@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_call_engine
 from app.integrations.call_engine.stub import StubEngine
+from app.models.audit import AuditEvent
 from app.models.agent_profile import AgentProfile
 from app.models.blocked_phone import BlockedPhone
 from app.repositories.agent_profile_repo import AgentProfileRepository
@@ -153,6 +154,37 @@ async def test_get_call_found(client: AsyncClient):
     data = resp.json()
     assert data["id"] == call_id
     assert "transcript_entries" in data
+
+
+@pytest.mark.anyio
+async def test_get_call_includes_latest_direct_runtime_diagnostics(client: AsyncClient, session: AsyncSession):
+    create_resp = await client.post("/v1/calls", json={"phone": "+79991234567"})
+    call_id = create_resp.json()["id"]
+
+    session.add(
+        AuditEvent(
+            entity_type="call",
+            entity_id=uuid.UUID(call_id),
+            action="direct_session_finalized",
+            actor="test",
+            payload={
+                "final_status": "FAILED",
+                "stage": "telephony_leg_terminated",
+                "reason": "telephony leg terminated: terminated",
+                "disconnect_reason": "NORMAL_CLEARING",
+                "last_error": "Leg direct-test ended before answer: terminated",
+            },
+        )
+    )
+    await session.flush()
+
+    resp = await client.get(f"/v1/calls/{call_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["last_failure_stage"] == "telephony_leg_terminated"
+    assert data["last_failure_reason"] == "telephony leg terminated: terminated"
+    assert data["last_disconnect_reason"] == "NORMAL_CLEARING"
+    assert data["last_runtime_error"] == "Leg direct-test ended before answer: terminated"
 
 
 @pytest.mark.anyio

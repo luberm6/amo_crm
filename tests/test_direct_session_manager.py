@@ -240,7 +240,13 @@ async def test_terminate_session_still_finalizes_when_gemini_close_fails(mock_se
         reason="forced",
     )
 
-    session.event_handler.finalize_call.assert_awaited_once_with(CallStatus.FAILED)
+    session.event_handler.finalize_call.assert_awaited_once_with(
+        CallStatus.FAILED,
+        stage="test_close_failure",
+        reason="forced",
+        disconnect_reason=None,
+        last_error=None,
+    )
 
 
 @pytest.mark.anyio

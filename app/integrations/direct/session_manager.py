@@ -782,6 +782,10 @@ class DirectSessionManager:
             reason=reason,
         )
 
+        bridge_disconnect_reason = None
+        if session.audio_bridge is not None:
+            bridge_disconnect_reason = getattr(session.audio_bridge, "hangup_reason", None)
+
         resolved_final_status = final_status
         if resolved_final_status is None:
             if session.current_status in TERMINAL_STATUSES:
@@ -877,7 +881,13 @@ class DirectSessionManager:
         # ── Finalize call in DB ───────────────────────────────────────────────
         if session.event_handler:
             try:
-                await session.event_handler.finalize_call(resolved_final_status)
+                await session.event_handler.finalize_call(
+                    resolved_final_status,
+                    stage=stage or session.last_failure_stage,
+                    reason=reason,
+                    disconnect_reason=bridge_disconnect_reason,
+                    last_error=session.last_error,
+                )
             except Exception as exc:
                 log.error(
                     "session_manager.finalize_call_failed",

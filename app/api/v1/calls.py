@@ -17,6 +17,7 @@ from app.api.auth import require_api_key
 from app.api.deps import get_abuse_policy, get_call_service, get_db
 from app.core.exceptions import AppError
 from app.core.rate_limit import AbusePolicy
+from app.models.audit import AuditEvent
 from app.models.agent_profile import AgentProfile
 from app.models.steering import SteeringInstruction
 from app.models.transcript import TranscriptEntry
@@ -203,6 +204,22 @@ async def get_call(
     call_data.transcript_entries = [
         TranscriptEntryRead.model_validate(e) for e in entries
     ]
+    runtime_event = (
+        await session.execute(
+            select(AuditEvent)
+            .where(AuditEvent.entity_type == "call")
+            .where(AuditEvent.entity_id == call.id)
+            .where(AuditEvent.action == "direct_session_finalized")
+            .order_by(AuditEvent.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if runtime_event is not None and isinstance(runtime_event.payload, dict):
+        payload = runtime_event.payload
+        call_data.last_failure_stage = payload.get("stage")
+        call_data.last_failure_reason = payload.get("reason")
+        call_data.last_disconnect_reason = payload.get("disconnect_reason")
+        call_data.last_runtime_error = payload.get("last_error")
     return call_data
 @router.post(
     "/{call_id}/steer",

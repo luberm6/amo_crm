@@ -22,6 +22,7 @@ import uuid
 from typing import Callable, List
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from app.models.audit import AuditEvent
 
 from app.core.logging import get_logger
 from app.models.call import TERMINAL_STATUSES, Call, CallStatus
@@ -95,7 +96,15 @@ class DirectEventHandler:
                 )
         self._pending.clear()
 
-    async def finalize_call(self, final_status: CallStatus) -> None:
+    async def finalize_call(
+        self,
+        final_status: CallStatus,
+        *,
+        stage: str | None = None,
+        reason: str | None = None,
+        disconnect_reason: str | None = None,
+        last_error: str | None = None,
+    ) -> None:
         """
         Persist call termination to DB: status, completed_at, simple summary.
         Called by DirectSessionManager.terminate_session() after flush().
@@ -120,6 +129,21 @@ class DirectEventHandler:
                     call.status = final_status
                     call.completed_at = datetime.datetime.now(
                         datetime.timezone.utc
+                    )
+                    session.add(
+                        AuditEvent(
+                            entity_type="call",
+                            entity_id=self._call_id,
+                            action="direct_session_finalized",
+                            actor="direct_session_manager",
+                            payload={
+                                "final_status": str(final_status),
+                                "stage": stage,
+                                "reason": reason,
+                                "disconnect_reason": disconnect_reason,
+                                "last_error": last_error,
+                            },
+                        )
                     )
         except Exception as exc:
             log.error(
