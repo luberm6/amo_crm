@@ -222,6 +222,11 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             freeswitch_session_id=session_id,
         )
 
+        attach_target_uuid = provider_leg_id
+        provisional_direct_leg = bool(
+            str(provider_leg_id or "").strip().startswith("direct-")
+        )
+
         if self._cfg.mode == "esl_rtp":
             rtp = await self._open_rtp_runtime(session_id)
             self._rtp[session_id] = rtp
@@ -241,7 +246,20 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
                 "sample_rate_hz": self._cfg.rtp_sample_rate_hz,
                 "frame_bytes": self._cfg.rtp_frame_bytes,
             }
-            await self._run_attach_command(provider_leg_id, rtp.local_ip, rtp.local_port)
+            if provisional_direct_leg:
+                log.info(
+                    "freeswitch_gateway.attach_deferred_waiting_real_uuid",
+                    session_id=session_id,
+                    call_id=call_id,
+                    mango_leg_id=mango_leg_id,
+                    provider_leg_id=provider_leg_id,
+                )
+            else:
+                await self._run_attach_command(
+                    attach_target_uuid,
+                    rtp.local_ip,
+                    rtp.local_port,
+                )
 
         log.info("freeswitch_gateway.session_attached", session_id=session_id, call_id=call_id)
         return handle

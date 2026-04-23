@@ -487,6 +487,45 @@ async def test_freeswitch_gateway_promotes_session_uuid_and_retargets_attach_whe
 
 
 @pytest.mark.anyio
+async def test_freeswitch_gateway_defers_attach_for_provisional_direct_uuid_until_promotion():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            rtp_ip="127.0.0.1",
+            rtp_port_start=25440,
+            rtp_port_end=25540,
+        )
+    )
+    gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_attach_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_hangup_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    handle = await gw.attach_session(
+        call_id="call-direct-provisional",
+        provider_leg_id="direct-provisional-1",
+        metadata={"mango_leg_id": "direct-provisional-1"},
+    )
+    sid = handle.session_id
+
+    gw._run_attach_command.assert_not_awaited()
+
+    await gw._process_plain_event(
+        {
+            "Event-Name": "CHANNEL_CREATE",
+            "Unique-ID": "fs-real-promoted-1",
+            "variable_origination_uuid": "direct-provisional-1",
+        }
+    )
+
+    gw._run_attach_command.assert_awaited_with(
+        "fs-real-promoted-1",
+        gw._rtp[sid].local_ip,
+        gw._rtp[sid].local_port,
+    )  # type: ignore[index]
+    await gw.detach_session(sid)
+
+
+@pytest.mark.anyio
 async def test_freeswitch_gateway_hangup_event_propagates_to_media_stream():
     gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="mock"))
     handle = await gw.attach_session(call_id="call-hang", provider_leg_id="leg-hang")
