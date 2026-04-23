@@ -249,7 +249,7 @@ ensure_mango_gateway_config() {
     <param name="register-transport" value="udp"/>
     <param name="retry-seconds" value="30"/>
     <param name="ping" value="25"/>
-    <param name="caller-id-in-from" value="true"/>
+    <param name="caller-id-in-from" value="false"/>
     <param name="extension-in-contact" value="true"/>
     <param name="contact-params" value="transport=udp"/>
   </gateway>

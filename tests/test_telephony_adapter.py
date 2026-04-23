@@ -230,8 +230,9 @@ async def test_mango_originate_call_uses_freeswitch_sip_gateway_when_configured(
     assert background is True
     assert "originate " in command
     assert "sofia/gateway/mango_primary/89991234567" in command
-    assert "origination_caller_id_number=11" in command
+    assert "origination_caller_id_number=89300350609" in command
     assert "effective_caller_id_number=89300350609" in command
+    assert "sip_from_user=11" in command
     assert "sip_cid_type=pid" in command
 
 
@@ -256,8 +257,9 @@ async def test_mango_originate_call_coerces_ru_line_and_dial_numbers_to_trunk_fo
     command, background = fake_gateway.commands[0]
     assert background is True
     assert "sofia/gateway/mango_primary/89265229998" in command
-    assert "origination_caller_id_number=11" in command
+    assert "origination_caller_id_number=89300350609" in command
     assert "effective_caller_id_number=89300350609" in command
+    assert "sip_from_user=11" in command
 
 
 @pytest.mark.anyio
@@ -277,8 +279,9 @@ async def test_mango_originate_call_uses_sip_login_localpart_as_from_user():
     assert result.provider_response["sip_from_user"] == "ilya"
     command, background = fake_gateway.commands[0]
     assert background is True
-    assert "origination_caller_id_number=ilya" in command
+    assert "origination_caller_id_number=89300350609" in command
     assert "effective_caller_id_number=89300350609" in command
+    assert "sip_from_user=ilya" in command
 
 
 @pytest.mark.anyio
