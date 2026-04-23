@@ -285,7 +285,7 @@ ensure_freeswitch_inbound_dialplan() {
   cat > "$FREESWITCH_INBOUND_DIALPLAN_FILE" <<EOF
 <include>
   <extension name="amo_primary_probe" continue="true">
-    <condition>
+    <condition field="\${uuid}" expression="^.+$">
       <action application="system" data="/bin/sh -c 'printf \"%s\\n\" \"uuid=\${uuid}\" \"destination_number=\${destination_number}\" \"sip_req_user=\${sip_req_user}\" \"sip_to_user=\${sip_to_user}\" \"sip_auth_username=\${sip_auth_username}\" \"sip_from_user=\${sip_from_user}\" \"caller_id_number=\${caller_id_number}\" \"network_addr=\${network_addr}\" > /tmp/amo_freeswitch_probe_\${uuid}.log'"/>
     </condition>
   </extension>
