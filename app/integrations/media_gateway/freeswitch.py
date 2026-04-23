@@ -247,15 +247,27 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
                 "sample_rate_hz": self._cfg.rtp_sample_rate_hz,
                 "frame_bytes": self._cfg.rtp_frame_bytes,
             }
+            attach_now = not provisional_direct_leg
             if provisional_direct_leg:
-                log.info(
-                    "freeswitch_gateway.attach_deferred_waiting_real_uuid",
-                    session_id=session_id,
-                    call_id=call_id,
-                    mango_leg_id=mango_leg_id,
-                    provider_leg_id=provider_leg_id,
-                )
-            else:
+                attach_now = await self._direct_uuid_exists(provider_leg_id)
+            if provisional_direct_leg:
+                if attach_now:
+                    log.info(
+                        "freeswitch_gateway.attach_provisional_uuid_confirmed",
+                        session_id=session_id,
+                        call_id=call_id,
+                        mango_leg_id=mango_leg_id,
+                        provider_leg_id=provider_leg_id,
+                    )
+                else:
+                    log.info(
+                        "freeswitch_gateway.attach_deferred_waiting_real_uuid",
+                        session_id=session_id,
+                        call_id=call_id,
+                        mango_leg_id=mango_leg_id,
+                        provider_leg_id=provider_leg_id,
+                    )
+            if attach_now:
                 await self._run_attach_command(
                     attach_target_uuid,
                     rtp.local_ip,
@@ -737,6 +749,22 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             await self._esl.send_bgapi_nowait(cmd)
         except Exception as exc:
             log.warning("freeswitch_gateway.hangup_command_failed", uuid=uuid_leg, error=str(exc))
+
+    async def _direct_uuid_exists(self, uuid_leg: str) -> bool:
+        if not uuid_leg:
+            return False
+        try:
+            reply = str(
+                await self._execute_command_via_ephemeral_esl(f"uuid_exists {uuid_leg}")
+            ).strip().lower()
+        except Exception as exc:
+            log.warning(
+                "freeswitch_gateway.attach_uuid_probe_failed",
+                uuid=uuid_leg,
+                error=str(exc),
+            )
+            return False
+        return reply == "true"
 
     async def _esl_event_loop(self) -> None:
         try:

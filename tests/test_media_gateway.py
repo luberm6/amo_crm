@@ -270,6 +270,37 @@ async def test_freeswitch_gateway_buffers_outbound_audio_until_first_inbound_rtp
 
 
 @pytest.mark.anyio
+async def test_freeswitch_gateway_attaches_immediately_when_direct_uuid_exists():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            rtp_ip="127.0.0.1",
+            rtp_port_start=25110,
+            rtp_port_end=25210,
+        )
+    )
+    gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_attach_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_hangup_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._direct_uuid_exists = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    handle = await gw.attach_session(
+        call_id="call-direct-uuid",
+        provider_leg_id="direct-leg-rtp",
+    )
+    sid = handle.session_id
+    runtime = gw._rtp[sid]
+
+    gw._run_attach_command.assert_awaited_once_with(  # type: ignore[attr-defined]
+        "direct-leg-rtp",
+        runtime.local_ip,
+        runtime.local_port,
+    )
+
+    await gw.detach_session(sid)
+
+
+@pytest.mark.anyio
 async def test_freeswitch_correlation_only_event_ignores_provisional_hangup_when_real_uuid_known():
     gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="mock"))
 
