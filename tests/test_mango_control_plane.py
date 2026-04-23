@@ -300,9 +300,9 @@ async def test_wait_for_answered_returns_answered_when_hangup_follows_immediatel
         )
 
     task = asyncio.create_task(emit_answer_then_hangup())
-    with pytest.raises(TelephonyError):
-        await adapter.wait_for_answered("leg-fs-answer-race", timeout=1.0)
+    state = await adapter.wait_for_answered("leg-fs-answer-race", timeout=1.0)
     await task
+    assert state == TelephonyLegState.ANSWERED
     snap = await corr.get("leg-fs-answer-race")
     assert snap is not None
     assert snap.effective_state == TelephonyLegState.TERMINATED
