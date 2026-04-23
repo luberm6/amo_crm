@@ -95,6 +95,7 @@ class DirectGeminiEngine(AbstractCallEngine):
             agent_profile_id=str(call_agent_profile_id) if isinstance(call_agent_profile_id, uuid.UUID) else None,
         )
         runtime_context = dict(getattr(call, "_runtime_context", {}) or {})
+        voice_strategy_override = str(runtime_context.get("voice_strategy_override") or "").strip() or None
         full_agent_profile: Optional[AgentProfile] = getattr(call, "agent_profile", None)
         knowledge_context = None
         if self._session_factory is not None and isinstance(call_agent_profile_id, uuid.UUID):
@@ -120,6 +121,26 @@ class DirectGeminiEngine(AbstractCallEngine):
             full_agent_profile,
             knowledge_context=knowledge_context,
         )
+        if voice_strategy_override:
+            runtime_agent = build_agent_runtime_configuration(
+                full_agent_profile,
+                knowledge_context=knowledge_context,
+            )
+            runtime_agent = type(runtime_agent)(
+                agent_id=runtime_agent.agent_id,
+                name=runtime_agent.name,
+                system_prompt=runtime_agent.system_prompt,
+                greeting_text=runtime_agent.greeting_text,
+                voice_strategy=voice_strategy_override,
+                voice_provider=runtime_agent.voice_provider,
+                telephony_provider=runtime_agent.telephony_provider,
+                telephony_line_id=runtime_agent.telephony_line_id,
+                telephony_extension=runtime_agent.telephony_extension,
+                config=runtime_agent.config,
+                version=runtime_agent.version,
+                company_profile=runtime_agent.company_profile,
+                knowledge_context=runtime_agent.knowledge_context,
+            )
         agent_config = runtime_agent.config or {}
         gemini_voice_name = agent_config.get("gemini_voice_name") or None
         gemini_language_code = agent_config.get("gemini_language_code") or "ru-RU"
@@ -160,6 +181,8 @@ class DirectGeminiEngine(AbstractCallEngine):
             telephony_remote_line_id=telephony_metadata.get("telephony_remote_line_id"),
             telephony_line_phone_number=telephony_metadata.get("telephony_line_phone_number"),
             telephony_extension=telephony_metadata.get("telephony_extension"),
+            voice_strategy=runtime_agent.voice_strategy,
+            voice_strategy_override=voice_strategy_override,
             caller_id_present=bool(telephony_caller_id),
             existing_leg=bool(telephony_metadata.get("existing_leg_id")),
         )

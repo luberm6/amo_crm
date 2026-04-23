@@ -93,10 +93,16 @@ async def create_call(
 
     # Create the call
     try:
+        runtime_context = (
+            {"voice_strategy_override": body.voice_strategy_override}
+            if body.voice_strategy_override
+            else None
+        )
         call = await service.create_call(
             raw_phone=body.phone,
             mode=body.mode,
             agent_profile_id=agent_profile_id,
+            runtime_context=runtime_context,
         )
     except AppError as exc:
         _handle_app_error(exc)

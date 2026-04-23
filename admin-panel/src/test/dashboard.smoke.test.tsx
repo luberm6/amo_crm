@@ -27,7 +27,7 @@ describe('dashboard dial panel smoke', () => {
 
   it('starts outbound call and shows runtime result', async () => {
     const user = userEvent.setup()
-    vi.spyOn(window, 'fetch').mockImplementation(async (input) => {
+    vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
       const path = typeof input === 'string' ? input : input.toString()
       if (path.includes('/v1/admin/auth/me')) {
         return new Response(JSON.stringify({ email: 'admin@example.com', role: 'admin' }), {
@@ -35,7 +35,23 @@ describe('dashboard dial panel smoke', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       }
+      if (path.includes('/v1/calls/11111111-1111-1111-1111-111111111111')) {
+        return new Response(JSON.stringify({
+          accepted: true,
+          id: '11111111-1111-1111-1111-111111111111',
+          call_id: '11111111-1111-1111-1111-111111111111',
+          phone: '+17547365909',
+          mode: 'DIRECT',
+          status: 'QUEUED',
+          error: null,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
       if (path.includes('/v1/calls')) {
+        const initBody = init?.body ? JSON.parse(String(init.body)) : null
+        expect(initBody?.voice_strategy_override).toBe('tts_primary')
         return new Response(JSON.stringify({
           accepted: true,
           id: '11111111-1111-1111-1111-111111111111',
@@ -105,5 +121,62 @@ describe('dashboard dial panel smoke', () => {
       expect(screen.getByText(/провайдер не подтвердил ответ абонента/i)).toBeInTheDocument()
     })
     expect(screen.getByText(/Timed out waiting for leg direct-timeout-123/i)).toBeInTheDocument()
+  })
+
+  it('allows switching the live direct voice strategy override', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
+      const path = typeof input === 'string' ? input : input.toString()
+      if (path.includes('/v1/admin/auth/me')) {
+        return new Response(JSON.stringify({ email: 'admin@example.com', role: 'admin' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (path.includes('/v1/calls/22222222-2222-2222-2222-222222222222')) {
+        return new Response(JSON.stringify({
+          accepted: true,
+          id: '22222222-2222-2222-2222-222222222222',
+          call_id: '22222222-2222-2222-2222-222222222222',
+          phone: '+79252879076',
+          mode: 'DIRECT',
+          status: 'QUEUED',
+          error: null,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (path.includes('/v1/calls')) {
+        const body = JSON.parse(String(init?.body || '{}'))
+        expect(body.voice_strategy_override).toBe('gemini_primary')
+        return new Response(JSON.stringify({
+          accepted: true,
+          id: '22222222-2222-2222-2222-222222222222',
+          call_id: '22222222-2222-2222-2222-222222222222',
+          phone: '+79252879076',
+          mode: 'DIRECT',
+          status: 'QUEUED',
+          error: null,
+        }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      throw new Error(`Unexpected fetch path: ${path}`)
+    })
+
+    renderDashboardPage()
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /Быстрый прозвон через Mango/i })).toBeInTheDocument()
+    })
+
+    await user.selectOptions(screen.getByLabelText(/Голосовой тракт/i), 'gemini_primary')
+    await user.click(screen.getByRole('button', { name: /^Call$/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/22222222-2222-2222-2222-222222222222/i)).toBeInTheDocument()
+    })
   })
 })

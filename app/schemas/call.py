@@ -29,6 +29,7 @@ class CallCreate(BaseModel):
     )
     agent_profile_id: Optional[uuid.UUID] = None
     agent_name: Optional[str] = None
+    voice_strategy_override: Optional[str] = None
 
     @field_validator("phone")
     @classmethod
@@ -52,6 +53,16 @@ class CallCreate(BaseModel):
         cleaned = v.strip()
         if not cleaned:
             raise ValueError("agent_name must not be blank")
+        return cleaned
+
+    @field_validator("voice_strategy_override")
+    @classmethod
+    def voice_strategy_override_not_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        cleaned = v.strip()
+        if not cleaned:
+            raise ValueError("voice_strategy_override must not be blank")
         return cleaned
 
 

@@ -43,6 +43,7 @@ function formatOperatorError(message: string | null, details: unknown): string |
 export default function DashboardPage() {
   const { token } = useAuth()
   const [phoneNumber, setPhoneNumber] = useState('+17547365909')
+  const [voiceStrategy, setVoiceStrategy] = useState<'tts_primary' | 'gemini_primary'>('tts_primary')
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<OutboundCallResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -118,6 +119,7 @@ export default function DashboardPage() {
           phone_number: phoneNumber,
           agent_name: 'Test Agent',
           mode: 'DIRECT',
+          voice_strategy_override: voiceStrategy,
         }),
       }, token)
       setResult(response)
@@ -161,7 +163,7 @@ export default function DashboardPage() {
           </span>
         </div>
         <p className="compact-copy">
-          Фиксированный маршрут для живого теста: <strong>Test Agent</strong>, <strong>DIRECT</strong>, voice strategy <strong>tts_primary</strong>.
+          Фиксированный маршрут для живого теста: <strong>Test Agent</strong>, <strong>DIRECT</strong>, voice strategy <strong>{voiceStrategy}</strong>.
         </p>
         <form className="form-section" onSubmit={(event) => void handleSubmit(event)}>
           <label className="field-label" htmlFor="outbound-phone-number">Номер для звонка</label>
@@ -172,6 +174,15 @@ export default function DashboardPage() {
             placeholder="+17547365909"
             autoComplete="tel"
           />
+          <label className="field-label" htmlFor="outbound-voice-strategy">Голосовой тракт</label>
+          <select
+            id="outbound-voice-strategy"
+            value={voiceStrategy}
+            onChange={(event) => setVoiceStrategy(event.target.value as 'tts_primary' | 'gemini_primary')}
+          >
+            <option value="tts_primary">tts_primary</option>
+            <option value="gemini_primary">gemini_primary</option>
+          </select>
           <div className="button-row">
             <button type="submit" className="primary-button" disabled={submitting}>
               {submitting ? 'Запускаем звонок…' : 'Call'}
