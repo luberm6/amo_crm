@@ -92,6 +92,7 @@ class _RtpRuntime:
     transport: asyncio.DatagramTransport
     local_ip: str
     local_port: int
+    created_at: datetime
     remote_addr: Optional[tuple[str, int]] = None
     pending_outbound: list[bytes] = field(default_factory=list)
     seq: int = 0
@@ -647,8 +648,21 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             while session_id in self._handles:
                 await asyncio.sleep(1.0)
                 st = self._media_stats.get(session_id)
-                if st is None or st.last_rtp_at is None:
+                runtime = self._rtp.get(session_id)
+                if st is None or runtime is None:
                     continue
+                if st.last_rtp_at is None:
+                    if runtime.remote_addr is not None:
+                        continue
+                    age = (datetime.now(timezone.utc) - runtime.created_at).total_seconds()
+                    if age <= timeout:
+                        continue
+                    st.disconnect_reason = "rtp_remote_timeout"
+                    await self._queue_event(
+                        session_id,
+                        MediaEvent(type=MediaEventType.HANGUP, reason="rtp_remote_timeout"),
+                    )
+                    return
                 age = (datetime.now(timezone.utc) - st.last_rtp_at).total_seconds()
                 if age <= timeout:
                     continue
@@ -1096,6 +1110,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             transport=transport,  # type: ignore[arg-type]
             local_ip=self._cfg.rtp_ip,
             local_port=bind_port,
+            created_at=datetime.now(timezone.utc),
             seq=random.randint(0, 65535),
             ts=random.randint(0, 2**31),
             ssrc=random.randint(1, 2**31 - 1),

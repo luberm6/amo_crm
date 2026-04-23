@@ -757,3 +757,33 @@ async def test_freeswitch_gateway_stats_and_timeout_hangup():
     assert got_hangup is True
 
     await gw.detach_session(sid)
+
+
+@pytest.mark.anyio
+async def test_freeswitch_gateway_remote_timeout_hangup_without_inbound_rtp():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            rtp_ip="127.0.0.1",
+            rtp_port_start=25340,
+            rtp_port_end=25440,
+            rtp_inbound_timeout_seconds=1,
+        )
+    )
+    gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_attach_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_hangup_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    handle = await gw.attach_session(call_id="call-remote-timeout", provider_leg_id="leg-remote-timeout")
+    sid = handle.session_id
+
+    events_iter = gw.events(sid)
+    got_hangup = False
+    for _ in range(2):
+        evt = await asyncio.wait_for(events_iter.__anext__(), timeout=2.5)
+        if evt.type == MediaEventType.HANGUP and evt.reason == "rtp_remote_timeout":
+            got_hangup = True
+            break
+    assert got_hangup is True
+
+    await gw.detach_session(sid)
