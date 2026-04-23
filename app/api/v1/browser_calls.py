@@ -48,6 +48,14 @@ _PCM_SAMPLE_RATE = 16000
 _PCM_CHUNK_BYTES = 4096
 
 
+def _public_request_origin(request: Request) -> tuple[str, str]:
+    original_proto = (request.headers.get("x-original-proto") or request.headers.get("x-forwarded-proto") or "").strip()
+    original_host = (request.headers.get("x-original-host") or request.headers.get("x-forwarded-host") or "").strip()
+    if original_proto and original_host:
+        return original_proto, original_host
+    return request.url.scheme, request.url.netloc
+
+
 def _build_edge_proxy_ws_url(call_id: uuid.UUID, token: str) -> str:
     base = (settings.edge_proxy_target_url or "").strip().rstrip("/")
     parsed = urlparse(base)
@@ -239,9 +247,10 @@ async def create_browser_call(
                 live_session.voice_state.active_path if live_session and live_session.voice_state else None
             ),
         )
-    base_url = str(request.base_url).rstrip("/")
-    ws_scheme = "wss" if request.url.scheme == "https" else "ws"
-    ws_url = f"{ws_scheme}://{request.url.netloc}/v1/browser-calls/{call.id}/ws?token={bridge.token}"
+    public_scheme, public_netloc = _public_request_origin(request)
+    base_url = f"{public_scheme}://{public_netloc}".rstrip("/")
+    ws_scheme = "wss" if public_scheme == "https" else "ws"
+    ws_url = f"{ws_scheme}://{public_netloc}/v1/browser-calls/{call.id}/ws?token={bridge.token}"
 
     log.info(
         "browser_call.created",

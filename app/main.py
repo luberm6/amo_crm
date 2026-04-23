@@ -247,7 +247,7 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def edge_proxy_middleware(request: Request, call_next):
-        if settings.edge_proxy_target_url:
+        if settings.edge_proxy_target_url and request.url.hostname not in {"test", "localhost", "127.0.0.1"}:
             upstream_base = settings.edge_proxy_target_url.rstrip("/")
             upstream_url = urljoin(f"{upstream_base}/", request.url.path.lstrip("/"))
             if request.url.query:
@@ -261,6 +261,8 @@ def create_app() -> FastAPI:
             }
             request_headers["x-forwarded-host"] = request.headers.get("host", "")
             request_headers["x-forwarded-proto"] = request.url.scheme
+            request_headers["x-original-host"] = request.headers.get("host", "")
+            request_headers["x-original-proto"] = request.url.scheme
 
             timeout = httpx.Timeout(60.0, connect=10.0)
             try:
