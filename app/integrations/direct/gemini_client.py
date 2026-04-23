@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import socket
 from typing import Callable, Optional
 
 import websockets
@@ -123,12 +124,21 @@ class GeminiLiveClient:
             "gemini_client.connecting",
             model=self._model_id or settings.gemini_model_id,
             api_version=self._api_version or settings.gemini_api_version,
+            open_timeout=settings.gemini_open_timeout,
+            force_ipv4=settings.gemini_force_ipv4,
         )
+        connect_kwargs = {
+            "max_size": 10 * 1024 * 1024,
+            "ping_interval": 20,
+            "ping_timeout": 10,
+            "open_timeout": settings.gemini_open_timeout,
+        }
+        if settings.gemini_force_ipv4:
+            connect_kwargs["family"] = socket.AF_INET
+
         self._ws = await websockets.connect(
             url,
-            max_size=10 * 1024 * 1024,  # 10MB для аудио чанков
-            ping_interval=20,
-            ping_timeout=10,
+            **connect_kwargs,
         )
         # Запускаем recv loop ДО отправки setup — иначе setupComplete некому читать
         self._recv_task = asyncio.create_task(

@@ -360,6 +360,11 @@ class Settings(BaseSettings):
     )
     # Seconds to wait for setupComplete from Gemini before raising TimeoutError
     gemini_setup_timeout: float = 5.0
+    # Seconds to wait for the initial TLS/WebSocket opening handshake.
+    gemini_open_timeout: float = 15.0
+    # Force Gemini Live websocket connections over IPv4. Our VPS reaches
+    # Google quickly over IPv4 while IPv6 handshakes intermittently stall.
+    gemini_force_ipv4: bool = True
     # Hard cap on concurrent in-process Direct sessions (single-process guard)
     direct_max_sessions: int = 10
     # Explicit production voice strategy for Direct mode.
