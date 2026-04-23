@@ -21,6 +21,7 @@ FREESWITCH_EXTERNAL_PROFILE_OFF="${FREESWITCH_EXTERNAL_PROFILE_OFF:-$FREESWITCH_
 FREESWITCH_MANGO_GATEWAY_FILE="${FREESWITCH_MANGO_GATEWAY_FILE:-$FREESWITCH_CONF_DIR/sip_profiles/external/mango_primary.xml}"
 FREESWITCH_INBOUND_DIALPLAN_FILE="${FREESWITCH_INBOUND_DIALPLAN_FILE:-$FREESWITCH_CONF_DIR/dialplan/public/00_amo_primary_inbound.xml}"
 FREESWITCH_DIRECTORY_FILE="${FREESWITCH_DIRECTORY_FILE:-$FREESWITCH_CONF_DIR/directory/default/00_amo_mango.xml}"
+FREESWITCH_INBOUND_WEBHOOK_HELPER="${FREESWITCH_INBOUND_WEBHOOK_HELPER:-$APP_DIR/scripts/fs_inbound_webhook.sh}"
 FREESWITCH_FS_CLI="${FREESWITCH_FS_CLI:-/usr/local/freeswitch/bin/fs_cli}"
 VPS_PUBLIC_IP="${VPS_PUBLIC_IP:-84.247.184.72}"
 NGINX_TEMPLATE_FILE="${NGINX_TEMPLATE_FILE:-$APP_DIR/infra/nginx/amo_crm.conf}"
@@ -329,6 +330,42 @@ ensure_freeswitch_inbound_dialplan() {
     return 0
   fi
 
+  mkdir -p "$(dirname "$FREESWITCH_INBOUND_WEBHOOK_HELPER")"
+  cat > "$FREESWITCH_INBOUND_WEBHOOK_HELPER" <<EOF
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CALL_UUID="\${1:-}"
+FROM_NUMBER="\${2:-}"
+if [[ -z "\$CALL_UUID" ]]; then
+  exit 64
+fi
+
+PAYLOAD="\$(python3 - <<'PY' "\$CALL_UUID" "\$FROM_NUMBER"
+import json
+import sys
+
+call_uuid = sys.argv[1]
+from_number = sys.argv[2]
+print(json.dumps({
+    "call_uuid": call_uuid,
+    "to_number": "${backend_number}",
+    "from_number": from_number,
+    "provider": "mango",
+    "line_phone_number": "${backend_number}",
+}, ensure_ascii=False))
+PY
+)"
+
+exec /usr/bin/curl -fsS -m 5 \\
+  -X POST \\
+  -H 'Content-Type: application/json' \\
+  -H 'x-provider-settings-secret: ${provider_secret}' \\
+  -d "\$PAYLOAD" \\
+  http://127.0.0.1:8000/v1/webhooks/freeswitch/inbound-sip
+EOF
+  chmod 755 "$FREESWITCH_INBOUND_WEBHOOK_HELPER"
+
   mkdir -p "$(dirname "$FREESWITCH_INBOUND_DIALPLAN_FILE")"
   route_regex="^(${primary_number}|7${primary_number#8}|\\+7${primary_number#8}|${sip_user}|11)$"
 
@@ -365,12 +402,13 @@ ensure_freeswitch_inbound_dialplan() {
       <action application="set" data="continue_on_fail=true"/>
       <action application="answer"/>
       <action application="sleep" data="150"/>
-      <action application="system" data="/usr/bin/curl -fsS -m 5 -X POST -H 'Content-Type: application/json' -H 'x-provider-settings-secret: ${provider_secret}' -d '{\"call_uuid\":\"\${uuid}\",\"to_number\":\"${backend_number}\",\"from_number\":\"\${caller_id_number}\",\"provider\":\"mango\",\"line_phone_number\":\"${backend_number}\"}' http://127.0.0.1:8000/v1/webhooks/freeswitch/inbound-sip > /tmp/amo_freeswitch_inbound_\${uuid}.log 2>&1"/>
+      <action application="system" data="${FREESWITCH_INBOUND_WEBHOOK_HELPER} \${uuid} \${caller_id_number} &gt; /tmp/amo_freeswitch_inbound_\${uuid}.log 2&gt;&amp;1"/>
       <action application="park"/>
     </condition>
   </extension>
 </include>
 EOF
+  log "Wrote FreeSWITCH inbound webhook helper: $FREESWITCH_INBOUND_WEBHOOK_HELPER"
   log "Wrote FreeSWITCH inbound dialplan: $FREESWITCH_INBOUND_DIALPLAN_FILE"
 }
 
