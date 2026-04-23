@@ -7,6 +7,7 @@ import random
 import socket
 import struct
 import uuid
+import array
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Optional
 
@@ -352,7 +353,11 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         stats = self._media_stats.get(session_id)
         if runtime.remote_addr is None:
             raise MediaGatewayNotReadyError("RTP remote endpoint unknown.")
-        encoded = _encode_outbound_audio(pcm, self._cfg.rtp_outbound_codec)
+        encoded = _encode_outbound_audio(
+            pcm,
+            self._cfg.rtp_outbound_codec,
+            self._cfg.rtp_sample_rate_hz,
+        )
         pkt = _build_rtp_packet(
             pcm=encoded,
             payload_type=self._cfg.rtp_payload_type,
@@ -1088,7 +1093,12 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         payload = _extract_rtp_payload(data)
         if not payload:
             return
-        decoded = _decode_inbound_audio(payload, inbound_codec=self._cfg.rtp_inbound_codec, payload_type=pt)
+        decoded = _decode_inbound_audio(
+            payload,
+            inbound_codec=self._cfg.rtp_inbound_codec,
+            payload_type=pt,
+            sample_rate_hz=self._cfg.rtp_sample_rate_hz,
+        )
         stats = self._media_stats.get(session_id)
         if stats is not None:
             stats.frames_in += 1
@@ -1140,18 +1150,51 @@ def _extract_rtp_payload_type(packet: bytes) -> Optional[int]:
     return packet[1] & 0x7F
 
 
-def _decode_inbound_audio(payload: bytes, *, inbound_codec: str, payload_type: Optional[int]) -> bytes:
+def _resample_pcm16(data: bytes, from_rate: int, to_rate: int) -> bytes:
+    if from_rate == to_rate or not data:
+        return data
+    samples = array.array("h")
+    samples.frombytes(data)
+    n_in = len(samples)
+    n_out = max(1, round(n_in * to_rate / from_rate))
+    out = array.array("h", [0] * n_out)
+    for i in range(n_out):
+        pos = i * from_rate / to_rate
+        lo = int(pos)
+        hi = min(lo + 1, n_in - 1)
+        frac = pos - lo
+        out[i] = round(samples[lo] * (1.0 - frac) + samples[hi] * frac)
+    return out.tobytes()
+
+
+def _decode_inbound_audio(
+    payload: bytes,
+    *,
+    inbound_codec: str,
+    payload_type: Optional[int],
+    sample_rate_hz: int = 16000,
+) -> bytes:
     codec = (inbound_codec or "pcm16").lower().strip()
+    decoded = payload
     if codec == "pcmu" or payload_type == 0:
-        return _ulaw_bytes_to_pcm16(payload)
-    return payload
+        decoded = _ulaw_bytes_to_pcm16(payload)
+    if sample_rate_hz and sample_rate_hz != 16000:
+        return _resample_pcm16(decoded, sample_rate_hz, 16000)
+    return decoded
 
 
-def _encode_outbound_audio(pcm: bytes, outbound_codec: str) -> bytes:
+def _encode_outbound_audio(
+    pcm: bytes,
+    outbound_codec: str,
+    sample_rate_hz: int = 16000,
+) -> bytes:
     codec = (outbound_codec or "pcm16").lower().strip()
+    network_pcm = pcm
+    if sample_rate_hz and sample_rate_hz != 16000:
+        network_pcm = _resample_pcm16(network_pcm, 16000, sample_rate_hz)
     if codec == "pcmu":
-        return _pcm16_to_ulaw_bytes(pcm)
-    return pcm
+        return _pcm16_to_ulaw_bytes(network_pcm)
+    return network_pcm
 
 
 def _ulaw_bytes_to_pcm16(data: bytes) -> bytes:

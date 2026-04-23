@@ -656,9 +656,22 @@ async def test_freeswitch_gateway_sync_execute_uses_ephemeral_connection_when_re
 
 def test_freeswitch_pcmu_codec_roundtrip_has_signal():
     pcm = (b"\x00\x00" + b"\xff\x7f" + b"\x01\x80") * 40
-    ulaw = _encode_outbound_audio(pcm, "pcmu")
-    restored = _decode_inbound_audio(ulaw, inbound_codec="pcmu", payload_type=0)
+    ulaw = _encode_outbound_audio(pcm, "pcmu", 16000)
+    restored = _decode_inbound_audio(ulaw, inbound_codec="pcmu", payload_type=0, sample_rate_hz=16000)
     assert len(restored) == len(pcm)
+    assert any(b != 0 for b in restored)
+
+
+def test_freeswitch_pcmu_8khz_roundtrip_resamples_back_to_16khz():
+    pcm = (b"\x00\x00" + b"\x20\x20" + b"\xe0\xe0" + b"\xff\x7f") * 80
+    ulaw = _encode_outbound_audio(pcm, "pcmu", 8000)
+    restored = _decode_inbound_audio(
+        ulaw,
+        inbound_codec="pcmu",
+        payload_type=0,
+        sample_rate_hz=8000,
+    )
+    assert len(restored) >= len(pcm) - 4
     assert any(b != 0 for b in restored)
 
 
