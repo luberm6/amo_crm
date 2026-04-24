@@ -188,6 +188,29 @@ async def test_mango_connect_prefers_real_freeswitch_uuid_after_answer():
 
 
 @pytest.mark.anyio
+async def test_mango_connect_short_circuits_wait_when_esl_reply_already_answered():
+    adapter = _make_mango_adapter()
+    adapter.originate_call = AsyncMock(
+        return_value=TelephonyOriginateResult(
+            leg_id="direct-leg-answered",
+            sip_call_id=None,
+            provider_response={
+                "command_id": "direct-leg-answered",
+                "answered_from_esl_reply": True,
+            },
+        )
+    )
+    adapter.wait_for_answered = AsyncMock()
+    adapter._corr.get = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    channel = await adapter.connect("+79991234567")
+
+    adapter.wait_for_answered.assert_not_called()
+    assert channel.state == TelephonyLegState.ANSWERED
+    assert channel.provider_leg_id == "direct-leg-answered"
+
+
+@pytest.mark.anyio
 async def test_mango_originate_call_auto_discovers_from_ext():
     """originate_call falls back to live/discovered extension when MANGO_FROM_EXT is empty."""
     adapter = _make_mango_adapter()

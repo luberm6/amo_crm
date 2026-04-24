@@ -228,6 +228,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         provisional_direct_leg = bool(
             str(provider_leg_id or "").strip().startswith("direct-")
         )
+        answered_from_esl_reply = bool((metadata or {}).get("answered_from_esl_reply"))
 
         if self._cfg.mode == "esl_rtp":
             rtp = await self._open_rtp_runtime(session_id)
@@ -251,7 +252,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             }
             attach_now = not provisional_direct_leg
             if provisional_direct_leg:
-                attach_now = await self._direct_uuid_exists(provider_leg_id)
+                attach_now = answered_from_esl_reply or await self._direct_uuid_exists(provider_leg_id)
             if provisional_direct_leg:
                 if attach_now:
                     log.info(
@@ -260,6 +261,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
                         call_id=call_id,
                         mango_leg_id=mango_leg_id,
                         provider_leg_id=provider_leg_id,
+                        answered_from_esl_reply=answered_from_esl_reply,
                     )
                 else:
                     log.info(
@@ -268,6 +270,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
                         call_id=call_id,
                         mango_leg_id=mango_leg_id,
                         provider_leg_id=provider_leg_id,
+                        answered_from_esl_reply=answered_from_esl_reply,
                     )
             if attach_now:
                 await self._run_attach_command(

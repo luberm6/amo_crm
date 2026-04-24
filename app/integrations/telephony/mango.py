@@ -200,14 +200,28 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             return channel
 
         result = await self.originate_call(phone, caller_id=caller_id, metadata=metadata)
-        log.info(
-            "mango_telephony.wait_for_answer_started",
-            phone=phone,
-            leg_id=result.leg_id,
-            command_id=result.provider_response.get("command_id"),
-            internal_call_id=(metadata or {}).get("call_id"),
+        answered_from_reply = bool(
+            (result.provider_response or {}).get("answered_from_esl_reply")
         )
-        answered_state = await self.wait_for_answered(result.leg_id)
+        if answered_from_reply:
+            answered_state = TelephonyLegState.ANSWERED
+            log.info(
+                "mango_telephony.wait_for_answer_short_circuited",
+                phone=phone,
+                leg_id=result.leg_id,
+                command_id=result.provider_response.get("command_id"),
+                internal_call_id=(metadata or {}).get("call_id"),
+                answered_state=answered_state.value,
+            )
+        else:
+            log.info(
+                "mango_telephony.wait_for_answer_started",
+                phone=phone,
+                leg_id=result.leg_id,
+                command_id=result.provider_response.get("command_id"),
+                internal_call_id=(metadata or {}).get("call_id"),
+            )
+            answered_state = await self.wait_for_answered(result.leg_id)
         provider_leg_id = await self._resolve_post_answer_provider_leg_id(result.leg_id)
         log.info(
             "mango_telephony.wait_for_answer_succeeded",

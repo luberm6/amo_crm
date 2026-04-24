@@ -159,14 +159,15 @@ async def test_freeswitch_bridge_prefers_correlated_real_uuid_when_available():
         (
             "call-bridge-real",
             "fs-real-bridge",
-            {
-                "phone": "+79990001124",
-                "mango_leg_id": "direct-bridge-real",
-                "remote_media_ip": None,
-                "remote_media_port": None,
-                "remote_rtcp_port": None,
-                "local_media_ip": None,
-                "local_media_port": None,
+                {
+                    "phone": "+79990001124",
+                    "mango_leg_id": "direct-bridge-real",
+                    "answered_from_esl_reply": None,
+                    "remote_media_ip": None,
+                    "remote_media_port": None,
+                    "remote_rtcp_port": None,
+                    "local_media_ip": None,
+                    "local_media_port": None,
             },
         )
     ]
@@ -215,14 +216,15 @@ async def test_freeswitch_bridge_passes_remote_media_metadata_from_channel():
         (
             "call-meta",
             "leg-meta",
-            {
-                "phone": "+79990001125",
-                "mango_leg_id": "leg-meta",
-                "remote_media_ip": "81.88.88.59",
-                "remote_media_port": "29584",
-                "remote_rtcp_port": "29585",
-                "local_media_ip": "84.247.184.72",
-                "local_media_port": "24046",
+                {
+                    "phone": "+79990001125",
+                    "mango_leg_id": "leg-meta",
+                    "answered_from_esl_reply": None,
+                    "remote_media_ip": "81.88.88.59",
+                    "remote_media_port": "29584",
+                    "remote_rtcp_port": "29585",
+                    "local_media_ip": "84.247.184.72",
+                    "local_media_port": "24046",
             },
         )
     ]

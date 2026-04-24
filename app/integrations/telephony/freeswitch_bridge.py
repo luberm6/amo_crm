@@ -50,6 +50,11 @@ class FreeSwitchAudioBridge(AbstractAudioBridge):
             metadata={
                 "phone": channel.phone,
                 "mango_leg_id": mango_leg_id,
+                "answered_from_esl_reply": (
+                    channel.metadata.get("answered_from_esl_reply")
+                    if channel.metadata
+                    else None
+                ),
                 "remote_media_ip": channel.metadata.get("remote_media_ip") if channel.metadata else None,
                 "remote_media_port": channel.metadata.get("remote_media_port") if channel.metadata else None,
                 "remote_rtcp_port": channel.metadata.get("remote_rtcp_port") if channel.metadata else None,
