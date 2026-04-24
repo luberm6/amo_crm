@@ -349,6 +349,41 @@ async def test_mango_originate_call_via_sip_marks_leg_initiating_and_waits_later
 
 
 @pytest.mark.anyio
+async def test_mango_originate_call_via_sip_marks_leg_answered_when_esl_reply_is_channel_answer():
+    adapter = _make_mango_adapter()
+    fake_gateway = _FakeGateway(
+        replies={
+            "originate": (
+                "Event-Name: CHANNEL_ANSWER\n"
+                "Unique-ID: direct-answer-immediate\n"
+                "Answer-State: answered\n"
+                "variable_endpoint_disposition: ANSWER\n"
+            )
+        }
+    )
+
+    with (
+        patch.object(cfg.settings, "mango_primary_phone_number", "89300350609"),
+        patch.object(cfg.settings, "mango_sip_login", "ilya@vpbx400350317.mangosip.ru"),
+        patch.object(cfg.settings, "mango_sip_password", "secret"),
+        patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
+        patch("app.integrations.telephony.mango.get_media_gateway", return_value=fake_gateway),
+    ):
+        result = await adapter.originate_call(
+            "+79675128876",
+            metadata={"call_id": "call-answered", "telephony_line_phone_number": "+79300350609"},
+        )
+
+    snap = await adapter._state.get_leg_state(result.leg_id)
+    assert snap is not None
+    assert snap.state == TelephonyLegState.ANSWERED
+    corr = await adapter._corr.get(result.leg_id)
+    assert corr is not None
+    assert corr.answered_seen is True
+    assert result.provider_response["answered_from_esl_reply"] is True
+
+
+@pytest.mark.anyio
 async def test_mango_wait_for_answered_uses_freeswitch_probe_when_sip_trunk_configured():
     adapter = _make_mango_adapter()
     fake_gateway = _FakeGateway(

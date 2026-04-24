@@ -81,6 +81,21 @@ def _is_mango_sip_trunk_configured() -> bool:
     )
 
 
+def _esl_reply_implies_answered(reply_text: str) -> bool:
+    text = str(reply_text or "").strip()
+    if not text:
+        return False
+    upper = text.upper()
+    return any(
+        marker in upper
+        for marker in (
+            "EVENT-NAME: CHANNEL_ANSWER",
+            "ANSWER-STATE: ANSWERED",
+            "VARIABLE_ENDPOINT_DISPOSITION: ANSWER",
+        )
+    )
+
+
 class TelephonyError(EngineError):
     error_code = "telephony_error"
 
@@ -830,6 +845,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         call_id = str(metadata.get("call_id")) if metadata and metadata.get("call_id") else None
         transfer_id = str(metadata.get("transfer_id")) if metadata and metadata.get("transfer_id") else None
         role = str(metadata.get("role")) if metadata and metadata.get("role") else None
+        answered_from_reply = _esl_reply_implies_answered(reply_text)
         await self._corr.upsert_mapping(
             mango_leg_id=call_uid,
             call_id=call_id,
@@ -837,11 +853,17 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         )
         await self._state.set_leg_state(
             call_uid,
-            TelephonyLegState.INITIATING,
+            TelephonyLegState.ANSWERED if answered_from_reply else TelephonyLegState.INITIATING,
             call_id=call_id,
             transfer_id=transfer_id,
             role=role,
         )
+        if answered_from_reply:
+            await self._corr.set_freeswitch_state(
+                mango_leg_id=call_uid,
+                state=TelephonyLegState.ANSWERED,
+                freeswitch_uuid=call_uid,
+            )
         log.info(
             "mango_telephony.call_originated",
             phone=phone,
@@ -856,6 +878,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             transport="freeswitch_sip",
             gateway="mango_primary",
             sip_from_user=sip_from_user,
+            answered_from_esl_reply=answered_from_reply,
             esl_reply=reply_text or None,
         )
         return TelephonyOriginateResult(
@@ -870,6 +893,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 "from_extension_source": resolved_from_ext.source,
                 "dial_number": dial_number,
                 "sip_from_user": sip_from_user,
+                "answered_from_esl_reply": answered_from_reply,
                 "esl_reply": reply_text,
                 "callback_uid_present": True,
             },
