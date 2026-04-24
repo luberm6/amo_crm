@@ -232,6 +232,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         if self._cfg.mode == "esl_rtp":
             rtp = await self._open_rtp_runtime(session_id)
             self._rtp[session_id] = rtp
+            self._try_prime_remote_addr_from_metadata(session_id, metadata or {})
             if self._cfg.rtp_inbound_timeout_seconds > 0:
                 self._rtp_watchdog_tasks[session_id] = asyncio.create_task(
                     self._rtp_watchdog_loop(session_id),
@@ -432,6 +433,31 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             session_id=session_id,
             flushed_frames=len(pending),
         )
+
+    def _try_prime_remote_addr_from_metadata(
+        self,
+        session_id: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        runtime = self._rtp.get(session_id)
+        if runtime is None or runtime.remote_addr is not None:
+            return
+        host = str(metadata.get("remote_media_ip") or "").strip()
+        port_raw = str(metadata.get("remote_media_port") or "").strip()
+        if not host or not port_raw:
+            return
+        try:
+            port = int(port_raw)
+        except (TypeError, ValueError):
+            return
+        runtime.remote_addr = (host, port)
+        log.info(
+            "freeswitch_gateway.remote_endpoint_primed_from_metadata",
+            session_id=session_id,
+            remote_ip=host,
+            remote_port=port,
+        )
+        self._flush_pending_audio(session_id, runtime)
 
     async def send_barge_in(self, session_id: str) -> None:
         if session_id not in self._queues:

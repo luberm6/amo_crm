@@ -159,7 +159,71 @@ async def test_freeswitch_bridge_prefers_correlated_real_uuid_when_available():
         (
             "call-bridge-real",
             "fs-real-bridge",
-            {"phone": "+79990001124", "mango_leg_id": "direct-bridge-real"},
+            {
+                "phone": "+79990001124",
+                "mango_leg_id": "direct-bridge-real",
+                "remote_media_ip": None,
+                "remote_media_port": None,
+                "remote_rtcp_port": None,
+                "local_media_ip": None,
+                "local_media_port": None,
+            },
+        )
+    ]
+
+
+@pytest.mark.anyio
+async def test_freeswitch_bridge_passes_remote_media_metadata_from_channel():
+    class _CaptureGateway:
+        def __init__(self):
+            self.calls = []
+
+        async def attach_session(self, *, call_id: str, provider_leg_id: str, metadata=None):
+            self.calls.append((call_id, provider_leg_id, metadata))
+            from app.integrations.media_gateway.base import MediaSessionHandle
+
+            return MediaSessionHandle(
+                session_id="fs-session-meta",
+                call_id=call_id,
+                provider_leg_id=provider_leg_id,
+                metadata=metadata or {},
+            )
+
+        async def detach_session(self, session_id: str) -> None:
+            return None
+
+    gateway = _CaptureGateway()
+    bridge = FreeSwitchAudioBridge(gateway=gateway)  # type: ignore[arg-type]
+    channel = TelephonyChannel(
+        channel_id="c-4",
+        phone="+79990001125",
+        provider_leg_id="leg-meta",
+        state=TelephonyLegState.ANSWERED,
+        metadata={
+            "internal_call_id": "call-meta",
+            "remote_media_ip": "81.88.88.59",
+            "remote_media_port": "29584",
+            "remote_rtcp_port": "29585",
+            "local_media_ip": "84.247.184.72",
+            "local_media_port": "24046",
+        },
+    )
+
+    await bridge.open(channel)
+
+    assert gateway.calls == [
+        (
+            "call-meta",
+            "leg-meta",
+            {
+                "phone": "+79990001125",
+                "mango_leg_id": "leg-meta",
+                "remote_media_ip": "81.88.88.59",
+                "remote_media_port": "29584",
+                "remote_rtcp_port": "29585",
+                "local_media_ip": "84.247.184.72",
+                "local_media_port": "24046",
+            },
         )
     ]
 
@@ -421,6 +485,35 @@ async def test_freeswitch_gateway_primes_remote_endpoint_from_esl_event_and_flus
     assert _extract_rtp_payload(packet) == b"\x22" * 640
     assert runtime.remote_addr == (host, port)
     assert runtime.pending_outbound == []
+    await gw.detach_session(sid)
+
+
+@pytest.mark.anyio
+async def test_freeswitch_gateway_primes_remote_endpoint_from_attach_metadata():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            rtp_ip="127.0.0.1",
+            rtp_port_start=25220,
+            rtp_port_end=25320,
+        )
+    )
+    gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_attach_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_hangup_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    handle = await gw.attach_session(
+        call_id="call-rtp-meta",
+        provider_leg_id="leg-rtp-meta",
+        metadata={
+            "remote_media_ip": "81.88.88.59",
+            "remote_media_port": "29584",
+        },
+    )
+    sid = handle.session_id
+    runtime = gw._rtp[sid]
+
+    assert runtime.remote_addr == ("81.88.88.59", 29584)
     await gw.detach_session(sid)
 
 

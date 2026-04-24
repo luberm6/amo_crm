@@ -50,6 +50,11 @@ class FreeSwitchAudioBridge(AbstractAudioBridge):
             metadata={
                 "phone": channel.phone,
                 "mango_leg_id": mango_leg_id,
+                "remote_media_ip": channel.metadata.get("remote_media_ip") if channel.metadata else None,
+                "remote_media_port": channel.metadata.get("remote_media_port") if channel.metadata else None,
+                "remote_rtcp_port": channel.metadata.get("remote_rtcp_port") if channel.metadata else None,
+                "local_media_ip": channel.metadata.get("local_media_ip") if channel.metadata else None,
+                "local_media_port": channel.metadata.get("local_media_port") if channel.metadata else None,
             },
         )
         self._session_id = handle.session_id

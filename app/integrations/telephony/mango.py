@@ -96,6 +96,17 @@ def _esl_reply_implies_answered(reply_text: str) -> bool:
     )
 
 
+def _parse_esl_reply_fields(reply_text: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for raw_line in str(reply_text or "").splitlines():
+        line = raw_line.strip()
+        if not line or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        fields[key.strip()] = value.strip()
+    return fields
+
+
 class TelephonyError(EngineError):
     error_code = "telephony_error"
 
@@ -810,6 +821,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             ) from exc
 
         reply_text = str(esl_reply or "").strip()
+        reply_fields = _parse_esl_reply_fields(reply_text)
         if reply_text.upper().startswith("-ERR"):
             failure_cause = reply_text[4:].strip() or "originate_failed"
             await self._state.set_leg_state(call_uid, TelephonyLegState.FAILED)
@@ -879,6 +891,8 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             gateway="mango_primary",
             sip_from_user=sip_from_user,
             answered_from_esl_reply=answered_from_reply,
+            remote_media_ip=reply_fields.get("variable_remote_media_ip"),
+            remote_media_port=reply_fields.get("variable_remote_media_port"),
             esl_reply=reply_text or None,
         )
         return TelephonyOriginateResult(
@@ -894,6 +908,11 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 "dial_number": dial_number,
                 "sip_from_user": sip_from_user,
                 "answered_from_esl_reply": answered_from_reply,
+                "remote_media_ip": reply_fields.get("variable_remote_media_ip"),
+                "remote_media_port": reply_fields.get("variable_remote_media_port"),
+                "remote_rtcp_port": reply_fields.get("variable_rtp_remote_audio_rtcp_port"),
+                "local_media_ip": reply_fields.get("variable_local_media_ip"),
+                "local_media_port": reply_fields.get("variable_local_media_port"),
                 "esl_reply": reply_text,
                 "callback_uid_present": True,
             },

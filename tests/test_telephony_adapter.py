@@ -358,6 +358,8 @@ async def test_mango_originate_call_via_sip_marks_leg_answered_when_esl_reply_is
                 "Unique-ID: direct-answer-immediate\n"
                 "Answer-State: answered\n"
                 "variable_endpoint_disposition: ANSWER\n"
+                "variable_remote_media_ip: 81.88.88.59\n"
+                "variable_remote_media_port: 29584\n"
             )
         }
     )
@@ -381,6 +383,8 @@ async def test_mango_originate_call_via_sip_marks_leg_answered_when_esl_reply_is
     assert corr is not None
     assert corr.answered_seen is True
     assert result.provider_response["answered_from_esl_reply"] is True
+    assert result.provider_response["remote_media_ip"] == "81.88.88.59"
+    assert result.provider_response["remote_media_port"] == "29584"
 
 
 @pytest.mark.anyio
