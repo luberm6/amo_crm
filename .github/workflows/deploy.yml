@@ -38,7 +38,20 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          ssh "${VPS_USER}@${VPS_HOST}" 'bash -lc "
-            set -Eeuo pipefail
-            sudo -n /usr/bin/bash /opt/amo_crm/scripts/deploy_vps.sh
-          "'
+          for attempt in 1 2 3; do
+            if ssh \
+              -o ConnectTimeout=15 \
+              -o ServerAliveInterval=10 \
+              -o ServerAliveCountMax=3 \
+              "${VPS_USER}@${VPS_HOST}" 'bash -lc "
+                set -Eeuo pipefail
+                sudo -n /usr/bin/bash /opt/amo_crm/scripts/deploy_vps.sh
+              "'; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Deploy failed after ${attempt} attempts" >&2
+              exit 1
+            fi
+            sleep 5
+          done
