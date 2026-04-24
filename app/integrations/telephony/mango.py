@@ -8,6 +8,7 @@ Important:
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -181,10 +182,12 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             internal_call_id=(metadata or {}).get("call_id"),
         )
         answered_state = await self.wait_for_answered(result.leg_id)
+        provider_leg_id = await self._resolve_post_answer_provider_leg_id(result.leg_id)
         log.info(
             "mango_telephony.wait_for_answer_succeeded",
             phone=phone,
             leg_id=result.leg_id,
+            provider_leg_id=provider_leg_id,
             answered_state=answered_state.value,
             internal_call_id=(metadata or {}).get("call_id"),
         )
@@ -192,7 +195,7 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             channel_id=result.leg_id,
             phone=phone,
             sip_call_id=result.sip_call_id,
-            provider_leg_id=result.leg_id,
+            provider_leg_id=provider_leg_id,
             state=answered_state,
             metadata=result.provider_response,
         )
@@ -717,6 +720,26 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 "manager_state": manager.value,
             },
         )
+
+    async def _resolve_post_answer_provider_leg_id(self, leg_id: str) -> str:
+        current = str(leg_id or "").strip()
+        if not current.startswith("direct-"):
+            return current
+        # FreeSWITCH can emit the real B-leg UUID a few hundred milliseconds
+        # after answer. Give correlation a short chance to settle so media
+        # bridge startup can target the real leg instead of the provisional
+        # originate UUID.
+        for _ in range(10):
+            snap = await self._corr.get(current)
+            candidate = (
+                str(snap.freeswitch_uuid).strip()
+                if snap is not None and snap.freeswitch_uuid
+                else ""
+            )
+            if candidate and candidate != current:
+                return candidate
+            await asyncio.sleep(0.1)
+        return current
 
     async def _originate_call_via_freeswitch_sip(
         self,

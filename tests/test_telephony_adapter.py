@@ -165,6 +165,29 @@ async def test_mango_originate_call_uses_agent_bound_remote_line_id():
 
 
 @pytest.mark.anyio
+async def test_mango_connect_prefers_real_freeswitch_uuid_after_answer():
+    adapter = _make_mango_adapter()
+    adapter.originate_call = AsyncMock(
+        return_value=TelephonyOriginateResult(
+            leg_id="direct-leg-1",
+            sip_call_id=None,
+            provider_response={},
+        )
+    )
+    adapter.wait_for_answered = AsyncMock(return_value=TelephonyLegState.ANSWERED)
+
+    class _Snap:
+        freeswitch_uuid = "fs-real-1"
+
+    adapter._corr.get = AsyncMock(side_effect=[None, _Snap()])  # type: ignore[method-assign]
+
+    channel = await adapter.connect("+79991234567")
+
+    assert channel.provider_leg_id == "fs-real-1"
+    assert channel.state == TelephonyLegState.ANSWERED
+
+
+@pytest.mark.anyio
 async def test_mango_originate_call_auto_discovers_from_ext():
     """originate_call falls back to live/discovered extension when MANGO_FROM_EXT is empty."""
     adapter = _make_mango_adapter()
