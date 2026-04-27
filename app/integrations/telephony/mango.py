@@ -640,12 +640,16 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
         snap = await self._corr.get(leg_id)
         if snap is None:
             return None
+        if (
+            snap.effective_state in {TelephonyLegState.TERMINATED, TelephonyLegState.FAILED}
+            or snap.freeswitch_state in {TelephonyLegState.TERMINATED, TelephonyLegState.FAILED}
+            or snap.mango_state in {TelephonyLegState.TERMINATED, TelephonyLegState.FAILED}
+        ):
+            return None
         if snap.bridged_seen:
             return TelephonyLegState.BRIDGED
         if snap.answered_seen:
             return TelephonyLegState.ANSWERED
-        if snap.effective_state in {TelephonyLegState.TERMINATED, TelephonyLegState.FAILED}:
-            return None
         return None
 
     async def _wait_for_leg_state_via_provider(

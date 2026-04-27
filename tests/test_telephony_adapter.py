@@ -514,7 +514,7 @@ async def test_mango_wait_for_answered_does_not_treat_active_a_leg_as_answered()
 
 
 @pytest.mark.anyio
-async def test_mango_wait_for_answered_prefers_answered_seen_when_hangup_follows_immediately():
+async def test_mango_wait_for_answered_returns_terminal_when_hangup_follows_immediately():
     adapter = _make_mango_adapter()
 
     await adapter._corr.set_freeswitch_state(
@@ -535,13 +535,14 @@ async def test_mango_wait_for_answered_prefers_answered_seen_when_hangup_follows
         patch.object(cfg.settings, "mango_sip_password", "secret"),
         patch.object(cfg.settings, "mango_sip_server", "vpbx400350317.mangosip.ru"),
     ):
-        state = await adapter.wait_for_answered("direct-answer-race", timeout=0.2)
+        with pytest.raises(TelephonyError) as exc:
+            await adapter.wait_for_answered("direct-answer-race", timeout=0.2)
 
-    assert state == TelephonyLegState.ANSWERED
+    assert "ended before answer: terminated" in str(exc.value)
 
 
 @pytest.mark.anyio
-async def test_mango_wait_for_answered_correlation_poll_prefers_answered_seen_over_terminal_effective_state():
+async def test_mango_wait_for_answered_correlation_poll_prefers_terminal_over_answered_seen():
     adapter = _make_mango_adapter()
 
     await adapter._corr.set_freeswitch_state(
@@ -559,7 +560,7 @@ async def test_mango_wait_for_answered_correlation_poll_prefers_answered_seen_ov
 
     state = await adapter._wait_for_leg_state_via_correlation("direct-answer-poll-race")
 
-    assert state == TelephonyLegState.ANSWERED
+    assert state == TelephonyLegState.TERMINATED
 
 
 @pytest.mark.anyio

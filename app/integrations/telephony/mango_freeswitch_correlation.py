@@ -344,14 +344,14 @@ def _effective_state(
     states = {s for s in (mango_state, fs_state) if s is not None}
     if not states:
         return None
-    if TelephonyLegState.BRIDGED in states:
-        return TelephonyLegState.BRIDGED
-    if TelephonyLegState.ANSWERED in states:
-        return TelephonyLegState.ANSWERED
     if TelephonyLegState.TERMINATED in states:
         return TelephonyLegState.TERMINATED
     if TelephonyLegState.FAILED in states:
         return TelephonyLegState.FAILED
+    if TelephonyLegState.BRIDGED in states:
+        return TelephonyLegState.BRIDGED
+    if TelephonyLegState.ANSWERED in states:
+        return TelephonyLegState.ANSWERED
     if TelephonyLegState.RINGING in states:
         return TelephonyLegState.RINGING
     if TelephonyLegState.INITIATING in states:

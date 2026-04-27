@@ -279,7 +279,7 @@ async def test_wait_for_answered_hangup_before_answer_from_freeswitch():
 
 
 @pytest.mark.anyio
-async def test_wait_for_answered_returns_answered_when_hangup_follows_immediately():
+async def test_wait_for_answered_returns_terminal_when_hangup_follows_immediately():
     store = InMemoryMangoLegStateStore()
     corr = InMemoryMangoFreeSwitchCorrelationStore()
     adapter = _make_adapter(store, corr)
@@ -300,9 +300,10 @@ async def test_wait_for_answered_returns_answered_when_hangup_follows_immediatel
         )
 
     task = asyncio.create_task(emit_answer_then_hangup())
-    state = await adapter.wait_for_answered("leg-fs-answer-race", timeout=1.0)
+    with pytest.raises(TelephonyError) as exc:
+        await adapter.wait_for_answered("leg-fs-answer-race", timeout=1.0)
     await task
-    assert state == TelephonyLegState.ANSWERED
+    assert "ended before answer: terminated" in str(exc.value)
     snap = await corr.get("leg-fs-answer-race")
     assert snap is not None
     assert snap.effective_state == TelephonyLegState.TERMINATED
