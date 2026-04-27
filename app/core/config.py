@@ -186,7 +186,7 @@ class Settings(BaseSettings):
     # Comma-separated CIDR/IP values, e.g. "1.2.3.0/24,5.6.7.8"
     mango_webhook_ip_allowlist: str = ""
     # Timeout for waiting leg ANSWERED via webhook-first/poll fallback.
-    mango_answer_wait_timeout_seconds: int = 30
+    mango_answer_wait_timeout_seconds: int = 75
     # Timeout for bridge confirmation after transfer command accepted.
     mango_bridge_confirm_timeout_seconds: int = 12
     # Timeout for whisper completion confirmation.

@@ -539,6 +539,7 @@ log "Enforcing colocated FreeSWITCH environment"
 ensure_env_value "BACKEND_URL" "http://84.247.184.72"
 ensure_env_value "MANGO_PRIMARY_PHONE_NUMBER" "89300350609"
 ensure_env_value "MANGO_FROM_EXT" "11"
+ensure_env_value "MANGO_ANSWER_WAIT_TIMEOUT_SECONDS" "75"
 ensure_env_value "FREESWITCH_ESL_HOST" "127.0.0.1"
 # The Python media gateway sends RTP directly to Mango's remote media endpoint.
 # Binding that UDP socket to loopback makes outbound RTP unroutable.
@@ -547,7 +548,7 @@ ensure_env_value "FREESWITCH_RTP_INBOUND_CODEC" "pcmu"
 ensure_env_value "FREESWITCH_RTP_OUTBOUND_CODEC" "pcmu"
 ensure_env_value "FREESWITCH_RTP_SAMPLE_RATE_HZ" "8000"
 ensure_env_value "FREESWITCH_RTP_FRAME_BYTES" "160"
-grep -E '^(BACKEND_URL|MANGO_PRIMARY_PHONE_NUMBER|MANGO_FROM_EXT|FREESWITCH_ESL_HOST|FREESWITCH_RTP_IP|FREESWITCH_RTP_INBOUND_CODEC|FREESWITCH_RTP_OUTBOUND_CODEC|FREESWITCH_RTP_SAMPLE_RATE_HZ|FREESWITCH_RTP_FRAME_BYTES)=' "$ENV_FILE" || true
+grep -E '^(BACKEND_URL|MANGO_PRIMARY_PHONE_NUMBER|MANGO_FROM_EXT|MANGO_ANSWER_WAIT_TIMEOUT_SECONDS|FREESWITCH_ESL_HOST|FREESWITCH_RTP_IP|FREESWITCH_RTP_INBOUND_CODEC|FREESWITCH_RTP_OUTBOUND_CODEC|FREESWITCH_RTP_SAMPLE_RATE_HZ|FREESWITCH_RTP_FRAME_BYTES)=' "$ENV_FILE" || true
 ensure_freeswitch_public_profile
 ensure_mango_gateway_config
 ensure_freeswitch_inbound_dialplan
