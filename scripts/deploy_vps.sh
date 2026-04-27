@@ -420,6 +420,18 @@ EOF
 
   cat > "$FREESWITCH_INBOUND_DIALPLAN_FILE" <<EOF
 <include>
+  <extension name="amo_primary_dispatch">
+    <condition field="destination_number" expression="^__amo_primary_dispatch$">
+      <action application="set" data="amo_primary_number=${primary_number}"/>
+      <action application="set" data="hangup_after_bridge=false"/>
+      <action application="set" data="continue_on_fail=true"/>
+      <action application="answer"/>
+      <action application="sleep" data="150"/>
+      <action application="system" data="${FREESWITCH_INBOUND_WEBHOOK_HELPER} \${uuid} \${caller_id_number} &gt; /tmp/amo_freeswitch_inbound_\${uuid}.log 2&gt;&amp;1"/>
+      <action application="park"/>
+    </condition>
+  </extension>
+
   <extension name="amo_primary_match_registered_gateway">
     <condition field="\${sip_gateway_name}" expression="^mango_primary$">
       <action application="transfer" data="__amo_primary_dispatch XML public"/>
@@ -456,17 +468,6 @@ EOF
     </condition>
   </extension>
 
-  <extension name="amo_primary_dispatch">
-    <condition field="destination_number" expression="^__amo_primary_dispatch$">
-      <action application="set" data="amo_primary_number=${primary_number}"/>
-      <action application="set" data="hangup_after_bridge=false"/>
-      <action application="set" data="continue_on_fail=true"/>
-      <action application="answer"/>
-      <action application="sleep" data="150"/>
-      <action application="system" data="${FREESWITCH_INBOUND_WEBHOOK_HELPER} \${uuid} \${caller_id_number} &gt; /tmp/amo_freeswitch_inbound_\${uuid}.log 2&gt;&amp;1"/>
-      <action application="park"/>
-    </condition>
-  </extension>
 </include>
 EOF
   log "Wrote FreeSWITCH inbound webhook helper: $FREESWITCH_INBOUND_WEBHOOK_HELPER"
