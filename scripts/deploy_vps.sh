@@ -18,6 +18,7 @@ ENV_FILE="${ENV_FILE:-/opt/amo_crm/.env}"
 FREESWITCH_CONF_DIR="${FREESWITCH_CONF_DIR:-/usr/local/freeswitch/conf}"
 FREESWITCH_EXTERNAL_PROFILE="${FREESWITCH_EXTERNAL_PROFILE:-$FREESWITCH_CONF_DIR/sip_profiles/external.xml}"
 FREESWITCH_EXTERNAL_PROFILE_OFF="${FREESWITCH_EXTERNAL_PROFILE_OFF:-$FREESWITCH_CONF_DIR/sip_profiles/external.xml.off}"
+FREESWITCH_MODULES_FILE="${FREESWITCH_MODULES_FILE:-$FREESWITCH_CONF_DIR/autoload_configs/modules.conf.xml}"
 FREESWITCH_MANGO_GATEWAY_FILE="${FREESWITCH_MANGO_GATEWAY_FILE:-$FREESWITCH_CONF_DIR/sip_profiles/external/mango_primary.xml}"
 FREESWITCH_INBOUND_DIALPLAN_FILE="${FREESWITCH_INBOUND_DIALPLAN_FILE:-$FREESWITCH_CONF_DIR/dialplan/public/00_amo_primary_inbound.xml}"
 FREESWITCH_DIRECTORY_FILE="${FREESWITCH_DIRECTORY_FILE:-$FREESWITCH_CONF_DIR/directory/default/00_amo_mango.xml}"
@@ -242,6 +243,40 @@ path.write_text(text)
 PY
 }
 
+ensure_freeswitch_core_modules() {
+  [[ -f "$FREESWITCH_MODULES_FILE" ]] || return 0
+  if [[ ! -f "$FREESWITCH_CONF_DIR/../mod/mod_dptools.so" && -d /usr/src/freeswitch/src/mod/applications/mod_dptools ]]; then
+    log "Installing missing FreeSWITCH mod_dptools"
+    if [[ "$EUID" -eq 0 ]]; then
+      make -C /usr/src/freeswitch -j2 mod_dptools-install
+    else
+      sudo make -C /usr/src/freeswitch -j2 mod_dptools-install
+    fi
+  fi
+  python3 - "$FREESWITCH_MODULES_FILE" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+required = [
+    "mod_event_socket",
+    "mod_sofia",
+    "mod_dptools",
+]
+for module in required:
+    if f'module="{module}"' in text:
+        continue
+    marker = "</modules>"
+    line = f'    <load module="{module}"/>'
+    if marker in text:
+        text = text.replace(marker, f"{line}\n  {marker}", 1)
+    else:
+        text += f"\n{line}\n"
+path.write_text(text)
+PY
+}
+
 reload_freeswitch_profile() {
   local esl_password
   if [[ ! -x "$FREESWITCH_FS_CLI" ]]; then
@@ -255,6 +290,7 @@ reload_freeswitch_profile() {
   fi
   log "Reloading FreeSWITCH XML and mod_sofia"
   "$FREESWITCH_FS_CLI" -p "$esl_password" -x "reloadxml" || true
+  "$FREESWITCH_FS_CLI" -p "$esl_password" -x "load mod_dptools" || true
   "$FREESWITCH_FS_CLI" -p "$esl_password" -x "reload mod_sofia" || true
   "$FREESWITCH_FS_CLI" -p "$esl_password" -x "sofia profile external start" || true
   sleep 3
@@ -530,6 +566,7 @@ if [[ "${DEPLOY_REEXECED:-0}" != "1" ]]; then
     FREESWITCH_CONF_DIR="$FREESWITCH_CONF_DIR" \
     FREESWITCH_EXTERNAL_PROFILE="$FREESWITCH_EXTERNAL_PROFILE" \
     FREESWITCH_EXTERNAL_PROFILE_OFF="$FREESWITCH_EXTERNAL_PROFILE_OFF" \
+    FREESWITCH_MODULES_FILE="$FREESWITCH_MODULES_FILE" \
     FREESWITCH_FS_CLI="$FREESWITCH_FS_CLI" \
     VPS_PUBLIC_IP="$VPS_PUBLIC_IP" \
     bash "$0"
@@ -550,6 +587,7 @@ ensure_env_value "FREESWITCH_RTP_SAMPLE_RATE_HZ" "8000"
 ensure_env_value "FREESWITCH_RTP_FRAME_BYTES" "160"
 grep -E '^(BACKEND_URL|MANGO_PRIMARY_PHONE_NUMBER|MANGO_FROM_EXT|MANGO_ANSWER_WAIT_TIMEOUT_SECONDS|FREESWITCH_ESL_HOST|FREESWITCH_RTP_IP|FREESWITCH_RTP_INBOUND_CODEC|FREESWITCH_RTP_OUTBOUND_CODEC|FREESWITCH_RTP_SAMPLE_RATE_HZ|FREESWITCH_RTP_FRAME_BYTES)=' "$ENV_FILE" || true
 ensure_freeswitch_public_profile
+ensure_freeswitch_core_modules
 ensure_mango_gateway_config
 ensure_freeswitch_inbound_dialplan
 ensure_freeswitch_directory_users
