@@ -245,14 +245,24 @@ PY
 
 ensure_freeswitch_core_modules() {
   [[ -f "$FREESWITCH_MODULES_FILE" ]] || return 0
-  if [[ ! -f "$FREESWITCH_CONF_DIR/../mod/mod_dptools.so" && -d /usr/src/freeswitch/src/mod/applications/mod_dptools ]]; then
-    log "Installing missing FreeSWITCH mod_dptools"
-    if [[ "$EUID" -eq 0 ]]; then
-      make -C /usr/src/freeswitch -j2 mod_dptools-install
-    else
-      sudo make -C /usr/src/freeswitch -j2 mod_dptools-install
+  local module_name module_target module_path
+  for module_name in mod_dptools mod_dialplan_xml; do
+    module_path="$FREESWITCH_CONF_DIR/../mod/${module_name}.so"
+    module_target=""
+    if [[ "$module_name" == "mod_dptools" ]]; then
+      module_target="mod_dptools-install"
+    elif [[ "$module_name" == "mod_dialplan_xml" ]]; then
+      module_target="mod_dialplan_xml-install"
     fi
-  fi
+    if [[ ! -f "$module_path" && -n "$module_target" && -d /usr/src/freeswitch ]]; then
+      log "Installing missing FreeSWITCH ${module_name}"
+      if [[ "$EUID" -eq 0 ]]; then
+        make -C /usr/src/freeswitch -j2 "$module_target"
+      else
+        sudo make -C /usr/src/freeswitch -j2 "$module_target"
+      fi
+    fi
+  done
   python3 - "$FREESWITCH_MODULES_FILE" <<'PY'
 from pathlib import Path
 import sys
@@ -292,6 +302,7 @@ reload_freeswitch_profile() {
   log "Reloading FreeSWITCH XML and mod_sofia"
   "$FREESWITCH_FS_CLI" -p "$esl_password" -x "reloadxml" || true
   "$FREESWITCH_FS_CLI" -p "$esl_password" -x "load mod_dptools" || true
+  "$FREESWITCH_FS_CLI" -p "$esl_password" -x "load mod_dialplan_xml" || true
   "$FREESWITCH_FS_CLI" -p "$esl_password" -x "reload mod_sofia" || true
   "$FREESWITCH_FS_CLI" -p "$esl_password" -x "sofia profile external start" || true
   sleep 3
