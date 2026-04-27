@@ -278,6 +278,13 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
                     rtp.local_ip,
                     rtp.local_port,
                 )
+                asyncio.create_task(
+                    self._prime_remote_addr_from_channel_vars_retry(
+                        session_id,
+                        attach_target_uuid,
+                    ),
+                    name=f"fs_remote_media_probe_{session_id}",
+                )
 
         log.info("freeswitch_gateway.session_attached", session_id=session_id, call_id=call_id)
         return handle
@@ -784,6 +791,85 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         )
         await self._esl.send_bgapi_nowait(cmd)
 
+    async def _prime_remote_addr_from_channel_vars_retry(
+        self,
+        session_id: str,
+        uuid_leg: str,
+    ) -> None:
+        delays = (0.05, 0.15, 0.3, 0.5, 0.8, 1.2, 1.8, 2.5)
+        for delay in delays:
+            if session_id in self._closed:
+                return
+            runtime = self._rtp.get(session_id)
+            if runtime is None or runtime.remote_addr is not None:
+                return
+            await asyncio.sleep(delay)
+            try:
+                if await self._try_prime_remote_addr_from_channel_vars(session_id, uuid_leg):
+                    return
+            except Exception as exc:
+                log.debug(
+                    "freeswitch_gateway.remote_endpoint_channel_var_probe_failed",
+                    session_id=session_id,
+                    uuid=uuid_leg,
+                    error=str(exc),
+                )
+
+    async def _try_prime_remote_addr_from_channel_vars(
+        self,
+        session_id: str,
+        uuid_leg: str,
+    ) -> bool:
+        runtime = self._rtp.get(session_id)
+        if runtime is None or runtime.remote_addr is not None:
+            return True
+        if not uuid_leg:
+            return False
+
+        async def get_var(name: str) -> str:
+            try:
+                return str(
+                    await self._execute_command_via_ephemeral_esl(
+                        f"uuid_getvar {uuid_leg} {name}"
+                    )
+                ).strip()
+            except Exception:
+                return ""
+
+        host = (
+            await get_var("remote_media_ip")
+            or await get_var("remote_audio_media_ip")
+            or await get_var("rtp_audio_remote_addr")
+            or await get_var("sip_remote_audio_ip")
+        )
+        port_raw = (
+            await get_var("remote_media_port")
+            or await get_var("remote_audio_media_port")
+            or await get_var("rtp_audio_remote_port")
+            or await get_var("sip_remote_audio_port")
+        )
+        host = host.strip()
+        port_raw = port_raw.strip()
+        if not host or not port_raw or host.startswith("-ERR") or port_raw.startswith("-ERR"):
+            return False
+        try:
+            port = int(port_raw)
+        except (TypeError, ValueError):
+            return False
+        if port <= 0:
+            return False
+
+        runtime.remote_addr = (host, port)
+        log.info(
+            "freeswitch_gateway.remote_endpoint_primed_from_channel_vars",
+            session_id=session_id,
+            uuid=uuid_leg,
+            remote_ip=host,
+            remote_port=port,
+        )
+        self._flush_pending_audio(session_id, runtime)
+        return True
+
     async def _run_hangup_command(self, uuid_leg: str) -> None:
         if self._esl is None:
             return
@@ -934,6 +1020,13 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             return
         try:
             await self._run_attach_command(fs_uuid, runtime.local_ip, runtime.local_port)
+            asyncio.create_task(
+                self._prime_remote_addr_from_channel_vars_retry(
+                    session_id,
+                    fs_uuid,
+                ),
+                name=f"fs_remote_media_probe_{session_id}",
+            )
             log.info(
                 "freeswitch_gateway.session_uuid_promoted",
                 session_id=session_id,

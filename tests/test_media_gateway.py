@@ -520,6 +520,51 @@ async def test_freeswitch_gateway_primes_remote_endpoint_from_attach_metadata():
 
 
 @pytest.mark.anyio
+async def test_freeswitch_gateway_primes_remote_endpoint_from_channel_vars_and_flushes():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            rtp_ip="127.0.0.1",
+            rtp_port_start=25321,
+            rtp_port_end=25329,
+        )
+    )
+    gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_attach_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_hangup_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    peer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    peer.bind(("127.0.0.1", 0))
+    peer.settimeout(1)
+    host, port = peer.getsockname()
+
+    async def fake_getvar(command: str) -> str:
+        if command.endswith(" remote_media_ip"):
+            return str(host)
+        if command.endswith(" remote_media_port"):
+            return str(port)
+        return ""
+
+    gw._execute_command_via_ephemeral_esl = AsyncMock(side_effect=fake_getvar)  # type: ignore[method-assign]
+
+    try:
+        handle = await gw.attach_session(call_id="call-rtp-vars", provider_leg_id="leg-rtp-vars")
+        sid = handle.session_id
+        runtime = gw._rtp[sid]
+        runtime.pending_outbound.append(b"\x33" * 640)
+
+        assert await gw._try_prime_remote_addr_from_channel_vars(sid, "leg-rtp-vars") is True
+        packet, _ = peer.recvfrom(2048)
+
+        assert runtime.remote_addr == (host, port)
+        assert runtime.pending_outbound == []
+        assert _extract_rtp_payload(packet) == b"\x33" * 640
+        await gw.detach_session(sid)
+    finally:
+        peer.close()
+
+
+@pytest.mark.anyio
 async def test_freeswitch_gateway_event_normalization_updates_lifecycle_and_correlation():
     gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="mock"))
     handle = await gw.attach_session(call_id="call-corr", provider_leg_id="leg-corr")

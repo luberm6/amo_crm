@@ -346,7 +346,7 @@ EOF
 }
 
 ensure_freeswitch_inbound_dialplan() {
-  local provider_secret primary_number backend_number sip_login sip_user route_regex
+  local provider_secret primary_number backend_number sip_login sip_user sip_server route_regex
   provider_secret="$(get_env_value PROVIDER_SETTINGS_SECRET || true)"
   primary_number="$(get_env_value MANGO_PRIMARY_PHONE_NUMBER || true)"
   backend_number="$primary_number"
@@ -356,6 +356,7 @@ ensure_freeswitch_inbound_dialplan() {
     backend_number="+${primary_number}"
   fi
   sip_login="$(get_env_value MANGO_SIP_LOGIN || true)"
+  sip_server="$(get_env_value MANGO_SIP_SERVER || true)"
   sip_user="${sip_login%@*}"
   if [[ "$sip_user" == "$sip_login" ]]; then
     sip_user="$sip_login"
@@ -407,6 +408,18 @@ EOF
 
   cat > "$FREESWITCH_INBOUND_DIALPLAN_FILE" <<EOF
 <include>
+  <extension name="amo_primary_match_registered_gateway">
+    <condition field="\${sip_gateway_name}" expression="^mango_primary$">
+      <action application="transfer" data="__amo_primary_dispatch XML public"/>
+    </condition>
+  </extension>
+
+  <extension name="amo_primary_match_mango_realm">
+    <condition field="\${sip_from_host}" expression="^(${sip_server:-vpbx400350317.mangosip.ru}|vpbx[0-9]+\\.mangosip\\.ru)$">
+      <action application="transfer" data="__amo_primary_dispatch XML public"/>
+    </condition>
+  </extension>
+
   <extension name="amo_primary_match_destination">
     <condition field="destination_number" expression="${route_regex}">
       <action application="transfer" data="__amo_primary_dispatch XML public"/>
