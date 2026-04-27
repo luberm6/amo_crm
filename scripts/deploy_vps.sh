@@ -211,6 +211,26 @@ raise SystemExit(1)
 PY
 }
 
+ensure_freeswitch_firewall() {
+  if ! command -v ufw >/dev/null 2>&1; then
+    warn "ufw is not installed; skipping FreeSWITCH firewall guard"
+    return 0
+  fi
+
+  if ! sudo ufw status | grep -q '^Status: active'; then
+    warn "ufw is not active; skipping FreeSWITCH firewall guard"
+    return 0
+  fi
+
+  log "Ensuring FreeSWITCH SIP/RTP firewall rules"
+  sudo ufw allow 5080/udp comment "FreeSWITCH external SIP UDP" >/dev/null
+  sudo ufw allow 5080/tcp comment "FreeSWITCH external SIP TCP" >/dev/null
+  sudo ufw allow 5081/udp comment "FreeSWITCH external SIP TLS/alt UDP" >/dev/null
+  sudo ufw allow 5081/tcp comment "FreeSWITCH external SIP TLS/alt TCP" >/dev/null
+  sudo ufw allow 16384:32768/udp comment "FreeSWITCH RTP media" >/dev/null
+  sudo ufw status | grep -E '5080|5081|16384:32768' || true
+}
+
 ensure_nginx_config() {
   if [[ ! -f "$NGINX_TEMPLATE_FILE" ]]; then
     warn "Nginx template not found at $NGINX_TEMPLATE_FILE; leaving existing config unchanged"
@@ -617,6 +637,7 @@ ensure_freeswitch_core_modules
 ensure_mango_gateway_config
 ensure_freeswitch_inbound_dialplan
 ensure_freeswitch_directory_users
+ensure_freeswitch_firewall
 repair_known_freeswitch_xml_issues
 validate_freeswitch_xml_tree
 reload_freeswitch_profile
