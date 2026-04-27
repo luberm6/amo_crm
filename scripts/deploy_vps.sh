@@ -406,7 +406,7 @@ print(json.dumps({
 PY
 )"
 
-exec /usr/bin/curl -fsS -m 5 \\
+exec /usr/bin/curl -fsS -m 30 \\
   -X POST \\
   -H 'Content-Type: application/json' \\
   -H 'x-provider-settings-secret: ${provider_secret}' \\
