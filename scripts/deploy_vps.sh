@@ -259,11 +259,12 @@ import sys
 
 path = Path(sys.argv[1])
 text = path.read_text()
-required = [
+  required = [
     "mod_event_socket",
     "mod_sofia",
     "mod_dptools",
-]
+    "mod_dialplan_xml",
+  ]
 for module in required:
     if f'module="{module}"' in text:
         continue
