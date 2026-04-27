@@ -540,7 +540,9 @@ ensure_env_value "BACKEND_URL" "http://84.247.184.72"
 ensure_env_value "MANGO_PRIMARY_PHONE_NUMBER" "89300350609"
 ensure_env_value "MANGO_FROM_EXT" "11"
 ensure_env_value "FREESWITCH_ESL_HOST" "127.0.0.1"
-ensure_env_value "FREESWITCH_RTP_IP" "127.0.0.1"
+# The Python media gateway sends RTP directly to Mango's remote media endpoint.
+# Binding that UDP socket to loopback makes outbound RTP unroutable.
+ensure_env_value "FREESWITCH_RTP_IP" "$VPS_PUBLIC_IP"
 ensure_env_value "FREESWITCH_RTP_INBOUND_CODEC" "pcmu"
 ensure_env_value "FREESWITCH_RTP_OUTBOUND_CODEC" "pcmu"
 ensure_env_value "FREESWITCH_RTP_SAMPLE_RATE_HZ" "8000"
