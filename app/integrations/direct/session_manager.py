@@ -1943,6 +1943,25 @@ class DirectSessionManager:
                     path="tts_fallback",
                 )
             return
+        if (
+            session.voice_state is not None
+            and session.voice_state.wants_tts_output()
+            and session.voice_provider is not None
+        ):
+            session.metrics.awaiting_model_response = False
+            session.metrics.model_turn_active = False
+            session.metrics.last_model_request_at = None
+            log.warning(
+                "session_manager.model_response_timeout_ignored_on_tts_path",
+                call_id=str(session.call_id),
+                session_id=session.session_id,
+                stage="gemini_response_timeout",
+                voice_strategy=session.voice_state.strategy,
+                active_voice_path=session.voice_state.active_path,
+                elapsed_seconds=round(elapsed, 3),
+                timeout_seconds=round(timeout, 3),
+            )
+            return
         self._schedule_failure(
             session,
             stage="gemini_response_timeout",

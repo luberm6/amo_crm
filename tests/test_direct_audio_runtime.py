@@ -851,6 +851,78 @@ async def test_gemini_response_timeout_terminates_call_with_failed_status(test_s
         settings.direct_model_response_timeout_seconds = old_resp_timeout
 
 
+@pytest.mark.anyio
+async def test_gemini_timeout_does_not_terminate_tts_output_path(test_session_factory):
+    old_gem_audio = settings.gemini_audio_output_enabled
+    old_gem_audio_in = settings.gemini_audio_input_enabled
+    old_el_enabled = settings.elevenlabs_enabled
+    old_el_key = settings.elevenlabs_api_key
+    old_el_voice = settings.elevenlabs_voice_id
+    old_greeting_enabled = settings.direct_initial_greeting_enabled
+    old_greeting_text = settings.direct_initial_greeting_text
+    old_resp_timeout = settings.direct_model_response_timeout_seconds
+    old_voice_strategy = settings.direct_voice_strategy
+    old_allow_tts_fallback = settings.direct_voice_allow_tts_fallback
+    call_id = uuid.uuid4()
+    try:
+        settings.direct_voice_strategy = "gemini_primary"
+        settings.gemini_audio_output_enabled = False
+        settings.gemini_audio_input_enabled = True
+        settings.elevenlabs_enabled = True
+        settings.elevenlabs_api_key = "k"
+        settings.elevenlabs_voice_id = "v"
+        settings.direct_voice_allow_tts_fallback = True
+        settings.direct_initial_greeting_enabled = True
+        settings.direct_initial_greeting_text = "Здравствуйте"
+        settings.direct_model_response_timeout_seconds = 0.05
+        await _create_call_record(test_session_factory, call_id, phone="+79991234014")
+
+        sm = DirectSessionManager()
+        bridge = _AudioBridge()
+        telephony = BridgeTelephonyAdapter(bridge=bridge)
+        voice = _VoiceProvider()
+
+        with patch("app.integrations.direct.session_manager.GeminiLiveClient", new=MockGeminiLiveClient):
+            sid = await sm.create_session(
+                call_id=call_id,
+                phone="+79991234014",
+                telephony=telephony,
+                voice=voice,
+                session_factory=test_session_factory,
+                system_prompt="test",
+            )
+
+        session = sm.get_session(sid)
+        assert session is not None
+        assert session.voice_state is not None
+        assert session.voice_state.active_path == "tts_fallback"
+
+        session.metrics.awaiting_model_response = True
+        session.metrics.model_turn_active = True
+        session.metrics.last_model_request_at = 0.0
+        await sm._check_model_response_timeout(session)
+
+        assert sm.get_session(sid) is session
+        assert session.current_status == CallStatus.IN_PROGRESS
+        assert not session.metrics.awaiting_model_response
+        assert not session.metrics.model_turn_active
+        assert session.metrics.last_model_request_at is None
+        assert await _get_call_status(test_session_factory, call_id) == CallStatus.IN_PROGRESS
+
+        await sm.terminate_session(sid)
+    finally:
+        settings.direct_voice_strategy = old_voice_strategy
+        settings.gemini_audio_output_enabled = old_gem_audio
+        settings.gemini_audio_input_enabled = old_gem_audio_in
+        settings.elevenlabs_enabled = old_el_enabled
+        settings.elevenlabs_api_key = old_el_key
+        settings.elevenlabs_voice_id = old_el_voice
+        settings.direct_voice_allow_tts_fallback = old_allow_tts_fallback
+        settings.direct_initial_greeting_enabled = old_greeting_enabled
+        settings.direct_initial_greeting_text = old_greeting_text
+        settings.direct_model_response_timeout_seconds = old_resp_timeout
+
+
 async def test_bridge_reader_exception_triggers_auto_terminate(test_session_factory):
     old_el_enabled = settings.elevenlabs_enabled
     old_el_key = settings.elevenlabs_api_key
