@@ -278,6 +278,7 @@ async def test_mango_originate_call_uses_freeswitch_sip_gateway_when_configured(
     assert "sofia/gateway/mango_primary/79991234567" in command
     assert "origination_caller_id_number=79300350609" in command
     assert "effective_caller_id_number=79300350609" in command
+    assert "absolute_codec_string=PCMA,PCMU" in command
     assert "sip_from_user=11" in command
     assert "sip_cid_type=pid" in command
 

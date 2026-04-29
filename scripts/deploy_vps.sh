@@ -259,6 +259,9 @@ text = path.read_text()
 for name in ("rtp-ip", "sip-ip", "ext-rtp-ip", "ext-sip-ip"):
     pattern = rf'(<param\s+name="{re.escape(name)}"\s+value=")([^"]*)(")'
     text = re.sub(pattern, rf'\g<1>{public_ip}\g<3>', text)
+for name in ("inbound-codec-prefs", "outbound-codec-prefs"):
+    pattern = rf'(<param\s+name="{re.escape(name)}"\s+value=")([^"]*)(")'
+    text = re.sub(pattern, r'\g<1>PCMA,PCMU\g<3>', text)
 path.write_text(text)
 PY
 }
