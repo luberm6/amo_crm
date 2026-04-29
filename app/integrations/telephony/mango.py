@@ -506,14 +506,33 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                     terminal_state=state.value,
                 )
                 return answered_from_corr
+            corr_snap = await self._corr.get(leg_id)
+            fs_event = corr_snap.raw_freeswitch_event if corr_snap is not None else None
+            sip_failure_detail = {
+                key: fs_event.get(key)
+                for key in (
+                    "Hangup-Cause",
+                    "variable_sip_term_status",
+                    "variable_sip_hangup_disposition",
+                    "variable_endpoint_disposition",
+                    "Channel-Call-State",
+                    "Answer-State",
+                )
+                if fs_event and fs_event.get(key)
+            }
             log.warning(
                 "mango_telephony.wait_for_answer_failed",
                 leg_id=leg_id,
                 state=state.value,
+                **sip_failure_detail,
             )
             raise TelephonyError(
                 f"Leg {leg_id} ended before answer: {state.value}",
-                detail={"leg_id": leg_id, "state": state.value},
+                detail={
+                    "leg_id": leg_id,
+                    "state": state.value,
+                    **sip_failure_detail,
+                },
             )
         return state
 
