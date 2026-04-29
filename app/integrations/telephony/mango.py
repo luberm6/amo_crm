@@ -197,6 +197,26 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
                 phone=phone,
                 mango_leg_id=existing_leg_id,
             )
+            call_id = str(metadata.get("call_id")) if metadata and metadata.get("call_id") else None
+            transfer_id = str(metadata.get("transfer_id")) if metadata and metadata.get("transfer_id") else None
+            role = str(metadata.get("role")) if metadata and metadata.get("role") else None
+            await self._state.set_leg_state(
+                existing_leg_id,
+                TelephonyLegState.ANSWERED,
+                call_id=call_id,
+                transfer_id=transfer_id,
+                role=role,
+            )
+            await self._corr.upsert_mapping(
+                mango_leg_id=existing_leg_id,
+                call_id=call_id,
+                freeswitch_uuid=existing_leg_id,
+            )
+            await self._corr.set_freeswitch_state(
+                mango_leg_id=existing_leg_id,
+                state=TelephonyLegState.ANSWERED,
+                freeswitch_uuid=existing_leg_id,
+            )
             channel = TelephonyChannel(
                 channel_id=existing_leg_id,
                 phone=phone,

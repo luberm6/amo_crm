@@ -637,6 +637,13 @@ async def test_mango_connect_existing_leg_skips_originate():
     adapter.originate_call.assert_not_called()
     assert channel.provider_leg_id == "mango-leg-existing-1"
     assert channel.metadata["existing_leg"] is True
+    snap = await adapter._state.get_leg_state("mango-leg-existing-1")
+    assert snap is not None
+    assert snap.state == TelephonyLegState.ANSWERED
+    assert snap.call_id == "internal-call-id"
+    corr = await adapter._corr.get("mango-leg-existing-1")
+    assert corr is not None
+    assert corr.answered_seen is True
 
 
 @pytest.mark.anyio
