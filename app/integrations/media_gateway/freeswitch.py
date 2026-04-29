@@ -596,28 +596,40 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         if self._esl is None:
             raise MediaGatewayNotReadyError("ESL not connected")
         if background:
+            if self._esl_reader_task is not None and not self._esl_reader_task.done():
+                return await self._execute_command_via_ephemeral_esl(
+                    command,
+                    background=True,
+                )
             return await self._esl.send_api(command, background=True)
         if self._esl_reader_task is not None and not self._esl_reader_task.done():
             return await self._execute_command_via_ephemeral_esl(command)
         return await self._esl.send_api(command, background=False)
 
-    async def _execute_command_via_ephemeral_esl(self, command: str) -> str:
+    async def _execute_command_via_ephemeral_esl(
+        self,
+        command: str,
+        *,
+        background: bool = False,
+    ) -> str:
         """
-        Run synchronous `api` commands on a short-lived ESL connection.
+        Run ad-hoc API commands on a short-lived ESL connection.
 
         The long-lived gateway connection starts a background reader task that
         continuously awaits `read_frame()`. Reusing that same connection for
-        synchronous `api` requests can deadlock because the reader owns the
-        next inbound frame. A dedicated probe connection keeps command/reply
-        traffic isolated from the event stream.
+        `api` or `bgapi` requests can steal command replies from the event
+        reader or make the command caller consume channel events as replies.
+        A dedicated probe connection keeps command/reply traffic isolated from
+        the event stream.
         """
         client = self._build_esl_client()
         try:
             await client.connect()
-            reply = await client.send_api(command, background=False)
+            reply = await client.send_api(command, background=background)
             log.debug(
-                "freeswitch_gateway.esl_sync_probe_succeeded",
+                "freeswitch_gateway.esl_probe_command_succeeded",
                 command=command,
+                background=background,
             )
             return reply
         finally:

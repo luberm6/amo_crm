@@ -825,6 +825,50 @@ async def test_freeswitch_gateway_sync_execute_uses_ephemeral_connection_when_re
     assert probe.commands == [("uuid_exists test-leg", False)]
 
 
+@pytest.mark.anyio
+async def test_freeswitch_gateway_background_execute_uses_ephemeral_connection_when_reader_active():
+    gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="esl_rtp"))
+
+    class _PersistentEsl:
+        connected = True
+
+        async def send_api(self, command: str, background: bool = True):
+            raise AssertionError("persistent ESL connection should not be used for bgapi command")
+
+    class _ProbeEsl:
+        def __init__(self):
+            self.connected = False
+            self.commands: list[tuple[str, bool]] = []
+
+        async def connect(self):
+            self.connected = True
+
+        async def send_api(self, command: str, background: bool = True):
+            self.commands.append((command, background))
+            return "+OK Job-UUID: test-job"
+
+        async def close(self):
+            self.connected = False
+
+    probe = _ProbeEsl()
+    gw._esl = _PersistentEsl()  # type: ignore[assignment]
+    gw._build_esl_client = lambda: probe  # type: ignore[method-assign]
+    gw._esl_reader_task = asyncio.create_task(asyncio.sleep(3600))
+    gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    try:
+        reply = await gw.execute_command("originate {...}sofia/gateway/mango_primary/79774076577 &park()")
+    finally:
+        gw._esl_reader_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await gw._esl_reader_task
+
+    assert reply == "+OK Job-UUID: test-job"
+    assert probe.commands == [
+        ("originate {...}sofia/gateway/mango_primary/79774076577 &park()", True)
+    ]
+
+
 def test_freeswitch_pcmu_codec_roundtrip_has_signal():
     pcm = (b"\x00\x00" + b"\xff\x7f" + b"\x01\x80") * 40
     ulaw = _encode_outbound_audio(pcm, "pcmu", 16000)
