@@ -269,15 +269,15 @@ async def test_mango_originate_call_uses_freeswitch_sip_gateway_when_configured(
     assert result.leg_id.startswith("direct-")
     assert result.provider_response["transport"] == "freeswitch_sip"
     assert result.provider_response["gateway"] == "mango_primary"
-    assert result.provider_response["line_number"] == "89300350609"
+    assert result.provider_response["line_number"] == "79300350609"
     assert result.provider_response["sip_from_user"] == "11"
     assert fake_gateway.commands
     command, background = fake_gateway.commands[0]
     assert background is True
     assert "originate " in command
-    assert "sofia/gateway/mango_primary/89991234567" in command
-    assert "origination_caller_id_number=89300350609" in command
-    assert "effective_caller_id_number=89300350609" in command
+    assert "sofia/gateway/mango_primary/79991234567" in command
+    assert "origination_caller_id_number=79300350609" in command
+    assert "effective_caller_id_number=79300350609" in command
     assert "sip_from_user=11" in command
     assert "sip_cid_type=pid" in command
 
@@ -299,12 +299,12 @@ async def test_mango_originate_call_coerces_ru_line_and_dial_numbers_to_trunk_fo
             metadata={"call_id": "call-1", "telephony_line_phone_number": "+79300350609"},
         )
 
-    assert result.provider_response["line_number"] == "89300350609"
+    assert result.provider_response["line_number"] == "79300350609"
     command, background = fake_gateway.commands[0]
     assert background is True
-    assert "sofia/gateway/mango_primary/89265229998" in command
-    assert "origination_caller_id_number=89300350609" in command
-    assert "effective_caller_id_number=89300350609" in command
+    assert "sofia/gateway/mango_primary/79265229998" in command
+    assert "origination_caller_id_number=79300350609" in command
+    assert "effective_caller_id_number=79300350609" in command
     assert "sip_from_user=11" in command
 
 
@@ -325,8 +325,8 @@ async def test_mango_originate_call_uses_sip_login_localpart_as_from_user():
     assert result.provider_response["sip_from_user"] == "ilya"
     command, background = fake_gateway.commands[0]
     assert background is True
-    assert "origination_caller_id_number=89300350609" in command
-    assert "effective_caller_id_number=89300350609" in command
+    assert "origination_caller_id_number=79300350609" in command
+    assert "effective_caller_id_number=79300350609" in command
     assert "sip_from_user=ilya" in command
 
 

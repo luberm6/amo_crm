@@ -73,6 +73,18 @@ def _mango_ru_trunk_number(value: Optional[str]) -> str:
     return digits
 
 
+def _mango_sip_number(value: Optional[str]) -> str:
+    """Return the numeric SIP form Mango expects on the registered gateway."""
+    digits = _mango_digits(value)
+    if not digits:
+        return ""
+    if len(digits) == 10:
+        return f"7{digits}"
+    if len(digits) == 11 and digits.startswith("8"):
+        return f"7{digits[1:]}"
+    return digits
+
+
 def _is_mango_sip_trunk_configured() -> bool:
     return bool(
         (settings.mango_sip_login or "").strip()
@@ -802,8 +814,8 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             )
 
         call_uid = f"direct-{uuid.uuid4().hex}"
-        dial_number = _mango_ru_trunk_number(phone) or phone
-        caller_number = _mango_ru_trunk_number(line_number) or line_number
+        dial_number = _mango_sip_number(phone) or phone
+        caller_number = _mango_sip_number(line_number) or line_number
         sip_from_user = (settings.mango_sip_username or from_ext or "").strip() or from_ext
         originate_timeout = max(5, int(settings.mango_answer_wait_timeout_seconds))
         command = (
