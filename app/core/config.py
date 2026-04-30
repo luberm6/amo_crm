@@ -217,7 +217,7 @@ class Settings(BaseSettings):
     freeswitch_rtp_payload_type: int = 96
     # FreeSWITCH ESL command templates.
     # {uuid} -> channel UUID, {rtp_ip}/{rtp_port} -> backend RTP bind endpoint.
-    freeswitch_attach_command_template: str = "uuid_media_reneg {uuid} ={rtp_ip}:{rtp_port}"
+    freeswitch_attach_command_template: str = "sendmsg_unicast {uuid} {rtp_ip} {rtp_port}"
     freeswitch_hangup_command_template: str = "uuid_kill {uuid}"
     freeswitch_esl_events: str = (
         "CHANNEL_CREATE CHANNEL_ANSWER CHANNEL_BRIDGE "

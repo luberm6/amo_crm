@@ -152,7 +152,7 @@ services:
       - key: FREESWITCH_RTP_PAYLOAD_TYPE
         value: "96"
       - key: FREESWITCH_ATTACH_COMMAND_TEMPLATE
-        value: "uuid_media_reneg {uuid} ={rtp_ip}:{rtp_port}"
+        value: "sendmsg_unicast {uuid} {rtp_ip} {rtp_port}"
       - key: FREESWITCH_HANGUP_COMMAND_TEMPLATE
         value: "uuid_kill {uuid}"
       - key: FREESWITCH_ESL_EVENTS

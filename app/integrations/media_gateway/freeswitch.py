@@ -65,7 +65,7 @@ class FreeSwitchGatewayConfig:
     session_timeout_seconds: int = 120
     rtp_payload_type: int = 96
     attach_command_template: str = (
-        "uuid_media_reneg {uuid} ={rtp_ip}:{rtp_port}"
+        "sendmsg_unicast {uuid} {rtp_ip} {rtp_port}"
     )
     hangup_command_template: str = "uuid_kill {uuid}"
     esl_events: str = (
@@ -382,21 +382,30 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             self._cfg.rtp_outbound_codec,
             self._cfg.rtp_sample_rate_hz,
         )
-        pkt = _build_rtp_packet(
-            pcm=encoded,
-            payload_type=self._cfg.rtp_payload_type,
-            seq=runtime.seq,
-            ts=runtime.ts,
-            ssrc=runtime.ssrc,
-        )
-        runtime.transport.sendto(pkt, runtime.remote_addr)
-        runtime.seq = (runtime.seq + 1) % 65536
         sample_div = 2 if self._cfg.rtp_outbound_codec == "pcm16" else 1
-        runtime.ts = (runtime.ts + max(1, len(encoded) // sample_div)) % (2**32)
-        if stats is not None:
-            stats.frames_out += 1
-            stats.bytes_out += len(encoded)
-        inc_fs_rtp_out(len(encoded), self._cfg.mode)
+        frame_bytes = max(1, int(self._cfg.rtp_frame_bytes or len(encoded) or 1))
+        use_raw_unicast = self._uses_sendmsg_unicast()
+        for offset in range(0, len(encoded), frame_bytes):
+            frame = encoded[offset:offset + frame_bytes]
+            if not frame:
+                continue
+            if use_raw_unicast:
+                runtime.transport.sendto(frame, runtime.remote_addr)
+            else:
+                pkt = _build_rtp_packet(
+                    pcm=frame,
+                    payload_type=self._cfg.rtp_payload_type,
+                    seq=runtime.seq,
+                    ts=runtime.ts,
+                    ssrc=runtime.ssrc,
+                )
+                runtime.transport.sendto(pkt, runtime.remote_addr)
+            runtime.seq = (runtime.seq + 1) % 65536
+            runtime.ts = (runtime.ts + max(1, len(frame) // sample_div)) % (2**32)
+            if stats is not None:
+                stats.frames_out += 1
+                stats.bytes_out += len(frame)
+            inc_fs_rtp_out(len(frame), self._cfg.mode)
 
     def _try_set_remote_addr_from_event(
         self,
@@ -796,12 +805,34 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
     async def _run_attach_command(self, uuid_leg: str, rtp_ip: str, rtp_port: int) -> None:
         if self._esl is None:
             raise MediaGatewayNotReadyError("ESL not connected")
-        cmd = self._cfg.attach_command_template.format(
-            uuid=uuid_leg,
-            rtp_ip=rtp_ip,
-            rtp_port=rtp_port,
-        )
+        template = (self._cfg.attach_command_template or "").strip()
+        if template.startswith("sendmsg_unicast"):
+            local_port = int(rtp_port) + 1
+            msg = (
+                f"sendmsg {uuid_leg}\n"
+                "call-command: unicast\n"
+                f"local-ip: {rtp_ip}\n"
+                f"local-port: {local_port}\n"
+                f"remote-ip: {rtp_ip}\n"
+                f"remote-port: {rtp_port}\n"
+                "transport: udp\n\n"
+            )
+            await self._esl.send_raw(msg)
+            log.info(
+                "freeswitch_gateway.attach_unicast_sent",
+                uuid=uuid_leg,
+                local_ip=rtp_ip,
+                local_port=local_port,
+                remote_ip=rtp_ip,
+                remote_port=rtp_port,
+            )
+            return
+        cmd = template.format(uuid=uuid_leg, rtp_ip=rtp_ip, rtp_port=rtp_port)
         await self._esl.send_bgapi_nowait(cmd)
+        log.info("freeswitch_gateway.attach_command_sent", uuid=uuid_leg, command=cmd)
+
+    def _uses_sendmsg_unicast(self) -> bool:
+        return (self._cfg.attach_command_template or "").strip().startswith("sendmsg_unicast")
 
     async def _prime_remote_addr_from_channel_vars_retry(
         self,
@@ -1267,7 +1298,7 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         runtime.remote_addr = addr
         self._flush_pending_audio(session_id, runtime)
         pt = _extract_rtp_payload_type(data)
-        payload = _extract_rtp_payload(data)
+        payload = data if self._uses_sendmsg_unicast() else _extract_rtp_payload(data)
         if not payload:
             return
         decoded = _decode_inbound_audio(

@@ -100,7 +100,7 @@ Legend for `Required`:
 | `FREESWITCH_RTP_PORT_END` | No | `32768` | FreeSWITCH gateway | RTP end port | Media path only |
 | `FREESWITCH_SESSION_TIMEOUT_SECONDS` | No | `120` | FreeSWITCH gateway | Session timeout | Media path only |
 | `FREESWITCH_RTP_PAYLOAD_TYPE` | No | `96` | FreeSWITCH gateway | RTP payload type | Media path only |
-| `FREESWITCH_ATTACH_COMMAND_TEMPLATE` | No | `uuid_media_reneg {uuid} ={rtp_ip}:{rtp_port}` | FreeSWITCH gateway | Attach command template | Media attach behavior |
+| `FREESWITCH_ATTACH_COMMAND_TEMPLATE` | No | `sendmsg_unicast {uuid} {rtp_ip} {rtp_port}` | FreeSWITCH gateway | Attach command template | Media attach behavior |
 | `FREESWITCH_HANGUP_COMMAND_TEMPLATE` | No | `uuid_kill {uuid}` | FreeSWITCH gateway | Hangup command template | Media cleanup only |
 | `FREESWITCH_ESL_EVENTS` | No | `CHANNEL_HANGUP_COMPLETE CUSTOM HEARTBEAT` | FreeSWITCH gateway | ESL subscriptions | Media signaling visibility |
 | `FREESWITCH_ESL_CONNECT_TIMEOUT_SECONDS` | No | `5.0` | FreeSWITCH gateway | ESL connect timeout | Media connection timing |

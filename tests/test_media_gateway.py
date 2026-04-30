@@ -264,16 +264,7 @@ async def test_freeswitch_gateway_esl_rtp_ingest_inject_with_stubbed_esl():
 
     snd = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        snd.sendto(
-            _build_rtp_packet(
-                pcm=b"\x10" * 640,
-                payload_type=96,
-                seq=10,
-                ts=160,
-                ssrc=999,
-            ),
-            (runtime.local_ip, runtime.local_port),
-        )
+        snd.sendto(b"\x10" * 640, (runtime.local_ip, runtime.local_port))
     finally:
         snd.close()
 
@@ -286,6 +277,40 @@ async def test_freeswitch_gateway_esl_rtp_ingest_inject_with_stubbed_esl():
     assert gw.get_audio_out_bytes(sid) == 640
 
     await gw.detach_session(sid)
+
+
+@pytest.mark.anyio
+async def test_freeswitch_gateway_sendmsg_unicast_attach_uses_media_hook():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            rtp_ip="127.0.0.1",
+            rtp_port_start=25020,
+            rtp_port_end=25100,
+        )
+    )
+
+    class _FakeEsl:
+        def __init__(self) -> None:
+            self.raw: list[str] = []
+
+        async def send_raw(self, text: str) -> None:
+            self.raw.append(text)
+
+    fake = _FakeEsl()
+    gw._esl = fake  # type: ignore[assignment]
+
+    await gw._run_attach_command("uuid-123", "127.0.0.1", 25020)
+
+    assert fake.raw == [
+        "sendmsg uuid-123\n"
+        "call-command: unicast\n"
+        "local-ip: 127.0.0.1\n"
+        "local-port: 25021\n"
+        "remote-ip: 127.0.0.1\n"
+        "remote-port: 25020\n"
+        "transport: udp\n\n"
+    ]
 
 
 @pytest.mark.anyio
@@ -313,16 +338,7 @@ async def test_freeswitch_gateway_buffers_outbound_audio_until_first_inbound_rtp
     peer.bind(("127.0.0.1", 0))
     peer.settimeout(1.0)
     try:
-        peer.sendto(
-            _build_rtp_packet(
-                pcm=b"\x10" * 640,
-                payload_type=96,
-                seq=10,
-                ts=160,
-                ssrc=999,
-            ),
-            (runtime.local_ip, runtime.local_port),
-        )
+        peer.sendto(b"\x10" * 640, (runtime.local_ip, runtime.local_port))
         packet, _ = await asyncio.wait_for(
             asyncio.to_thread(peer.recvfrom, 2048),
             timeout=1.0,
@@ -330,7 +346,7 @@ async def test_freeswitch_gateway_buffers_outbound_audio_until_first_inbound_rtp
     finally:
         peer.close()
 
-    assert _extract_rtp_payload(packet) == b"\x21" * 640
+    assert packet == b"\x21" * 640
     assert runtime.pending_outbound == []
     await gw.detach_session(sid)
 
@@ -484,7 +500,7 @@ async def test_freeswitch_gateway_primes_remote_endpoint_from_esl_event_and_flus
     finally:
         peer.close()
 
-    assert _extract_rtp_payload(packet) == b"\x22" * 640
+    assert packet == b"\x22" * 640
     assert runtime.remote_addr == (host, port)
     assert runtime.pending_outbound == []
     await gw.detach_session(sid)
@@ -558,7 +574,7 @@ async def test_freeswitch_gateway_primes_remote_endpoint_from_channel_vars_and_f
 
         assert runtime.remote_addr == (host, port)
         assert runtime.pending_outbound == []
-        assert _extract_rtp_payload(packet) == b"\x33" * 640
+        assert packet == b"\x33" * 640
         await gw.detach_session(sid)
     finally:
         peer.close()
@@ -911,16 +927,7 @@ async def test_freeswitch_gateway_stats_and_timeout_hangup():
 
     snd = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        snd.sendto(
-            _build_rtp_packet(
-                pcm=b"\x10" * 320,
-                payload_type=96,
-                seq=1,
-                ts=80,
-                ssrc=111,
-            ),
-            (runtime.local_ip, runtime.local_port),
-        )
+        snd.sendto(b"\x10" * 320, (runtime.local_ip, runtime.local_port))
     finally:
         snd.close()
 

@@ -81,7 +81,7 @@ Lifecycle flags tracked:
 
 ## Known Limits
 - Live FreeSWITCH event schemas may vary by deployment profile/modules.
-- Command templates (`uuid_media_reneg`, `uuid_kill`) may require tenant-specific tuning.
+- Command templates (`sendmsg_unicast`, `uuid_kill`) may require tenant-specific tuning.
 - No claim of end-to-end real voice quality until live contour validation is done.
 
 ## Manual Smoke Checklist

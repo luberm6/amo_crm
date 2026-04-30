@@ -36,7 +36,7 @@
 - Варианты входа в FreeSWITCH зависят от конкретной PBX настройки:
   - trunk на SIP profile (`external`),
   - routing на extension/DID/context.
-- Командные шаблоны (`uuid_media_reneg`, `uuid_kill`) deployment-specific и требуют настройки на живом контуре.
+- Командные шаблоны (`sendmsg_unicast`, `uuid_kill`) deployment-specific и требуют настройки на живом контуре.
 
 ## 5. Что code-complete
 - Event-driven `wait_for_answered` (Mango + FreeSWITCH states + polling fallback).
