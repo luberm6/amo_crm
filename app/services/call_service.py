@@ -139,7 +139,15 @@ class CallService:
                 error=str(exc),
             )
             if isinstance(exc, EngineError):
-                raise
+                detail = exc.detail if isinstance(exc.detail, dict) else {"detail": exc.detail}
+                raise EngineError(
+                    exc.message,
+                    detail={
+                        **detail,
+                        "call_id": str(call.id),
+                        "stage": detail.get("stage") or "engine_initiate",
+                    },
+                ) from exc
             raise EngineError(
                 "Call initiation failed",
                 detail={"call_id": str(call.id), "stage": "engine_initiate", "error": str(exc)},

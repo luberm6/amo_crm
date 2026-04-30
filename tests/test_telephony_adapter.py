@@ -275,7 +275,8 @@ async def test_mango_originate_call_uses_freeswitch_sip_gateway_when_configured(
     command, background = fake_gateway.commands[0]
     assert background is True
     assert "originate " in command
-    assert "sofia/gateway/mango_primary/79991234567" in command
+    assert result.provider_response["dial_number"] == "89991234567"
+    assert "sofia/gateway/mango_primary/89991234567" in command
     assert "origination_caller_id_number=79300350609" in command
     assert "effective_caller_id_number=79300350609" in command
     assert "absolute_codec_string=PCMA,PCMU" in command
@@ -303,7 +304,8 @@ async def test_mango_originate_call_coerces_ru_line_and_dial_numbers_to_trunk_fo
     assert result.provider_response["line_number"] == "79300350609"
     command, background = fake_gateway.commands[0]
     assert background is True
-    assert "sofia/gateway/mango_primary/79265229998" in command
+    assert result.provider_response["dial_number"] == "89265229998"
+    assert "sofia/gateway/mango_primary/89265229998" in command
     assert "origination_caller_id_number=79300350609" in command
     assert "effective_caller_id_number=79300350609" in command
     assert "sip_from_user=11" in command

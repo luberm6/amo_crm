@@ -25,10 +25,30 @@ type OutboundCallResponse = {
   last_failure_reason?: string | null
   last_disconnect_reason?: string | null
   last_runtime_error?: string | null
+  transcript_entries?: TranscriptEntry[]
+}
+
+type TranscriptEntry = {
+  id: string
+  role: string
+  text: string
+  created_at: string
 }
 
 function formatOperatorError(message: string | null, details: unknown): string | null {
   const raw = message || ''
+  const detail = typeof details === 'object' && details && 'detail' in (details as Record<string, unknown>)
+    ? (details as { detail?: Record<string, unknown> }).detail
+    : null
+  if (
+    raw.includes('CALL_REJECTED') ||
+    raw.includes('403') ||
+    detail?.variable_sip_term_status === '403' ||
+    detail?.HangupCause === 'CALL_REJECTED' ||
+    detail?.failure_cause === 'CALL_REJECTED'
+  ) {
+    return 'Mango отклонил SIP-вызов до ответа абонента (403 CALL_REJECTED). Проверьте разрешённые направления/исходящие правила для SIP-пользователя Ilya и номера 89300350609.'
+  }
   if (raw.includes('Timed out waiting for leg') && raw.includes('to answer after')) {
     return 'Звонок запущен, но провайдер не подтвердил ответ абонента за ожидаемое время.'
   }
@@ -52,14 +72,90 @@ export default function DashboardPage() {
   const [result, setResult] = useState<OutboundCallResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const pollTimerRef = useRef<number | null>(null)
+  const ringbackRef = useRef<{
+    context: AudioContext
+    gain: GainNode
+    oscillators: OscillatorNode[]
+    timer: number | null
+  } | null>(null)
+
+  function stopRingback() {
+    const ringback = ringbackRef.current
+    if (!ringback) {
+      return
+    }
+    if (ringback.timer !== null) {
+      window.clearInterval(ringback.timer)
+    }
+    ringback.oscillators.forEach((oscillator) => {
+      try {
+        oscillator.stop()
+      } catch {
+        // Already stopped.
+      }
+    })
+    void ringback.context.close()
+    ringbackRef.current = null
+  }
+
+  function startRingback() {
+    if (ringbackRef.current) {
+      return
+    }
+    const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioContextCtor) {
+      return
+    }
+    const context = new AudioContextCtor()
+    const gain = context.createGain()
+    gain.gain.value = 0
+    gain.connect(context.destination)
+    const oscillators = [440, 480].map((frequency) => {
+      const oscillator = context.createOscillator()
+      oscillator.type = 'sine'
+      oscillator.frequency.value = frequency
+      oscillator.connect(gain)
+      oscillator.start()
+      return oscillator
+    })
+    const pulse = () => {
+      const now = context.currentTime
+      gain.gain.cancelScheduledValues(now)
+      gain.gain.setValueAtTime(0, now)
+      gain.gain.linearRampToValueAtTime(0.055, now + 0.03)
+      gain.gain.setValueAtTime(0.055, now + 0.95)
+      gain.gain.linearRampToValueAtTime(0, now + 1.05)
+    }
+    pulse()
+    ringbackRef.current = {
+      context,
+      gain,
+      oscillators,
+      timer: window.setInterval(pulse, 4000),
+    }
+  }
+
+  const isLiveDialing = Boolean(
+    submitting ||
+    (result?.status && ['IN_PROGRESS', 'RINGING', 'DIALING', 'CREATED'].includes(result.status)),
+  )
 
   useEffect(() => {
     return () => {
       if (pollTimerRef.current !== null) {
         window.clearTimeout(pollTimerRef.current)
       }
+      stopRingback()
     }
   }, [])
+
+  useEffect(() => {
+    if (isLiveDialing) {
+      startRingback()
+    } else {
+      stopRingback()
+    }
+  }, [isLiveDialing])
 
   useEffect(() => {
     const callId = result?.call_id || result?.id
@@ -130,11 +226,13 @@ export default function DashboardPage() {
     } catch (err) {
       if (err instanceof ApiError) {
         const details = typeof err.details === 'object' && err.details && 'detail' in (err.details as Record<string, unknown>)
-          ? (err.details as { detail?: { message?: string } }).detail
+          ? (err.details as { detail?: { message?: string, call_id?: string } }).detail
           : null
         setError(formatOperatorError(details?.message || err.message, err.details))
         setResult({
           accepted: false,
+          call_id: details?.call_id || null,
+          id: details?.call_id || null,
           status: 'failed',
           error: err.details,
         })
@@ -205,6 +303,34 @@ export default function DashboardPage() {
             <p><strong>disconnect_reason:</strong> {result.last_disconnect_reason || '—'}</p>
             <p><strong>runtime_error:</strong> {result.last_runtime_error || '—'}</p>
           </div>
+        ) : null}
+        {isLiveDialing ? (
+          <div className="route-state">
+            Локальные гудки включены: это индикатор ожидания SIP-ответа Mango. Реальный отказ/ответ появится ниже в статусе.
+          </div>
+        ) : null}
+        {result?.transcript_entries ? (
+          <article className="panel-card transcript-panel outbound-transcript-panel">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Транскрипт</p>
+                <h4>Живой разговор</h4>
+              </div>
+            </div>
+            <div className="transcript-list">
+              {result.transcript_entries.length ? result.transcript_entries.map((entry) => (
+                <article key={entry.id} className={`transcript-bubble${entry.role === 'assistant' ? ' assistant' : ''}`}>
+                  <div className="transcript-meta">{entry.role === 'assistant' ? 'Агент' : 'Пользователь'} · {new Date(entry.created_at).toLocaleTimeString()}</div>
+                  <div>{entry.text}</div>
+                </article>
+              )) : (
+                <article className="transcript-bubble empty">
+                  <div className="transcript-meta">Транскрипт пока пуст</div>
+                  <div>Он появится здесь сразу после соединения и первых реплик.</div>
+                </article>
+              )}
+            </div>
+          </article>
         ) : null}
       </article>
       <div className="dashboard-cards">
