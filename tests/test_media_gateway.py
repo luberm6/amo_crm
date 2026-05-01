@@ -25,6 +25,9 @@ from app.integrations.telephony.mango_freeswitch_correlation import (
 )
 
 
+LEGACY_RTP_ATTACH_TEMPLATE = "uuid_media_reneg {uuid} ={rtp_ip}:{rtp_port}"
+
+
 @pytest.mark.anyio
 async def test_freeswitch_media_gateway_mock_contract_roundtrip():
     gw = FreeSwitchMediaGateway(FreeSwitchGatewayConfig(mode="mock"))
@@ -472,6 +475,7 @@ async def test_freeswitch_gateway_primes_remote_endpoint_from_esl_event_and_flus
             rtp_ip="127.0.0.1",
             rtp_port_start=25220,
             rtp_port_end=25320,
+            attach_command_template=LEGACY_RTP_ATTACH_TEMPLATE,
         )
     )
     gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
@@ -500,7 +504,7 @@ async def test_freeswitch_gateway_primes_remote_endpoint_from_esl_event_and_flus
     finally:
         peer.close()
 
-    assert packet == b"\x22" * 640
+    assert _extract_rtp_payload(packet) == b"\x22" * 640
     assert runtime.remote_addr == (host, port)
     assert runtime.pending_outbound == []
     await gw.detach_session(sid)
@@ -514,6 +518,7 @@ async def test_freeswitch_gateway_primes_remote_endpoint_from_attach_metadata():
             rtp_ip="127.0.0.1",
             rtp_port_start=25220,
             rtp_port_end=25320,
+            attach_command_template=LEGACY_RTP_ATTACH_TEMPLATE,
         )
     )
     gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
@@ -536,6 +541,55 @@ async def test_freeswitch_gateway_primes_remote_endpoint_from_attach_metadata():
 
 
 @pytest.mark.anyio
+async def test_freeswitch_gateway_unicast_ignores_provider_rtp_hints_until_udp_source():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            rtp_ip="127.0.0.1",
+            rtp_port_start=25300,
+            rtp_port_end=25320,
+        )
+    )
+    gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_attach_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_hangup_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    handle = await gw.attach_session(
+        call_id="call-unicast-hints",
+        provider_leg_id="leg-unicast-hints",
+        metadata={
+            "remote_media_ip": "81.88.88.59",
+            "remote_media_port": "29584",
+        },
+    )
+    sid = handle.session_id
+    runtime = gw._rtp[sid]
+
+    assert runtime.remote_addr is None
+
+    gw._try_set_remote_addr_from_event(
+        sid,
+        {
+            "variable_remote_media_ip": "81.88.88.51",
+            "variable_remote_media_port": "38082",
+        },
+    )
+    assert runtime.remote_addr is None
+
+    async def fake_getvar(command: str) -> str:
+        if command.endswith(" remote_media_ip"):
+            return "81.88.88.51"
+        if command.endswith(" remote_media_port"):
+            return "38082"
+        return ""
+
+    gw._execute_command_via_ephemeral_esl = AsyncMock(side_effect=fake_getvar)  # type: ignore[method-assign]
+    assert await gw._try_prime_remote_addr_from_channel_vars(sid, "leg-unicast-hints") is False
+    assert runtime.remote_addr is None
+    await gw.detach_session(sid)
+
+
+@pytest.mark.anyio
 async def test_freeswitch_gateway_primes_remote_endpoint_from_channel_vars_and_flushes():
     gw = FreeSwitchMediaGateway(
         FreeSwitchGatewayConfig(
@@ -543,6 +597,7 @@ async def test_freeswitch_gateway_primes_remote_endpoint_from_channel_vars_and_f
             rtp_ip="127.0.0.1",
             rtp_port_start=25321,
             rtp_port_end=25329,
+            attach_command_template=LEGACY_RTP_ATTACH_TEMPLATE,
         )
     )
     gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
@@ -574,7 +629,7 @@ async def test_freeswitch_gateway_primes_remote_endpoint_from_channel_vars_and_f
 
         assert runtime.remote_addr == (host, port)
         assert runtime.pending_outbound == []
-        assert packet == b"\x33" * 640
+        assert _extract_rtp_payload(packet) == b"\x33" * 640
         await gw.detach_session(sid)
     finally:
         peer.close()

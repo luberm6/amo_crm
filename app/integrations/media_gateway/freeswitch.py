@@ -412,6 +412,8 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         session_id: str,
         raw_event: dict[str, str],
     ) -> None:
+        if self._uses_sendmsg_unicast():
+            return
         runtime = self._rtp.get(session_id)
         if runtime is None or runtime.remote_addr is not None:
             return
@@ -458,6 +460,8 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         session_id: str,
         metadata: dict[str, Any],
     ) -> None:
+        if self._uses_sendmsg_unicast():
+            return
         runtime = self._rtp.get(session_id)
         if runtime is None or runtime.remote_addr is not None:
             return
@@ -863,6 +867,8 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         session_id: str,
         uuid_leg: str,
     ) -> bool:
+        if self._uses_sendmsg_unicast():
+            return False
         runtime = self._rtp.get(session_id)
         if runtime is None or runtime.remote_addr is not None:
             return True
@@ -1295,7 +1301,15 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
         runtime = self._rtp.get(session_id)
         if runtime is None:
             return
+        previous_remote_addr = runtime.remote_addr
         runtime.remote_addr = addr
+        if previous_remote_addr is None and self._uses_sendmsg_unicast():
+            log.info(
+                "freeswitch_gateway.unicast_remote_endpoint_observed",
+                session_id=session_id,
+                remote_ip=addr[0],
+                remote_port=addr[1],
+            )
         self._flush_pending_audio(session_id, runtime)
         pt = _extract_rtp_payload_type(data)
         payload = data if self._uses_sendmsg_unicast() else _extract_rtp_payload(data)
