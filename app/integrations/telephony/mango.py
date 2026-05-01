@@ -870,7 +870,6 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             f"effective_caller_id_number={caller_number},"
             f"effective_caller_id_name={caller_number},"
             f"origination_callee_id_number={dial_number},"
-            "absolute_codec_string=PCMA,PCMU,"
             f"sip_from_user={sip_from_user},"
             f"sip_from_host={settings.mango_sip_server},"
             f"sip_cid_type=pid,"
