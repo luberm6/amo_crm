@@ -355,6 +355,45 @@ async def test_freeswitch_gateway_buffers_outbound_audio_until_first_inbound_rtp
 
 
 @pytest.mark.anyio
+async def test_freeswitch_gateway_sendmsg_unicast_strips_rtp_headers_when_present():
+    gw = FreeSwitchMediaGateway(
+        FreeSwitchGatewayConfig(
+            mode="esl_rtp",
+            rtp_ip="127.0.0.1",
+            rtp_port_start=25310,
+            rtp_port_end=25410,
+        )
+    )
+    gw._ensure_esl_connected = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_attach_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    gw._run_hangup_command = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    handle = await gw.attach_session(call_id="call-rtp-in", provider_leg_id="leg-rtp-in")
+    sid = handle.session_id
+    runtime = gw._rtp[sid]
+    pcm = b"\x01\x00" * 160
+    packet = _build_rtp_packet(
+        pcm=pcm,
+        payload_type=96,
+        seq=1,
+        ts=160,
+        ssrc=1234,
+    )
+
+    peer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    peer.bind(("127.0.0.1", 0))
+    try:
+        peer.sendto(packet, (runtime.local_ip, runtime.local_port))
+        evt = await asyncio.wait_for(gw._queues[sid].get(), timeout=1.0)
+    finally:
+        peer.close()
+        await gw.detach_session(sid)
+
+    assert evt.type == MediaEventType.AUDIO_IN
+    assert evt.pcm == pcm
+
+
+@pytest.mark.anyio
 async def test_freeswitch_gateway_attaches_immediately_when_direct_uuid_exists():
     gw = FreeSwitchMediaGateway(
         FreeSwitchGatewayConfig(
@@ -958,6 +997,17 @@ def test_freeswitch_pcmu_8khz_roundtrip_resamples_back_to_16khz():
         sample_rate_hz=8000,
     )
     assert len(restored) >= len(pcm) - 4
+    assert any(b != 0 for b in restored)
+
+
+def test_freeswitch_pcma_codec_decodes_known_payload():
+    restored = _decode_inbound_audio(
+        b"\xd5\x55\xd5\x55",
+        inbound_codec="pcma",
+        payload_type=8,
+        sample_rate_hz=16000,
+    )
+    assert len(restored) == 8
     assert any(b != 0 for b in restored)
 
 

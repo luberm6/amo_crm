@@ -77,7 +77,7 @@ class FreeSwitchGatewayConfig:
     esl_reconnect_initial_delay_seconds: float = 0.5
     esl_reconnect_max_delay_seconds: float = 5.0
     esl_reconnect_max_attempts: int = 0
-    rtp_inbound_codec: str = "pcm16"   # pcm16 | pcmu
+    rtp_inbound_codec: str = "pcm16"   # pcm16 | pcmu | pcma
     rtp_outbound_codec: str = "pcm16"  # pcm16 | pcmu
     rtp_sample_rate_hz: int = 16000
     rtp_frame_bytes: int = 640
@@ -98,6 +98,7 @@ class _RtpRuntime:
     seq: int = 0
     ts: int = 0
     ssrc: int = 0
+    inbound_probe_logs: int = 0
 
 
 @dataclass
@@ -1312,7 +1313,14 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             )
         self._flush_pending_audio(session_id, runtime)
         pt = _extract_rtp_payload_type(data)
-        payload = data if self._uses_sendmsg_unicast() else _extract_rtp_payload(data)
+        packet_was_rtp = _looks_like_rtp_packet(data)
+        if self._uses_sendmsg_unicast():
+            # FreeSWITCH unicast can be raw PCM or RTP depending on profile/build.
+            # Auto-strip RTP headers when present; treating RTP headers as PCM is
+            # enough to make STT hear noise/silence after the greeting.
+            payload = _extract_rtp_payload(data) if packet_was_rtp else data
+        else:
+            payload = _extract_rtp_payload(data)
         if not payload:
             return
         decoded = _decode_inbound_audio(
@@ -1322,6 +1330,23 @@ class FreeSwitchMediaGateway(AbstractMediaGateway):
             sample_rate_hz=self._cfg.rtp_sample_rate_hz,
         )
         stats = self._media_stats.get(session_id)
+        if runtime.inbound_probe_logs < 8:
+            runtime.inbound_probe_logs += 1
+            audio_stats = _pcm16_probe_stats(decoded)
+            log.info(
+                "freeswitch_gateway.audio_in_probe",
+                session_id=session_id,
+                source_ip=addr[0],
+                source_port=addr[1],
+                packet_bytes=len(data),
+                payload_bytes=len(payload),
+                decoded_bytes=len(decoded),
+                packet_was_rtp=packet_was_rtp,
+                payload_type=pt,
+                inbound_codec=self._cfg.rtp_inbound_codec,
+                sample_rate_hz=self._cfg.rtp_sample_rate_hz,
+                **audio_stats,
+            )
         if stats is not None:
             stats.frames_in += 1
             stats.bytes_in += len(decoded)
@@ -1363,6 +1388,20 @@ def _extract_rtp_payload(packet: bytes) -> bytes:
     return packet[header_len:]
 
 
+def _looks_like_rtp_packet(packet: bytes) -> bool:
+    if len(packet) <= 12:
+        return False
+    if packet[0] >> 6 != 2:
+        return False
+    csrc_count = packet[0] & 0x0F
+    header_len = 12 + (csrc_count * 4)
+    if len(packet) <= header_len:
+        return False
+    # Payload types used here are PCMU(0), PCMA(8), or dynamic L16/PCM.
+    payload_type = packet[1] & 0x7F
+    return payload_type in {0, 8, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105}
+
+
 def _extract_rtp_payload_type(packet: bytes) -> Optional[int]:
     if len(packet) < 2:
         return None
@@ -1400,6 +1439,8 @@ def _decode_inbound_audio(
     decoded = payload
     if codec == "pcmu" or payload_type == 0:
         decoded = _ulaw_bytes_to_pcm16(payload)
+    elif codec == "pcma" or payload_type == 8:
+        decoded = _alaw_bytes_to_pcm16(payload)
     if sample_rate_hz and sample_rate_hz != 16000:
         return _resample_pcm16(decoded, sample_rate_hz, 16000)
     return decoded
@@ -1430,6 +1471,17 @@ def _ulaw_bytes_to_pcm16(data: bytes) -> bytes:
     return bytes(out)
 
 
+def _alaw_bytes_to_pcm16(data: bytes) -> bytes:
+    out = bytearray(len(data) * 2)
+    i = 0
+    for b in data:
+        s = _alaw_to_linear_sample(b)
+        out[i] = s & 0xFF
+        out[i + 1] = (s >> 8) & 0xFF
+        i += 2
+    return bytes(out)
+
+
 def _pcm16_to_ulaw_bytes(pcm: bytes) -> bytes:
     if len(pcm) % 2 != 0:
         pcm = pcm[:-1]
@@ -1442,6 +1494,36 @@ def _pcm16_to_ulaw_bytes(pcm: bytes) -> bytes:
     return bytes(out)
 
 
+def _pcm16_probe_stats(pcm: bytes) -> dict[str, float | str]:
+    usable = pcm if len(pcm) % 2 == 0 else pcm[:-1]
+    if not usable:
+        return {
+            "rms": 0.0,
+            "peak": 0.0,
+            "silence_ratio": 1.0,
+            "first_bytes_hex": "",
+        }
+    sample_count = len(usable) // 2
+    sum_squares = 0.0
+    peak = 0.0
+    silent = 0
+    for i in range(0, len(usable), 2):
+        sample = int.from_bytes(usable[i:i + 2], byteorder="little", signed=True)
+        normalized = sample / 32768.0
+        absolute = abs(normalized)
+        peak = max(peak, absolute)
+        if absolute <= 0.01:
+            silent += 1
+        sum_squares += normalized * normalized
+    rms = (sum_squares / max(1, sample_count)) ** 0.5
+    return {
+        "rms": round(rms, 6),
+        "peak": round(peak, 6),
+        "silence_ratio": round(silent / max(1, sample_count), 6),
+        "first_bytes_hex": usable[:12].hex(),
+    }
+
+
 def _ulaw_to_linear_sample(u_val: int) -> int:
     u_val = (~u_val) & 0xFF
     t = ((u_val & 0x0F) << 3) + 0x84
@@ -1449,6 +1531,20 @@ def _ulaw_to_linear_sample(u_val: int) -> int:
     if u_val & 0x80:
         return 0x84 - t
     return t - 0x84
+
+
+def _alaw_to_linear_sample(a_val: int) -> int:
+    a_val ^= 0x55
+    t = (a_val & 0x0F) << 4
+    segment = (a_val & 0x70) >> 4
+    if segment == 0:
+        t += 8
+    elif segment == 1:
+        t += 0x108
+    else:
+        t += 0x108
+        t <<= segment - 1
+    return t if (a_val & 0x80) else -t
 
 
 def _linear_to_ulaw_sample(sample: int) -> int:
