@@ -853,10 +853,10 @@ class MangoTelephonyAdapter(AbstractTelephonyAdapter):
             )
 
         call_uid = f"direct-{uuid.uuid4().hex}"
-        # Mango's SIP gateway rejects a bare 7XXXXXXXXXX destination with 403
-        # on this VPBX. Use the PSTN trunk form for the called party while
-        # keeping caller presentation in SIP numeric form below.
-        dial_number = _mango_ru_trunk_number(phone) or phone
+        # Mango's registered SIP gateway accepts the called party in numeric
+        # SIP form (7XXXXXXXXXX). The PSTN trunk form (8XXXXXXXXXX) is rejected
+        # by this VPBX with SIP 403/CALL_REJECTED.
+        dial_number = _mango_sip_number(phone) or phone
         caller_number = _mango_sip_number(line_number) or line_number
         sip_from_user = (settings.mango_sip_username or from_ext or "").strip() or from_ext
         originate_timeout = max(5, int(settings.mango_answer_wait_timeout_seconds))
