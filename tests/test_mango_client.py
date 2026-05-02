@@ -27,7 +27,7 @@ async def test_list_extensions_uses_cache_after_429(monkeypatch):
                     "users": [
                         {
                             "general": {"name": "Ext User"},
-                            "telephony": {"extension": "10", "outgoingline": "79585382099"},
+                            "telephony": {"extension": "10", "outgoingline": "79300350609"},
                         }
                     ]
                 }

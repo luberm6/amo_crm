@@ -187,9 +187,11 @@ async def test_lines_api_returns_is_recommended_for_ai_false_for_regular_line(se
         yield session
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        token = await _login(ac)
-        resp = await ac.get("/v1/telephony/mango/lines", headers={"Authorization": f"Bearer {token}"})
+    # Disable single-number policy so non-primary lines appear in the API response.
+    with patch.object(cfg.settings, "mango_primary_phone_number", ""):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            token = await _login(ac)
+            resp = await ac.get("/v1/telephony/mango/lines", headers={"Authorization": f"Bearer {token}"})
 
     assert resp.status_code == 200
     items = resp.json()["items"]
