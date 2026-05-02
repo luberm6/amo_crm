@@ -131,6 +131,13 @@ _AUDIO_OUT_DRAIN_BATCH_MAX = 100
 _AUDIO_LOOP_IDLE_SLEEP_SECONDS = 0.01
 _AUDIO_LOOP_ACTIVE_SLEEP_SECONDS = 0.002
 
+# FreeSWITCH/Mango PSTN legs often keep sending low-level comfort noise after
+# the greeting. Treating that as user speech makes Gemini wait on empty turns,
+# which presents as "agent greeted, then silence".
+_AUDIO_IN_VOICE_RMS_THRESHOLD = 0.012
+_AUDIO_IN_VOICE_PEAK_THRESHOLD = 0.04
+_AUDIO_IN_TRAILING_SILENCE_SECONDS = 0.8
+
 # Gemini Live outputs PCM at 24000 Hz; the browser pipeline expects 16000 Hz.
 _GEMINI_AUDIO_OUTPUT_RATE = 24000
 _BROWSER_AUDIO_RATE = 16000
@@ -227,8 +234,10 @@ class DirectSessionMetrics:
     inbound_chunks_received: int = 0
     inbound_chunks_sent_to_model: int = 0
     inbound_chunks_dropped: int = 0
+    inbound_silence_chunks_dropped: int = 0
     inbound_probe_received_logs: int = 0
     inbound_probe_sent_logs: int = 0
+    inbound_silence_drop_logs: int = 0
     outbound_chunks_enqueued: int = 0
     outbound_chunks_played: int = 0
     outbound_chunks_dropped: int = 0
@@ -251,6 +260,7 @@ class DirectSessionMetrics:
     tts_tiny_chunks_in_last: int = 0
     tts_turn_id_last: Optional[str] = None
     last_inbound_sent_at: Optional[float] = None
+    inbound_voice_tail_until: Optional[float] = None
     last_model_request_at: Optional[float] = None
     awaiting_model_response: bool = False
     model_turn_active: bool = False  # True while Gemini is mid-turn (first audio → turn_complete/interrupted)
@@ -1372,13 +1382,46 @@ class DirectSessionManager:
         drained = 0
         while not session.audio_in_queue.empty() and drained < _AUDIO_IN_DRAIN_BATCH_MAX:
             chunk, enqueued_at = session.audio_in_queue.get_nowait()
+            stats = pcm16le_stats(chunk)
+            now = time.perf_counter()
+            is_voiced = (
+                stats["rms"] >= _AUDIO_IN_VOICE_RMS_THRESHOLD
+                or stats["peak"] >= _AUDIO_IN_VOICE_PEAK_THRESHOLD
+            )
+            if is_voiced:
+                session.metrics.inbound_voice_tail_until = (
+                    now + _AUDIO_IN_TRAILING_SILENCE_SECONDS
+                )
+            elif (
+                session.metrics.inbound_voice_tail_until is None
+                or now > session.metrics.inbound_voice_tail_until
+            ):
+                drained += 1
+                session.metrics.inbound_silence_chunks_dropped += 1
+                session.metrics.inbound_chunks_dropped += 1
+                inc_direct_audio_in("dropped")
+                if session.metrics.inbound_silence_drop_logs < 8:
+                    session.metrics.inbound_silence_drop_logs += 1
+                    log.info(
+                        "session_manager.audio_in_silence_dropped",
+                        call_id=str(session.call_id),
+                        session_id=session.session_id,
+                        dropped_count=session.metrics.inbound_silence_chunks_dropped,
+                        byte_length=len(chunk),
+                        queue_depth=session.audio_in_queue.qsize(),
+                        rms=stats["rms"],
+                        peak=stats["peak"],
+                        silence_ratio=stats["silence_ratio"],
+                        first_bytes_hex=stats["first_bytes_hex"],
+                    )
+                continue
+
             await session.gemini_client.send_audio(chunk)
             drained += 1
             session.metrics.inbound_chunks_sent_to_model += 1
             inc_direct_audio_in("sent_to_model")
             if session.metrics.inbound_probe_sent_logs < 8:
                 session.metrics.inbound_probe_sent_logs += 1
-                stats = pcm16le_stats(chunk)
                 log.info(
                     "session_manager.audio_in_sent_to_model_probe",
                     call_id=str(session.call_id),

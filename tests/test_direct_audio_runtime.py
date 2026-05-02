@@ -369,6 +369,55 @@ async def test_session_capabilities_full_duplex_with_audio_enabled(test_session_
 
 
 @pytest.mark.anyio
+async def test_audio_in_drops_idle_silence_before_model_turn() -> None:
+    sm = DirectSessionManager()
+    session = DirectSession(
+        session_id="silence-gate-direct",
+        call_id=uuid.uuid4(),
+        phone="+79990001004",
+        capabilities=DirectSessionCapabilities(audio_in=True, real_audio_in=True),
+    )
+    session.gemini_client = MockGeminiLiveClient(
+        on_text=lambda *_: None,
+        on_audio=lambda *_: None,
+        on_close=lambda: None,
+    )
+
+    await session.audio_in_queue.put((b"\x00" * 640, asyncio.get_running_loop().time()))
+    await sm._drain_audio_in_queue(session)
+
+    assert session.gemini_client.sent_audio_chunks == []
+    assert session.metrics.inbound_silence_chunks_dropped == 1
+    assert session.metrics.awaiting_model_response is False
+
+
+@pytest.mark.anyio
+async def test_audio_in_sends_voiced_chunk_and_trailing_silence() -> None:
+    sm = DirectSessionManager()
+    session = DirectSession(
+        session_id="voice-gate-direct",
+        call_id=uuid.uuid4(),
+        phone="+79990001005",
+        capabilities=DirectSessionCapabilities(audio_in=True, real_audio_in=True),
+    )
+    session.gemini_client = MockGeminiLiveClient(
+        on_text=lambda *_: None,
+        on_audio=lambda *_: None,
+        on_close=lambda: None,
+    )
+    voiced = (int(3000).to_bytes(2, "little", signed=True)) * 320
+    silence = b"\x00" * 640
+
+    await session.audio_in_queue.put((voiced, asyncio.get_running_loop().time()))
+    await session.audio_in_queue.put((silence, asyncio.get_running_loop().time()))
+    await sm._drain_audio_in_queue(session)
+
+    assert session.gemini_client.sent_audio_chunks == [voiced, silence]
+    assert session.metrics.inbound_silence_chunks_dropped == 0
+    assert session.metrics.awaiting_model_response is True
+
+
+@pytest.mark.anyio
 async def test_session_capabilities_audio_in_only_mode(test_session_factory):
     old_gem_audio = settings.gemini_audio_output_enabled
     old_gem_audio_in = settings.gemini_audio_input_enabled
