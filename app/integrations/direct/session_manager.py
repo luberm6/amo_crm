@@ -1388,8 +1388,13 @@ class DirectSessionManager:
             chunk, enqueued_at = session.audio_in_queue.get_nowait()
             stats = pcm16le_stats(chunk)
             now = time.perf_counter()
+            is_voiced = (
+                stats["rms"] >= _AUDIO_IN_VOICE_RMS_THRESHOLD
+                or stats["peak"] >= _AUDIO_IN_VOICE_PEAK_THRESHOLD
+            )
+            # Echo suppression must NOT suppress actual user voice, only comfort noise/silence
             suppress_until = session.metrics.suppress_inbound_until
-            if suppress_until is not None and now <= suppress_until:
+            if not is_voiced and suppress_until is not None and now <= suppress_until:
                 drained += 1
                 session.metrics.inbound_echo_chunks_suppressed += 1
                 session.metrics.inbound_chunks_dropped += 1
@@ -1410,10 +1415,6 @@ class DirectSessionManager:
                         first_bytes_hex=stats["first_bytes_hex"],
                     )
                 continue
-            is_voiced = (
-                stats["rms"] >= _AUDIO_IN_VOICE_RMS_THRESHOLD
-                or stats["peak"] >= _AUDIO_IN_VOICE_PEAK_THRESHOLD
-            )
             if is_voiced:
                 session.metrics.inbound_voice_tail_until = (
                     now + _AUDIO_IN_TRAILING_SILENCE_SECONDS

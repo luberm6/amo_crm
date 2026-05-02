@@ -419,7 +419,8 @@ async def test_audio_in_sends_voiced_chunk_and_trailing_silence() -> None:
 
 
 @pytest.mark.anyio
-async def test_audio_in_suppresses_echo_during_assistant_playback() -> None:
+async def test_audio_in_preserves_user_voice_even_during_echo_suppression_window() -> None:
+    """Echo suppression must NOT suppress real user voice, only comfort noise."""
     sm = DirectSessionManager()
     session = DirectSession(
         session_id="echo-suppression-direct",
@@ -433,15 +434,17 @@ async def test_audio_in_suppresses_echo_during_assistant_playback() -> None:
         on_close=lambda: None,
     )
     session.metrics.suppress_inbound_until = time.perf_counter() + 10.0
-    echo = (int(9000).to_bytes(2, "little", signed=True)) * 320
 
-    await session.audio_in_queue.put((echo, asyncio.get_running_loop().time()))
+    # High amplitude voice (user speaking)
+    user_voice = (int(9000).to_bytes(2, "little", signed=True)) * 320
+
+    await session.audio_in_queue.put((user_voice, asyncio.get_running_loop().time()))
     await sm._drain_audio_in_queue(session)
 
-    assert session.gemini_client.sent_audio_chunks == []
-    assert session.metrics.inbound_echo_chunks_suppressed == 1
-    assert session.metrics.inbound_chunks_dropped == 1
-    assert session.metrics.awaiting_model_response is False
+    # User voice should NOT be suppressed, even during echo suppression window
+    assert len(session.gemini_client.sent_audio_chunks) == 1
+    assert session.metrics.inbound_echo_chunks_suppressed == 0
+    assert session.metrics.inbound_chunks_dropped == 0
 
 
 @pytest.mark.anyio
