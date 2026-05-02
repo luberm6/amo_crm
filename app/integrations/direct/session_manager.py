@@ -137,6 +137,7 @@ _AUDIO_LOOP_ACTIVE_SLEEP_SECONDS = 0.002
 _AUDIO_IN_VOICE_RMS_THRESHOLD = 0.012
 _AUDIO_IN_VOICE_PEAK_THRESHOLD = 0.04
 _AUDIO_IN_TRAILING_SILENCE_SECONDS = 0.8
+_AUDIO_IN_ECHO_SUPPRESSION_TAIL_SECONDS = 1.0
 
 # Gemini Live outputs PCM at 24000 Hz; the browser pipeline expects 16000 Hz.
 _GEMINI_AUDIO_OUTPUT_RATE = 24000
@@ -238,6 +239,8 @@ class DirectSessionMetrics:
     inbound_probe_received_logs: int = 0
     inbound_probe_sent_logs: int = 0
     inbound_silence_drop_logs: int = 0
+    inbound_echo_chunks_suppressed: int = 0
+    inbound_echo_suppression_logs: int = 0
     outbound_chunks_enqueued: int = 0
     outbound_chunks_played: int = 0
     outbound_chunks_dropped: int = 0
@@ -261,6 +264,7 @@ class DirectSessionMetrics:
     tts_turn_id_last: Optional[str] = None
     last_inbound_sent_at: Optional[float] = None
     inbound_voice_tail_until: Optional[float] = None
+    suppress_inbound_until: Optional[float] = None
     last_model_request_at: Optional[float] = None
     awaiting_model_response: bool = False
     model_turn_active: bool = False  # True while Gemini is mid-turn (first audio → turn_complete/interrupted)
@@ -1384,6 +1388,28 @@ class DirectSessionManager:
             chunk, enqueued_at = session.audio_in_queue.get_nowait()
             stats = pcm16le_stats(chunk)
             now = time.perf_counter()
+            suppress_until = session.metrics.suppress_inbound_until
+            if suppress_until is not None and now <= suppress_until:
+                drained += 1
+                session.metrics.inbound_echo_chunks_suppressed += 1
+                session.metrics.inbound_chunks_dropped += 1
+                inc_direct_audio_in("dropped")
+                if session.metrics.inbound_echo_suppression_logs < 8:
+                    session.metrics.inbound_echo_suppression_logs += 1
+                    log.info(
+                        "session_manager.audio_in_echo_suppressed",
+                        call_id=str(session.call_id),
+                        session_id=session.session_id,
+                        suppressed_count=session.metrics.inbound_echo_chunks_suppressed,
+                        suppress_remaining_ms=round((suppress_until - now) * 1000, 2),
+                        byte_length=len(chunk),
+                        queue_depth=session.audio_in_queue.qsize(),
+                        rms=stats["rms"],
+                        peak=stats["peak"],
+                        silence_ratio=stats["silence_ratio"],
+                        first_bytes_hex=stats["first_bytes_hex"],
+                    )
+                continue
             is_voiced = (
                 stats["rms"] >= _AUDIO_IN_VOICE_RMS_THRESHOLD
                 or stats["peak"] >= _AUDIO_IN_VOICE_PEAK_THRESHOLD
@@ -1451,6 +1477,19 @@ class DirectSessionManager:
         while not session.audio_out_queue.empty() and drained < _AUDIO_OUT_DRAIN_BATCH_MAX:
             item = session.audio_out_queue.get_nowait()
             await session.audio_bridge.audio_out(item.chunk)
+            if session.capabilities.audio_in and item.chunk:
+                playback_seconds = (
+                    pcm16_duration_ms_for_bytes(len(item.chunk)) / 1000.0
+                )
+                suppress_until = (
+                    time.perf_counter()
+                    + playback_seconds
+                    + _AUDIO_IN_ECHO_SUPPRESSION_TAIL_SECONDS
+                )
+                session.metrics.suppress_inbound_until = max(
+                    session.metrics.suppress_inbound_until or 0.0,
+                    suppress_until,
+                )
             drained += 1
             session.metrics.outbound_chunks_played += 1
             inc_direct_audio_out("played", item.source)

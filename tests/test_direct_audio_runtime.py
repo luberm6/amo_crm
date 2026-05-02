@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from unittest.mock import patch
 
@@ -415,6 +416,62 @@ async def test_audio_in_sends_voiced_chunk_and_trailing_silence() -> None:
     assert session.gemini_client.sent_audio_chunks == [voiced, silence]
     assert session.metrics.inbound_silence_chunks_dropped == 0
     assert session.metrics.awaiting_model_response is True
+
+
+@pytest.mark.anyio
+async def test_audio_in_suppresses_echo_during_assistant_playback() -> None:
+    sm = DirectSessionManager()
+    session = DirectSession(
+        session_id="echo-suppression-direct",
+        call_id=uuid.uuid4(),
+        phone="+79990001006",
+        capabilities=DirectSessionCapabilities(audio_in=True, real_audio_in=True),
+    )
+    session.gemini_client = MockGeminiLiveClient(
+        on_text=lambda *_: None,
+        on_audio=lambda *_: None,
+        on_close=lambda: None,
+    )
+    session.metrics.suppress_inbound_until = time.perf_counter() + 10.0
+    echo = (int(9000).to_bytes(2, "little", signed=True)) * 320
+
+    await session.audio_in_queue.put((echo, asyncio.get_running_loop().time()))
+    await sm._drain_audio_in_queue(session)
+
+    assert session.gemini_client.sent_audio_chunks == []
+    assert session.metrics.inbound_echo_chunks_suppressed == 1
+    assert session.metrics.inbound_chunks_dropped == 1
+    assert session.metrics.awaiting_model_response is False
+
+
+@pytest.mark.anyio
+async def test_audio_out_sets_echo_suppression_window_for_full_duplex() -> None:
+    sm = DirectSessionManager()
+    bridge = _AudioBridge()
+    session = DirectSession(
+        session_id="echo-window-direct",
+        call_id=uuid.uuid4(),
+        phone="+79990001007",
+        audio_bridge=bridge,
+        capabilities=DirectSessionCapabilities(
+            mode="full_duplex",
+            text_only=False,
+            audio_in=True,
+            audio_out=True,
+            full_duplex=True,
+            real_audio_in=True,
+            real_audio_out=True,
+            real_full_duplex=True,
+        ),
+    )
+    now = time.perf_counter()
+
+    sm._enqueue_audio_out(session, b"\x11" * 640, "tts_primary")
+    await sm._drain_audio_out_queue(session)
+
+    assert bridge.played == [b"\x11" * 640]
+    assert session.metrics.suppress_inbound_until is not None
+    assert session.metrics.suppress_inbound_until > now
 
 
 @pytest.mark.anyio
