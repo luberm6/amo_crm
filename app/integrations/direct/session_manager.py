@@ -227,6 +227,8 @@ class DirectSessionMetrics:
     inbound_chunks_received: int = 0
     inbound_chunks_sent_to_model: int = 0
     inbound_chunks_dropped: int = 0
+    inbound_probe_received_logs: int = 0
+    inbound_probe_sent_logs: int = 0
     outbound_chunks_enqueued: int = 0
     outbound_chunks_played: int = 0
     outbound_chunks_dropped: int = 0
@@ -1154,6 +1156,21 @@ class DirectSessionManager:
     async def _enqueue_audio_in(self, session: DirectSession, chunk: bytes) -> None:
         session.metrics.inbound_chunks_received += 1
         inc_direct_audio_in("received")
+        if session.metrics.inbound_probe_received_logs < 8:
+            session.metrics.inbound_probe_received_logs += 1
+            stats = pcm16le_stats(chunk)
+            log.info(
+                "session_manager.audio_in_received_probe",
+                call_id=str(session.call_id),
+                session_id=session.session_id,
+                chunk_index=session.metrics.inbound_chunks_received,
+                byte_length=len(chunk),
+                queue_depth=session.audio_in_queue.qsize(),
+                rms=stats["rms"],
+                peak=stats["peak"],
+                silence_ratio=stats["silence_ratio"],
+                first_bytes_hex=stats["first_bytes_hex"],
+            )
         item = (chunk, time.perf_counter())
         try:
             session.audio_in_queue.put_nowait(item)
@@ -1359,6 +1376,21 @@ class DirectSessionManager:
             drained += 1
             session.metrics.inbound_chunks_sent_to_model += 1
             inc_direct_audio_in("sent_to_model")
+            if session.metrics.inbound_probe_sent_logs < 8:
+                session.metrics.inbound_probe_sent_logs += 1
+                stats = pcm16le_stats(chunk)
+                log.info(
+                    "session_manager.audio_in_sent_to_model_probe",
+                    call_id=str(session.call_id),
+                    session_id=session.session_id,
+                    chunk_index=session.metrics.inbound_chunks_sent_to_model,
+                    byte_length=len(chunk),
+                    queue_depth=session.audio_in_queue.qsize(),
+                    rms=stats["rms"],
+                    peak=stats["peak"],
+                    silence_ratio=stats["silence_ratio"],
+                    first_bytes_hex=stats["first_bytes_hex"],
+                )
             session.metrics.inbound_audio_latency_ms_last = (
                 (time.perf_counter() - enqueued_at) * 1000
             )
