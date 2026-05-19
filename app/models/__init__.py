@@ -13,6 +13,7 @@ from app.models.telephony_line import TelephonyLine
 from app.models.transcript import TranscriptEntry, TranscriptRole
 from app.models.transfer import TransferRecord, TransferStatus
 from app.models.vapi_event import VapiEventLog
+from app.models.widget import WidgetConfig, WidgetLead
 
 __all__ = [
     "Call",
@@ -33,4 +34,6 @@ __all__ = [
     "TransferRecord",
     "TransferStatus",
     "VapiEventLog",
+    "WidgetConfig",
+    "WidgetLead",
 ]

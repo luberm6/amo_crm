@@ -116,6 +116,16 @@ class AbstractSessionStore(ABC):
         Returns True if the session existed and was updated.
         """
 
+    @abstractmethod
+    async def delete(self, session_id: str) -> None:
+        """
+        Remove all stored state for a terminated session.
+
+        Called by SessionCoordinator.release_session() after a session ends.
+        Implementations must remove metadata, lock entries, and steering queues/channels.
+        Safe to call even if the session_id is unknown (no-op).
+        """
+
     # ── Ownership lock (distributed lease) ───────────────────────────────────
 
     @abstractmethod
@@ -285,6 +295,13 @@ class InMemorySessionStore(AbstractSessionStore):
         async with self._lock:
             return list(self._active)
 
+    async def delete(self, session_id: str) -> None:
+        async with self._lock:
+            self._meta.pop(session_id, None)
+            self._locks.pop(session_id, None)
+            self._steer_queues.pop(session_id, None)
+            self._active.discard(session_id)
+
     # ── Steering ──────────────────────────────────────────────────────────────
 
     async def publish_steering(self, session_id: str, instruction: str) -> None:
@@ -423,6 +440,14 @@ return 0
     async def get_lock_owner(self, session_id: str) -> Optional[str]:
         key = self._LOCK_KEY.format(session_id)
         return await self._redis.get(key)
+
+    async def delete(self, session_id: str) -> None:
+        # Meta key already has TTL=24h, but delete eagerly to reclaim memory.
+        # Lock is already released by release_lock(); steering is pub/sub (no storage).
+        meta_key = self._META_KEY.format(session_id)
+        lock_key = self._LOCK_KEY.format(session_id)
+        await self._redis.delete(meta_key, lock_key)
+        await self._redis.srem(self._ACTIVE_KEY, session_id)
 
     async def add_to_active(self, session_id: str) -> None:
         await self._redis.sadd(self._ACTIVE_KEY, session_id)

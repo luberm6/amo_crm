@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import AsyncIterator, Optional
 
 from app.core.audio_utils import dump_pcm16le_wav, pcm16le_stats
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.integrations.telephony.audio_bridge import AbstractAudioBridge
 from app.integrations.telephony.base import TelephonyChannel
@@ -108,6 +109,7 @@ class BrowserAudioBridge(AbstractAudioBridge):
                     artifact_path=artifact_path,
                     byte_length=len(self._outbound_tts_bytes),
                 )
+            self._outbound_tts_bytes.clear()
         log.info(
             "browser_bridge.closed",
             call_id=str(self.call_id),
@@ -147,7 +149,7 @@ class BrowserAudioBridge(AbstractAudioBridge):
             return
         self._outbound_chunks += 1
         self._last_client_event_at = time.time()
-        if self.active_voice_path and self.active_voice_path.startswith("tts"):
+        if settings.audio_debug_dump_enabled and self.active_voice_path and self.active_voice_path.startswith("tts"):
             self._outbound_tts_bytes.extend(pcm)
         try:
             self._outbound_queue.put_nowait(pcm)

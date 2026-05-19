@@ -21,16 +21,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
         response: Response = await call_next(request)
-        response.headers.update(
-            {
-                "X-Content-Type-Options": "nosniff",
-                "X-Frame-Options": "DENY",
-                "X-XSS-Protection": "1; mode=block",
-                "Referrer-Policy": "strict-origin-when-cross-origin",
-                # CSP: API-only backend — no scripts, no styles needed
-                "Content-Security-Policy": "default-src 'none'",
-                # Strict Transport Security (only relevant behind HTTPS terminator)
-                "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-            }
-        )
+        headers = {
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "X-XSS-Protection": "1; mode=block",
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+            # Strict Transport Security (only relevant behind HTTPS terminator)
+            "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        }
+        # CSP is skipped for widget files — browsers must execute them on any host page.
+        if request.url.path not in {"/widget.js", "/widget_test.html"}:
+            headers["Content-Security-Policy"] = "default-src 'none'"
+        response.headers.update(headers)
         return response

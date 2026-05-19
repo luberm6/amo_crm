@@ -122,9 +122,9 @@ async def test_release_session_cleans_up() -> None:
     assert await store.get_lock_owner(session_id) is None
     # Removed from active
     assert session_id not in await store.get_active_ids()
-    # Status updated
+    # Metadata deleted — delete() purges it to prevent in-memory accumulation
     meta = await store.get(session_id)
-    assert meta.status == SessionStatus.TERMINATED
+    assert meta is None
     # Heartbeat task removed
     assert session_id not in coord._heartbeat_tasks
 

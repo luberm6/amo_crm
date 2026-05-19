@@ -70,14 +70,24 @@ def _get_or_create_session_coordinator() -> "SessionCoordinator":  # type: ignor
         log.info("session_coordinator.using_redis_store")
     else:
         store = InMemorySessionStore()
-        log.warning(
-            "session_coordinator.using_in_memory_store",
-            message=(
-                "Redis unavailable — DirectSessionManager falls back to in-process "
-                "store.  Sessions will be lost on restart and multi-worker deployment "
-                "is unsafe."
-            ),
-        )
+        if settings.is_production:
+            log.error(
+                "session_coordinator.in_memory_store_in_production",
+                message=(
+                    "Redis unavailable in PRODUCTION — falling back to InMemorySessionStore. "
+                    "Terminated sessions will accumulate in RAM and cause OOM kills. "
+                    "Fix Redis connectivity immediately."
+                ),
+            )
+        else:
+            log.warning(
+                "session_coordinator.using_in_memory_store",
+                message=(
+                    "Redis unavailable — DirectSessionManager falls back to in-process "
+                    "store.  Sessions will be lost on restart and multi-worker deployment "
+                    "is unsafe."
+                ),
+            )
 
     worker_id = f"worker-{_uuid.uuid4().hex[:12]}"
     _session_coordinator = SessionCoordinator(store=store, worker_id=worker_id)

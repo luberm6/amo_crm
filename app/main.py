@@ -12,6 +12,8 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import asyncio
+import resource
+import sys
 from urllib.parse import urljoin
 
 import httpx
@@ -26,6 +28,7 @@ from app.core.exceptions import AppError
 from app.core.logging import get_logger, setup_logging
 from app.core.redis_client import close_redis, init_redis
 from app.integrations.direct.voice_strategy import inspect_voice_strategy
+from app.middleware.public_cors import PublicCORSMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_id import RequestIdMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -35,10 +38,18 @@ from app.db.session import AsyncSessionLocal
 log = get_logger(__name__)
 
 
+def _log_process_memory(label: str) -> None:
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    # Linux returns KB; macOS returns bytes
+    rss_mb = rss / 1024 if sys.platform != "darwin" else rss / (1024 * 1024)
+    log.info(label, rss_mb=round(rss_mb, 1))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Run startup tasks before yield, shutdown tasks after."""
     setup_logging()
+    _log_process_memory("app_startup_memory")
     if settings.edge_proxy_target_url:
         log.info(
             "app_startup_proxy_mode",
@@ -153,6 +164,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             name="manager_restore_loop",
         )
 
+    _log_process_memory("app_ready_memory")
     yield
     if manager_restore_task is not None:
         manager_restore_task.cancel()
@@ -160,6 +172,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await manager_restore_task
         except asyncio.CancelledError:
             pass
+    _log_process_memory("app_shutdown_memory")
     await close_redis()
     log.info("app_shutdown")
 
@@ -177,7 +190,9 @@ def create_app() -> FastAPI:
     # ── Middleware (applied in reverse registration order) ─────────────────────
     # RateLimit is outermost → added first (executes first, catches IP floods)
     app.add_middleware(RateLimitMiddleware)
-    # SecurityHeaders is next → added second
+    # PublicCORS allows cross-origin access to /public/ and /widget.js from any site
+    app.add_middleware(PublicCORSMiddleware)
+    # SecurityHeaders is next → added after PublicCORS
     app.add_middleware(SecurityHeadersMiddleware)
     # RequestId is innermost → added third (executes last)
     app.add_middleware(RequestIdMiddleware)
@@ -302,6 +317,21 @@ def create_app() -> FastAPI:
                 media_type=upstream_response.headers.get("content-type"),
             )
         return await call_next(request)
+
+    # ── Static widget files ────────────────────────────────────────────────────
+    import os
+    from fastapi.responses import FileResponse
+
+    @app.get("/widget.js", include_in_schema=False)
+    async def serve_widget_js() -> FileResponse:
+        path = os.path.join(os.path.dirname(__file__), "static", "widget.js")
+        return FileResponse(path, media_type="application/javascript")
+
+    if not settings.is_production:
+        @app.get("/widget_test.html", include_in_schema=False)
+        async def serve_widget_test() -> FileResponse:
+            path = os.path.join(os.path.dirname(__file__), "static", "widget_test.html")
+            return FileResponse(path, media_type="text/html")
 
     # ── Routers ────────────────────────────────────────────────────────────────
     app.include_router(api_router)

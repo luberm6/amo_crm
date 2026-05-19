@@ -177,6 +177,7 @@ class SessionCoordinator:
         await self._store.update_status(session_id, SessionStatus.TERMINATED)
         released = await self._store.release_lock(session_id, self._worker_id)
         await self._store.remove_from_active(session_id)
+        await self._store.delete(session_id)
 
         log.info(
             "session_coordinator.released",

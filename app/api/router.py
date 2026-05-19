@@ -3,6 +3,7 @@ Main API router — registers all versioned sub-routers.
 Adding a new resource means adding one line here.
 """
 from fastapi import APIRouter
+from app.api.public import widget as public_widget
 from app.api.v1 import (
     admin_auth,
     agent_profile_settings,
@@ -16,6 +17,7 @@ from app.api.v1 import (
     telephony,
     transfers,
     webhooks,
+    widgets,
 )
 api_router = APIRouter()
 # Health checks are not versioned — infrastructure tools expect stable paths
@@ -30,6 +32,9 @@ api_router.include_router(telephony.router, prefix="/v1")
 api_router.include_router(calls.router, prefix="/v1")
 api_router.include_router(browser_calls.router, prefix="/v1")
 api_router.include_router(transfers.router, prefix="/v1")
+api_router.include_router(widgets.router, prefix="/v1")
 # Webhooks are not versioned — Vapi has the URL baked into assistant config
 api_router.include_router(webhooks.router)
 api_router.include_router(mango_webhooks.router)
+# Public widget endpoints — no admin auth, called from third-party websites
+api_router.include_router(public_widget.router)

@@ -131,6 +131,10 @@ class Settings(BaseSettings):
     #   https://amo-crm-admin.onrender.com,https://staging-admin.example.com
     admin_cors_origins: str = ""
 
+    # ── Widget ───────────────────────────────────────────────────────────────
+    widget_enabled: bool = True
+    widget_webhook_timeout_seconds: float = 10.0
+
     # ── App ───────────────────────────────────────────────────────────────────
     environment: Literal["development", "production", "testing"] = "development"
     log_level: str = "INFO"

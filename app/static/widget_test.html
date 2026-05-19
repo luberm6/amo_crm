@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AMO Voice Widget — Тест</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 700px; margin: 60px auto; padding: 0 24px; color: #1a1a1a; }
+    h1 { color: #7c3aed; }
+    code { background: #f4f0ff; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+    pre { background: #f4f0ff; padding: 16px; border-radius: 8px; overflow-x: auto; }
+    .note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px 16px; border-radius: 4px; margin: 20px 0; }
+  </style>
+</head>
+<body>
+  <h1>🎙 AMO Voice Widget — Тестовая страница</h1>
+
+  <div class="note">
+    <strong>Только для разработки.</strong>
+    Эта страница не отображается в production-окружении.
+  </div>
+
+  <p>Замените токен ниже на реальный <code>widget_token</code> из <code>POST /v1/widgets</code>:</p>
+
+  <pre>&lt;script src="/widget.js" data-widget-token="wgt_REPLACE_ME"&gt;&lt;/script&gt;</pre>
+
+  <p>Виджет появится в правом нижнем углу. Нажмите на кнопку с микрофоном для начала голосовой сессии.</p>
+
+  <h2>Шаги тестирования</h2>
+  <ol>
+    <li>Создать агента в <a href="/docs#/agents/create_agent_v1_agents__post" target="_blank">POST /v1/agents</a></li>
+    <li>Создать виджет в <a href="/docs#/widgets/create_widget_v1_widgets__post" target="_blank">POST /v1/widgets</a> с <code>agent_profile_id</code></li>
+    <li>Скопировать <code>widget_token</code> из ответа</li>
+    <li>Вставить токен в атрибут <code>data-widget-token</code> скрипта ниже</li>
+    <li>Перезагрузить страницу</li>
+  </ol>
+
+  <!-- ЗАМЕНИТЕ wgt_REPLACE_ME на реальный токен -->
+  <script src="/widget.js" data-widget-token="wgt_REPLACE_ME"></script>
+</body>
+</html>
