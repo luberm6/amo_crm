@@ -125,45 +125,43 @@ def get_browser_registry() -> "BrowserSessionRegistry":  # type: ignore
 def _build_voice_provider():
     from app.integrations.voice.stub import StubVoiceProvider
 
-    # Cartesia takes priority when configured — lower latency than ElevenLabs
+    # Priority: Cartesia > Yandex > Sber > T-Bank > ElevenLabs > Stub
     if settings.cartesia_configured:
         from app.integrations.voice.cartesia import CartesiaClient
-
         voice = CartesiaClient(config_source="env")
-        log.info(
-            "deps.direct_engine.using_cartesia_voice",
-            provider="cartesia",
-            config_source="env",
-            api_key_set=bool(settings.cartesia_api_key),
-            voice_id_set=bool(settings.cartesia_voice_id),
-        )
+        log.info("deps.direct_engine.using_voice_provider", provider="cartesia")
+    elif settings.yandex_speechkit_configured:
+        from app.integrations.voice.yandex_speechkit import YandexSpeechKitClient
+        voice = YandexSpeechKitClient(config_source="env")
+        log.info("deps.direct_engine.using_voice_provider", provider="yandex_speechkit")
+    elif settings.sber_salutespeech_configured:
+        from app.integrations.voice.sber_salutespeech import SberSaluteSpeechClient
+        voice = SberSaluteSpeechClient(config_source="env")
+        log.info("deps.direct_engine.using_voice_provider", provider="sber_salutespeech")
+    elif settings.tbank_voicekit_configured:
+        from app.integrations.voice.tbank_voicekit import TBankVoiceKitClient
+        voice = TBankVoiceKitClient(config_source="env")
+        log.info("deps.direct_engine.using_voice_provider", provider="tbank_voicekit")
     elif settings.elevenlabs_configured:
         from app.integrations.voice.elevenlabs import ElevenLabsClient
-
         voice = ElevenLabsClient(config_source="env")
-        log.info(
-            "deps.direct_engine.using_elevenlabs_voice",
-            provider="elevenlabs",
-            config_source="env",
-            api_key_set=bool(settings.elevenlabs_api_key),
-            voice_id_set=bool(settings.elevenlabs_voice_id),
-        )
+        log.info("deps.direct_engine.using_voice_provider", provider="elevenlabs")
     else:
         voice = StubVoiceProvider()
-        log.info(
-            "deps.direct_engine.using_stub_voice",
-            provider="stub",
-            elevenlabs_enabled=settings.elevenlabs_enabled,
-            cartesia_enabled=settings.cartesia_enabled,
-            api_key_set=bool(settings.elevenlabs_api_key),
-            voice_id_set=bool(settings.elevenlabs_voice_id),
-        )
+        log.info("deps.direct_engine.using_voice_provider", provider="stub")
+
+    _any_tts_configured = any([
+        settings.cartesia_configured,
+        settings.yandex_speechkit_configured,
+        settings.sber_salutespeech_configured,
+        settings.tbank_voicekit_configured,
+        settings.elevenlabs_configured,
+    ])
 
     if (
         settings.is_production
         and settings.direct_voice_strategy in {"tts_primary", "experimental_hybrid"}
-        and not settings.elevenlabs_configured
-        and not settings.cartesia_configured
+        and not _any_tts_configured
     ):
         log.warning(
             "deps.direct_engine.stub_voice_in_production",

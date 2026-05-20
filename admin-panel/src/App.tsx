@@ -10,6 +10,7 @@ import KnowledgeBasePage from './pages/KnowledgeBasePage'
 import LoginPage from './pages/LoginPage'
 import PromptsPage from './pages/PromptsPage'
 import ProvidersPage from './pages/ProvidersPage'
+import VoiceLabPage from './pages/VoiceLabPage'
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
           <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
           <Route path="/browser-call" element={<BrowserCallPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
+          <Route path="/voice-lab" element={<VoiceLabPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

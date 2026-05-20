@@ -16,6 +16,7 @@ from app.api.v1 import (
     providers,
     telephony,
     transfers,
+    tts,
     webhooks,
     widgets,
 )
@@ -33,6 +34,7 @@ api_router.include_router(calls.router, prefix="/v1")
 api_router.include_router(browser_calls.router, prefix="/v1")
 api_router.include_router(transfers.router, prefix="/v1")
 api_router.include_router(widgets.router, prefix="/v1")
+api_router.include_router(tts.router, prefix="/v1")
 # Webhooks are not versioned — Vapi has the URL baked into assistant config
 api_router.include_router(webhooks.router)
 api_router.include_router(mango_webhooks.router)

@@ -65,7 +65,7 @@ PROVIDER_SPECS: dict[str, ProviderSpec] = {
         provider="gemini",
         display_name="Gemini",
         config_defaults={
-            "model_id": "gemini-2.5-flash-native-audio-preview-12-2025",
+            "model_id": "gemini-3.1-flash-live-preview",
             "api_version": "v1beta",
         },
         config_fields=("model_id", "api_version"),
@@ -110,6 +110,48 @@ PROVIDER_SPECS: dict[str, ProviderSpec] = {
             "Cartesia provides ultra-low-latency TTS (~80–150 ms). "
             "Set CARTESIA_ENABLED=true + CARTESIA_API_KEY + CARTESIA_VOICE_ID to activate. "
             "Cartesia takes priority over ElevenLabs when both are enabled."
+        ),
+        supports_remote_validation=True,
+    ),
+    "yandex_speechkit": ProviderSpec(
+        provider="yandex_speechkit",
+        display_name="Yandex SpeechKit",
+        config_defaults={"voice": "alena", "emotion": "neutral", "enabled": True},
+        config_fields=("voice", "emotion", "enabled"),
+        secret_fields=("api_key", "folder_id"),
+        required_for_validation=("api_key",),
+        safe_mode_note=(
+            "Yandex SpeechKit — Russian TTS with natural intonation. "
+            "Set YANDEX_SPEECHKIT_ENABLED=true + YANDEX_SPEECHKIT_API_KEY to activate. "
+            "Get API key at console.cloud.yandex.ru."
+        ),
+        supports_remote_validation=True,
+    ),
+    "sber_salutespeech": ProviderSpec(
+        provider="sber_salutespeech",
+        display_name="Sber SaluteSpeech",
+        config_defaults={"voice": "Nec_24000", "scope": "SALUTE_SPEECH_PERS", "enabled": True},
+        config_fields=("voice", "scope", "enabled"),
+        secret_fields=("client_id", "client_secret"),
+        required_for_validation=("client_id", "client_secret"),
+        safe_mode_note=(
+            "Sber SaluteSpeech — Russian neural TTS with SSML support. "
+            "Set SBER_SALUTESPEECH_ENABLED=true + credentials to activate. "
+            "Get credentials at developers.sber.ru/portal/products/smartspeech."
+        ),
+        supports_remote_validation=True,
+    ),
+    "tbank_voicekit": ProviderSpec(
+        provider="tbank_voicekit",
+        display_name="T-Bank VoiceKit",
+        config_defaults={"voice": "alyona", "endpoint": "https://api.tinkoff.ai", "enabled": True},
+        config_fields=("voice", "endpoint", "enabled"),
+        secret_fields=("api_key", "secret_key"),
+        required_for_validation=("api_key",),
+        safe_mode_note=(
+            "T-Bank VoiceKit — Russian TTS via REST gateway. "
+            "Full access requires T-Bank enterprise account. "
+            "Set TBANK_VOICEKIT_ENABLED=true + TBANK_VOICEKIT_API_KEY to activate."
         ),
         supports_remote_validation=True,
     ),
@@ -342,6 +384,15 @@ class ProviderSettingsService:
         if spec.provider == "cartesia":
             await self._validate_cartesia(config, secrets)
             return ("Cartesia voice settings responded successfully.", True)
+        if spec.provider == "yandex_speechkit":
+            await self._validate_yandex(config, secrets)
+            return ("Yandex SpeechKit settings responded successfully.", True)
+        if spec.provider == "sber_salutespeech":
+            await self._validate_sber(config, secrets)
+            return ("Sber SaluteSpeech settings responded successfully.", True)
+        if spec.provider == "tbank_voicekit":
+            await self._validate_tbank(config, secrets)
+            return ("T-Bank VoiceKit settings responded successfully.", True)
         raise ProviderSettingsValidationError(f"Unsupported provider {spec.provider}")
 
     async def _validate_gemini(self, config: dict[str, Any], secrets: dict[str, str]) -> None:
@@ -414,6 +465,63 @@ class ProviderSettingsService:
             if body_preview:
                 message += f": {body_preview}"
             raise ProviderSettingsValidationError(message) from exc
+
+    async def _validate_yandex(self, config: dict[str, Any], secrets: dict[str, str]) -> None:
+        from app.integrations.voice.yandex_speechkit import YandexSpeechKitClient
+        client = YandexSpeechKitClient(
+            api_key=secrets.get("api_key", ""),
+            folder_id=secrets.get("folder_id", ""),
+            default_voice=config.get("voice", "alena"),
+            default_emotion=config.get("emotion", "neutral"),
+            enabled=True,
+            config_source="provider_settings",
+            timeout=10.0,
+        )
+        try:
+            await client.validate_tts_contract()
+        except EngineError as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            raise ProviderSettingsValidationError(
+                f"Yandex SpeechKit validation failed: {detail.get('body_preview', str(exc))}"
+            ) from exc
+
+    async def _validate_sber(self, config: dict[str, Any], secrets: dict[str, str]) -> None:
+        from app.integrations.voice.sber_salutespeech import SberSaluteSpeechClient
+        client = SberSaluteSpeechClient(
+            client_id=secrets.get("client_id", ""),
+            client_secret=secrets.get("client_secret", ""),
+            scope=config.get("scope", "SALUTE_SPEECH_PERS"),
+            default_voice=config.get("voice", "Nec_24000"),
+            enabled=True,
+            config_source="provider_settings",
+            timeout=15.0,
+        )
+        try:
+            await client.validate_tts_contract()
+        except EngineError as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            raise ProviderSettingsValidationError(
+                f"Sber SaluteSpeech validation failed: {detail.get('body_preview', str(exc))}"
+            ) from exc
+
+    async def _validate_tbank(self, config: dict[str, Any], secrets: dict[str, str]) -> None:
+        from app.integrations.voice.tbank_voicekit import TBankVoiceKitClient
+        client = TBankVoiceKitClient(
+            api_key=secrets.get("api_key", ""),
+            secret_key=secrets.get("secret_key", ""),
+            endpoint=config.get("endpoint", "https://api.tinkoff.ai"),
+            default_voice=config.get("voice", "alyona"),
+            enabled=True,
+            config_source="provider_settings",
+            timeout=10.0,
+        )
+        try:
+            await client.validate_tts_contract()
+        except EngineError as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            raise ProviderSettingsValidationError(
+                f"T-Bank VoiceKit validation failed: {detail.get('body_preview', str(exc))}"
+            ) from exc
 
     def _normalize_config(self, spec: ProviderSpec, config: dict[str, Any]) -> dict[str, Any]:
         normalized: dict[str, Any] = dict(spec.config_defaults)

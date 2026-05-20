@@ -435,6 +435,27 @@ class Settings(BaseSettings):
     # Set to true to activate Cartesia TTS (requires api_key + voice_id)
     cartesia_enabled: bool = False
 
+    # ── Yandex SpeechKit TTS (Russian, high-quality) ──────────────────────────
+    yandex_speechkit_api_key: str = ""
+    yandex_speechkit_folder_id: str = ""       # optional, needed for some auth methods
+    yandex_speechkit_voice: str = "alena"      # default voice
+    yandex_speechkit_emotion: str = "neutral"  # neutral | good | friendly | strict | whisper
+    yandex_speechkit_enabled: bool = False
+
+    # ── Sber SaluteSpeech TTS (Russian, neural voices) ────────────────────────
+    sber_salutespeech_client_id: str = ""
+    sber_salutespeech_client_secret: str = ""
+    sber_salutespeech_scope: str = "SALUTE_SPEECH_PERS"  # or SALUTE_SPEECH_CORP
+    sber_salutespeech_voice: str = "Nec_24000"
+    sber_salutespeech_enabled: bool = False
+
+    # ── T-Bank VoiceKit TTS (Russian, enterprise gRPC/REST) ───────────────────
+    tbank_voicekit_api_key: str = ""
+    tbank_voicekit_secret_key: str = ""
+    tbank_voicekit_endpoint: str = "https://api.tinkoff.ai"
+    tbank_voicekit_voice: str = "alyona"
+    tbank_voicekit_enabled: bool = False
+
     @property
     def vapi_configured(self) -> bool:
         """True when the minimum Vapi credentials are present."""
@@ -466,6 +487,22 @@ class Settings(BaseSettings):
             and self.cartesia_api_key
             and self.cartesia_voice_id
         )
+
+    @property
+    def yandex_speechkit_configured(self) -> bool:
+        return bool(self.yandex_speechkit_enabled and self.yandex_speechkit_api_key)
+
+    @property
+    def sber_salutespeech_configured(self) -> bool:
+        return bool(
+            self.sber_salutespeech_enabled
+            and self.sber_salutespeech_client_id
+            and self.sber_salutespeech_client_secret
+        )
+
+    @property
+    def tbank_voicekit_configured(self) -> bool:
+        return bool(self.tbank_voicekit_enabled and self.tbank_voicekit_api_key)
 
     @property
     def admin_auth_configured(self) -> bool:

@@ -7,6 +7,7 @@ const items = [
   { to: '/knowledge-base', label: 'База знаний' },
   { to: '/browser-call', label: 'Браузерный звонок' },
   { to: '/providers', label: 'Провайдеры' },
+  { to: '/voice-lab', label: '🎙 Voice Lab' },
 ]
 
 export default function Sidebar() {
