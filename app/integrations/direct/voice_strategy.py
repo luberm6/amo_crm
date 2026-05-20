@@ -181,20 +181,22 @@ def inspect_voice_strategy(
         return checks
 
     if strategy == "tts_primary":
-        if not cfg.elevenlabs_configured:
+        tts_provider_configured = cfg.elevenlabs_configured or cfg.cartesia_configured
+        if not tts_provider_configured:
             checks.append(
                 VoiceStrategyCheck(
                     name="voice_strategy_tts_primary",
                     status="fail",
-                    message="tts_primary requires ElevenLabs to be fully configured.",
+                    message="tts_primary requires a TTS provider (ElevenLabs or Cartesia) to be fully configured.",
                 )
             )
         else:
+            active_tts = "Cartesia" if cfg.cartesia_configured else "ElevenLabs"
             checks.append(
                 VoiceStrategyCheck(
                     name="voice_strategy_tts_primary",
                     status="pass",
-                    message="ElevenLabs is configured for tts_primary.",
+                    message=f"{active_tts} is configured for tts_primary.",
                 )
             )
 
