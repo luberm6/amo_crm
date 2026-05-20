@@ -125,7 +125,19 @@ def get_browser_registry() -> "BrowserSessionRegistry":  # type: ignore
 def _build_voice_provider():
     from app.integrations.voice.stub import StubVoiceProvider
 
-    if settings.elevenlabs_configured:
+    # Cartesia takes priority when configured — lower latency than ElevenLabs
+    if settings.cartesia_configured:
+        from app.integrations.voice.cartesia import CartesiaClient
+
+        voice = CartesiaClient(config_source="env")
+        log.info(
+            "deps.direct_engine.using_cartesia_voice",
+            provider="cartesia",
+            config_source="env",
+            api_key_set=bool(settings.cartesia_api_key),
+            voice_id_set=bool(settings.cartesia_voice_id),
+        )
+    elif settings.elevenlabs_configured:
         from app.integrations.voice.elevenlabs import ElevenLabsClient
 
         voice = ElevenLabsClient(config_source="env")
@@ -142,6 +154,7 @@ def _build_voice_provider():
             "deps.direct_engine.using_stub_voice",
             provider="stub",
             elevenlabs_enabled=settings.elevenlabs_enabled,
+            cartesia_enabled=settings.cartesia_enabled,
             api_key_set=bool(settings.elevenlabs_api_key),
             voice_id_set=bool(settings.elevenlabs_voice_id),
         )
@@ -150,6 +163,7 @@ def _build_voice_provider():
         settings.is_production
         and settings.direct_voice_strategy in {"tts_primary", "experimental_hybrid"}
         and not settings.elevenlabs_configured
+        and not settings.cartesia_configured
     ):
         log.warning(
             "deps.direct_engine.stub_voice_in_production",

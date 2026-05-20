@@ -427,6 +427,14 @@ class Settings(BaseSettings):
     # Set to true to activate ElevenLabs TTS (requires api_key + voice_id)
     elevenlabs_enabled: bool = False
 
+    # ── Cartesia TTS (optional, ultra-low-latency custom voice) ───────────────
+    # API key from cartesia.ai
+    cartesia_api_key: str = ""
+    # Voice ID — from Cartesia dashboard or after voice clone upload
+    cartesia_voice_id: str = ""
+    # Set to true to activate Cartesia TTS (requires api_key + voice_id)
+    cartesia_enabled: bool = False
+
     @property
     def vapi_configured(self) -> bool:
         """True when the minimum Vapi credentials are present."""
@@ -448,6 +456,15 @@ class Settings(BaseSettings):
             self.elevenlabs_enabled
             and self.elevenlabs_api_key
             and self.elevenlabs_voice_id
+        )
+
+    @property
+    def cartesia_configured(self) -> bool:
+        """True when Cartesia is fully configured and enabled."""
+        return bool(
+            self.cartesia_enabled
+            and self.cartesia_api_key
+            and self.cartesia_voice_id
         )
 
     @property

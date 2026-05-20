@@ -99,6 +99,20 @@ PROVIDER_SPECS: dict[str, ProviderSpec] = {
         safe_mode_note="Vapi settings are stored only as provider config. They do not change call routing by themselves.",
         supports_remote_validation=True,
     ),
+    "cartesia": ProviderSpec(
+        provider="cartesia",
+        display_name="Cartesia",
+        config_defaults={"voice_id": "", "enabled": True, "model_id": "sonic-2"},
+        config_fields=("voice_id", "enabled", "model_id"),
+        secret_fields=("api_key",),
+        required_for_validation=("api_key", "voice_id"),
+        safe_mode_note=(
+            "Cartesia provides ultra-low-latency TTS (~80–150 ms). "
+            "Set CARTESIA_ENABLED=true + CARTESIA_API_KEY + CARTESIA_VOICE_ID to activate. "
+            "Cartesia takes priority over ElevenLabs when both are enabled."
+        ),
+        supports_remote_validation=True,
+    ),
 }
 
 
@@ -325,6 +339,9 @@ class ProviderSettingsService:
         if spec.provider == "vapi":
             await self._validate_vapi(config, secrets)
             return ("Vapi assistant settings responded successfully.", True)
+        if spec.provider == "cartesia":
+            await self._validate_cartesia(config, secrets)
+            return ("Cartesia voice settings responded successfully.", True)
         raise ProviderSettingsValidationError(f"Unsupported provider {spec.provider}")
 
     async def _validate_gemini(self, config: dict[str, Any], secrets: dict[str, str]) -> None:
@@ -374,6 +391,29 @@ class ProviderSettingsService:
             raise ProviderSettingsValidationError(f"Vapi validation network error: {exc}") from exc
         if response.status_code >= 400:
             raise ProviderSettingsValidationError(f"Vapi validation failed with HTTP {response.status_code}.")
+
+    async def _validate_cartesia(self, config: dict[str, Any], secrets: dict[str, str]) -> None:
+        from app.integrations.voice.cartesia import CartesiaClient
+        client = CartesiaClient(
+            api_key=secrets["api_key"],
+            default_voice_id=config["voice_id"],
+            enabled=True,
+            config_source="provider_settings",
+            timeout=10.0,
+        )
+        try:
+            await client.validate_tts_contract()
+        except EngineError as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            stage = detail.get("stage", "unknown")
+            http_status = detail.get("http_status")
+            message = f"Cartesia validation failed at stage={stage}"
+            if http_status is not None:
+                message += f" with HTTP {http_status}"
+            body_preview = detail.get("body_preview")
+            if body_preview:
+                message += f": {body_preview}"
+            raise ProviderSettingsValidationError(message) from exc
 
     def _normalize_config(self, spec: ProviderSpec, config: dict[str, Any]) -> dict[str, Any]:
         normalized: dict[str, Any] = dict(spec.config_defaults)

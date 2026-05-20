@@ -117,6 +117,12 @@ services:
         sync: false
       - key: ELEVENLABS_VOICE_ID
         sync: false
+      - key: CARTESIA_ENABLED
+        value: "false"
+      - key: CARTESIA_API_KEY
+        sync: false
+      - key: CARTESIA_VOICE_ID
+        sync: false
       - key: TELEPHONY_PROVIDER
         value: auto
       - key: MEDIA_GATEWAY_ENABLED
