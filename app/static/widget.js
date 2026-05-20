@@ -112,6 +112,7 @@
   var STARTUP_FLUSH = 1024;
   var STEADY_FLUSH = 3072;
   var flushed = false;
+  var activeSources = []; // track all playing nodes so we can stop them instantly
 
   function schedulePcm16(pcm16Buffer) {
     if (!audioCtx) return;
@@ -126,6 +127,12 @@
     var source = audioCtx.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(audioCtx.destination);
+
+    activeSources.push(source);
+    source.onended = function () {
+      var idx = activeSources.indexOf(source);
+      if (idx !== -1) activeSources.splice(idx, 1);
+    };
 
     var now = audioCtx.currentTime;
     var start = Math.max(now, playbackCursor);
@@ -166,6 +173,11 @@
   }
 
   function cancelPendingPlayback() {
+    // Stop all currently playing AudioBufferSourceNodes immediately
+    activeSources.forEach(function (s) {
+      try { s.stop(); } catch (e) {}
+    });
+    activeSources = [];
     pendingChunks = [];
     flushed = false;
     if (audioCtx) {
