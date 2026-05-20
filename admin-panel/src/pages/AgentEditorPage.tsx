@@ -126,7 +126,7 @@ type AgentFormState = {
   greeting_text: string
   transfer_rules: string
   prohibited_promises: string
-  voiceProvider: 'elevenlabs' | 'gemini'
+  voiceProvider: 'elevenlabs' | 'gemini' | 'cartesia'
   telephonyRemoteLineId: string
   telephonyExtension: string
   userLocale: string
@@ -199,6 +199,13 @@ function toFormState(settings: AgentSettingsRead): AgentFormState {
 
 function voiceStrategyFromProvider(provider: AgentFormState['voiceProvider']): 'gemini_primary' | 'tts_primary' {
   return provider === 'gemini' ? 'gemini_primary' : 'tts_primary'
+}
+
+// Map provider name to display label shown in summary
+const VOICE_PROVIDER_LABELS: Record<AgentFormState['voiceProvider'], string> = {
+  gemini: 'Gemini',
+  elevenlabs: 'ElevenLabs',
+  cartesia: 'Cartesia',
 }
 
 function buildAgentUserSettings(form: AgentFormState): Record<string, unknown> {
@@ -934,12 +941,21 @@ export default function AgentEditorPage() {
                   </button>
                   <button
                     type="button"
+                    className={`voice-toggle-btn${form.voiceProvider === 'cartesia' ? ' active' : ''}`}
+                    onClick={() => updateField('voiceProvider', 'cartesia')}
+                  >
+                    <span className="voice-toggle-icon">⚡</span>
+                    <span className="voice-toggle-title">Голос Cartesia</span>
+                    <span className="voice-toggle-desc">Клон голоса, ~100 мс / `tts_primary`</span>
+                  </button>
+                  <button
+                    type="button"
                     className={`voice-toggle-btn${form.voiceProvider === 'elevenlabs' ? ' active' : ''}`}
                     onClick={() => updateField('voiceProvider', 'elevenlabs')}
                   >
                     <span className="voice-toggle-icon">🎙️</span>
                     <span className="voice-toggle-title">Голос ElevenLabs</span>
-                    <span className="voice-toggle-desc">Текст Gemini + ElevenLabs / `tts_primary`</span>
+                    <span className="voice-toggle-desc">Клон голоса, ~1 сек / `tts_primary`</span>
                   </button>
                 </div>
 
@@ -958,9 +974,13 @@ export default function AgentEditorPage() {
                       ))}
                     </select>
                   </div>
+                ) : form.voiceProvider === 'cartesia' ? (
+                  <div className="voice-sub-options voice-sub-info">
+                    ⚡ Cartesia — самый быстрый вариант с кастомным голосом (~80–150 мс). Голос и API-ключ настраиваются в разделе «Провайдеры → Cartesia». Убедитесь, что <strong>CARTESIA_ENABLED=true</strong> в настройках Render.
+                  </div>
                 ) : (
                   <div className="voice-sub-options voice-sub-info">
-                    Для ElevenLabs используется глобальная настройка голоса из раздела «Провайдеры». На агенте фиксируется только сам голосовой путь.
+                    ElevenLabs — клон голоса с задержкой ~1–1.5 сек. Голос и API-ключ настраиваются в разделе «Провайдеры → ElevenLabs».
                   </div>
                 )}
               </div>
