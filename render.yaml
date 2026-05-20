@@ -96,9 +96,9 @@ services:
       - key: DIRECT_MAX_SESSIONS
         value: "10"
       - key: DIRECT_VOICE_STRATEGY
-        value: gemini_primary
+        value: tts_primary
       - key: DIRECT_VOICE_ALLOW_TTS_FALLBACK
-        value: "false"
+        value: "true"
       - key: GEMINI_AUDIO_INPUT_ENABLED
         value: "true"
       - key: GEMINI_AUDIO_OUTPUT_ENABLED
@@ -112,7 +112,7 @@ services:
       - key: SUMMARY_LLM_PROVIDER
         value: ""
       - key: ELEVENLABS_ENABLED
-        value: "false"
+        value: "true"
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: ELEVENLABS_VOICE_ID
