@@ -98,7 +98,7 @@ services:
       - key: DIRECT_VOICE_STRATEGY
         value: tts_primary
       - key: DIRECT_VOICE_ALLOW_TTS_FALLBACK
-        value: "true"
+        value: "false"
       - key: GEMINI_AUDIO_INPUT_ENABLED
         value: "true"
       - key: GEMINI_AUDIO_OUTPUT_ENABLED
@@ -108,7 +108,7 @@ services:
       - key: DIRECT_INITIAL_GREETING_TEXT
         value: "Здравствуйте! Это AI-ассистент. Чем могу помочь?"
       - key: DIRECT_MODEL_RESPONSE_TIMEOUT_SECONDS
-        value: "8.0"
+        value: "30.0"
       - key: SUMMARY_LLM_PROVIDER
         value: ""
       - key: ELEVENLABS_ENABLED
