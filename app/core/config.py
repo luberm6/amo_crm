@@ -101,6 +101,16 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_empty_string_env_vars(cls, values: object) -> object:
+        # Render (and other platforms) sometimes inject empty strings for optional
+        # env vars that were never set. Pydantic treats "" as a value and fails to
+        # parse it as int/float. Dropping the key lets pydantic use the field default.
+        if isinstance(values, dict):
+            return {k: v for k, v in values.items() if not (isinstance(v, str) and v.strip() == "")}
+        return values
+
     # ── Database ──────────────────────────────────────────────────────────────
     database_url: str = "postgresql+asyncpg://amo_user:amo_pass@127.0.0.1:5433/amo_crm"
 
