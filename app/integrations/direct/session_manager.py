@@ -673,7 +673,10 @@ class DirectSessionManager:
             transcription_output=_wants_tts,
             voice_name=gemini_voice_name,
             language_code=gemini_language_code,
-            model_id=None,
+            # TTS path (tts_primary) uses a separate model that supports
+            # outputAudioTranscription. gemini-3.1-flash-live-preview is
+            # audio-to-audio only and may not return text transcripts.
+            model_id=(settings.gemini_tts_model_id or None) if _wants_tts else None,
             api_version=None,
         )
         session.gemini_client = client

@@ -84,7 +84,7 @@ services:
       - key: GEMINI_MODEL_ID
         value: gemini-3.1-flash-live-preview
       - key: GEMINI_TTS_MODEL_ID
-        value: ""
+        value: gemini-2.5-flash-native-audio-preview-12-2025
       - key: GEMINI_API_VERSION
         value: v1beta
       - key: GEMINI_TTS_API_VERSION
