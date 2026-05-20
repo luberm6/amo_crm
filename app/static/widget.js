@@ -206,7 +206,12 @@
       } else if (msg.type === 'call_ended') {
         handleCallEnd();
       } else if (msg.type === 'transcript') {
-        appendTranscript(msg.role, msg.text);
+        // Only show clean assistant/user text; skip model thinking (markdown, long reasoning)
+        var text = msg.text || '';
+        var isThinking = text.indexOf('**') === 0 || text.length > 300;
+        if (!isThinking) {
+          appendTranscript(msg.role, text);
+        }
       }
     } catch (e) { /* ignore malformed frames */ }
   }
@@ -263,7 +268,7 @@
       handleCallEnd();
     };
     ws.onclose = function () {
-      if (state === STATES.ACTIVE || state === STATES.CONNECTING) {
+      if (state === STATES.ACTIVE || state === STATES.CONNECTING || state === STATES.ENDING) {
         handleCallEnd();
       }
     };
